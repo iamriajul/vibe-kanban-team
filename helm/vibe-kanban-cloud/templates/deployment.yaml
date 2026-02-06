@@ -4,6 +4,7 @@ metadata:
   name: {{ include "vibe-kanban-cloud.fullname" . }}
   labels:
     {{- include "vibe-kanban-cloud.labels" . | nindent 4 }}
+    app.kubernetes.io/component: app
 spec:
   {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicaCount }}
@@ -19,6 +20,7 @@ spec:
       {{- end }}
       labels:
         {{- include "vibe-kanban-cloud.labels" . | nindent 8 }}
+        app.kubernetes.io/component: app
         {{- with .Values.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
