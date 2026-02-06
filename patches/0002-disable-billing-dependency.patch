@@ -1,0 +1,19 @@
+diff --git a/crates/remote/Cargo.toml b/crates/remote/Cargo.toml
+index cccf7884..54cfe4c6 100644
+--- a/crates/remote/Cargo.toml
++++ b/crates/remote/Cargo.toml
+@@ -10,11 +10,11 @@ path = "src/bin/generate_types.rs"
+ 
+ [features]
+ default = []
+-vk-billing = ["dep:billing"]
++# Downstream builds disable billing; keep feature defined to avoid cfg warnings.
++vk-billing = []
+ 
+ [dependencies]
+-# private crate for billing functionality
+-billing = { git = "ssh://git@github.com/BloopAI/vibe-kanban-private", branch = "main", package = "billing", optional = true }
++# private crate for billing functionality (disabled in downstream builds)
+ 
+ anyhow = "1.0"
+ axum = { version = "0.8.4", features = ["macros", "multipart", "ws"] }
