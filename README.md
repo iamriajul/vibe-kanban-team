@@ -284,6 +284,33 @@ We track upstream releases from the Vibe Kanban GitHub repo and bump the submodu
 4. Merge → CI builds a new image.
 5. Deploy by pinning the image tag.
 
+## Patch Stack (Downstream Changes)
+
+We keep downstream changes as a small patch stack in `patches/` (similar to quilt). CI applies these patches before building.
+
+### Creating a Patch
+
+```bash
+cd vibe-kanban
+git checkout <upstream-tag>
+# Make your change(s)
+git add .
+git commit -m "fix: <summary>"
+git format-patch -1 -o ../patches
+cd ..
+ls patches
+```
+
+Add the patch filename to `patches/series` in the order you want them applied.
+
+### Applying Patches Locally
+
+```bash
+scripts/apply-patches.sh
+```
+
+Keep the patch stack minimal and prefer upstreaming when possible.
+
 ## Upgrading Vibe Kanban (Process)
 
 ```bash
