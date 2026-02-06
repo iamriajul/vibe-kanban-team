@@ -46,8 +46,8 @@ build-image:
     - echo "=============================================="
     - echo "Image built and pushed successfully!"
     - echo "=============================================="
-    - echo "Image: $IMAGE_NAME:$IMAGE_TAG"
-    - echo "Latest: $IMAGE_NAME:latest"
+    - 'echo "Image: $IMAGE_NAME:$IMAGE_TAG"'
+    - 'echo "Latest: $IMAGE_NAME:latest"'
     - echo ""
     - echo "To deploy manually to MicroK8s:"
     - echo "  helm upgrade --install vibe-kanban ./helm/vibe-kanban-cloud \\"
