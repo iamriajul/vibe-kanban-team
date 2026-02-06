@@ -9,7 +9,7 @@ Required:
   image-tag   The image tag to deploy (e.g. commit SHA or release version)
 
 Optional:
-  namespace   Kubernetes namespace (default: vibe-kanban)
+  namespace   Kubernetes namespace (default: vibe-kanban-cloud)
   release     Helm release name (default: vibe-kanban)
 
 Env:
@@ -32,7 +32,7 @@ if [ -z "${IMAGE_TAG}" ]; then
   exit 1
 fi
 
-NAMESPACE="${2:-vibe-kanban}"
+NAMESPACE="${2:-vibe-kanban-cloud}"
 RELEASE="${3:-vibe-kanban}"
 VALUES_FILE="${VALUES_FILE:-values-production.yaml}"
 

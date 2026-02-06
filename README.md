@@ -48,6 +48,17 @@ This repository provides a production-ready deployment solution for Vibe Kanban 
 - PostgreSQL 14+ with `wal_level=logical` (CloudNativePG recommended)
 - kubectl configured to access your cluster
 
+## CNPG (Optional)
+
+If you want to run PostgreSQL in-cluster with CloudNativePG, use the manifests in `k8s/cnpg/`.
+
+```bash
+kubectl apply -f k8s/namespace.yaml
+kubectl apply -f k8s/cnpg/
+```
+
+Update the `CHANGEME_*` values in `k8s/cnpg/01-secrets.yaml` and `k8s/cnpg/02-initdb-secret.yaml` before applying.
+
 ## Installation (Private Repo)
 
 This chart is stored in a private GitLab repository and is not published to a public Helm repository. Install it by cloning the repo (requires access):
@@ -72,7 +83,7 @@ helm repo add vibe-kanban-cloud \
 helm repo update
 
 helm install vibe-kanban vibe-kanban-cloud/vibe-kanban-cloud \
-  --namespace vibe-kanban \
+  --namespace vibe-kanban-cloud \
   --create-namespace \
   --version 1.2.3 \
   -f values-production.yaml
@@ -83,7 +94,7 @@ If you install from the repo directly, you can still pin a chart version by chec
 ```bash
 git checkout v1.2.3
 helm upgrade --install vibe-kanban ./helm/vibe-kanban-cloud \
-  --namespace vibe-kanban \
+  --namespace vibe-kanban-cloud \
   --create-namespace \
   -f values-production.yaml
 ```
@@ -106,23 +117,23 @@ GRANT ALL PRIVILEGES ON DATABASE your_database TO electric_sync;
 ### 2. Create Namespace and Kubernetes Secrets
 
 ```bash
-kubectl create namespace vibe-kanban
+kubectl create namespace vibe-kanban-cloud
 
 # Database connection URLs
 kubectl create secret generic vibe-kanban-db \
-  --namespace vibe-kanban \
+  --namespace vibe-kanban-cloud \
   --from-literal=url='postgres://user:pass@your-db-host:5432/vibe_kanban' \
   --from-literal=electric-url='postgresql://electric_sync:pass@your-db-host:5432/vibe_kanban?sslmode=disable'
 
 # Application secrets
 kubectl create secret generic vibe-kanban-secrets \
-  --namespace vibe-kanban \
+  --namespace vibe-kanban-cloud \
   --from-literal=jwt-secret="$(openssl rand -base64 32)" \
   --from-literal=electric-role-password='your-electric-password'
 
 # OAuth credentials
 kubectl create secret generic vibe-kanban-oauth \
-  --namespace vibe-kanban \
+  --namespace vibe-kanban-cloud \
   --from-literal=github-client-id='your-github-client-id' \
   --from-literal=github-client-secret='your-github-client-secret'
 ```
@@ -133,7 +144,7 @@ If your GitLab registry is private, create a pull secret and reference it in `im
 
 ```bash
 kubectl create secret docker-registry gitlab-registry-secret \
-  --namespace vibe-kanban \
+  --namespace vibe-kanban-cloud \
   --docker-server=registry.gitlab.example.com \
   --docker-username='your-gitlab-username' \
   --docker-password='your-gitlab-token' \
@@ -152,7 +163,7 @@ cp helm/vibe-kanban-cloud/values-example.yaml values-production.yaml
 
 ```bash
 helm upgrade --install vibe-kanban ./helm/vibe-kanban-cloud \
-  --namespace vibe-kanban \
+  --namespace vibe-kanban-cloud \
   --create-namespace \
   -f values-production.yaml
 ```
@@ -337,24 +348,24 @@ If you want a versioned release tag for this repo (optional), create a tag like 
 ### Check Pod Status
 
 ```bash
-kubectl get pods -n vibe-kanban
-kubectl describe pod <pod-name> -n vibe-kanban
+kubectl get pods -n vibe-kanban-cloud
+kubectl describe pod <pod-name> -n vibe-kanban-cloud
 ```
 
 ### View Logs
 
 ```bash
 # Vibe Kanban server
-kubectl logs -n vibe-kanban -l app.kubernetes.io/name=vibe-kanban-cloud -f
+kubectl logs -n vibe-kanban-cloud -l app.kubernetes.io/name=vibe-kanban-cloud -f
 
 # ElectricSQL
-kubectl logs -n vibe-kanban -l app.kubernetes.io/component=electric -f
+kubectl logs -n vibe-kanban-cloud -l app.kubernetes.io/component=electric -f
 ```
 
 ### ElectricSQL Health
 
 ```bash
-kubectl port-forward -n vibe-kanban svc/<release>-electric 3000:3000
+kubectl port-forward -n vibe-kanban-cloud svc/<release>-electric 3000:3000
 curl http://localhost:3000/v1/health
 ```
 
