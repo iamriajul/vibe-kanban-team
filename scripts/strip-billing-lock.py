@@ -1,37 +1,50 @@
 #!/usr/bin/env python3
-import re
 from pathlib import Path
+import re
 
 
 LOCK_PATH = Path("vibe-kanban/crates/remote/Cargo.lock")
 
 
+def process_block(block_lines):
+    if not block_lines:
+        return []
+
+    name = None
+    for line in block_lines:
+        m = re.match(r'\s*name\s*=\s*"([^"]+)"', line)
+        if m:
+            name = m.group(1)
+            break
+
+    if name == "billing":
+        return []
+
+    if name == "remote":
+        filtered = []
+        for line in block_lines:
+            stripped = line.strip()
+            if stripped == '"billing",' or stripped == '"billing"':
+                continue
+            filtered.append(line)
+        return filtered
+
+    return block_lines
+
+
 def strip_billing_dependency(text: str) -> str:
-    # Remove billing from the remote package dependencies list.
-    def strip_from_remote(match: re.Match) -> str:
-        block = match.group(0)
-        block = block.replace(' "billing",\n', "")
-        block = block.replace(' "billing"\n', "")
-        return block
+    lines = text.splitlines(keepends=True)
 
-    text = re.sub(
-        r"\[\[package\]\][\s\S]*?name = \"remote\"[\s\S]*?(?=\n\[\[package\]\]|\Z)",
-        strip_from_remote,
-        text,
-        count=1,
-    )
+    out = []
+    block = []
+    for line in lines:
+        if line.strip() == "[[package]]":
+            out.extend(process_block(block))
+            block = [line]
+        else:
+            block.append(line)
 
-    # Remove the billing package block entirely.
-    parts = text.split("[[package]]")
-    if len(parts) == 1:
-        return text
-
-    out = [parts[0]]
-    for block in parts[1:]:
-        if re.search(r"\nname = \"billing\"\n", block):
-            continue
-        out.append("[[package]]" + block)
-
+    out.extend(process_block(block))
     return "".join(out)
 
 
