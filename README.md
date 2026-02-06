@@ -129,8 +129,8 @@ kubectl create namespace vibe-kanban-cloud
 # Database connection URLs
 kubectl create secret generic vibe-kanban-db \
   --namespace vibe-kanban-cloud \
-  --from-literal=url='postgres://user:pass@your-db-host:5432/vibe_kanban' \
-  --from-literal=electric-url='postgresql://electric_sync:pass@your-db-host:5432/vibe_kanban?sslmode=disable'
+  --from-literal=url='postgres://user:pass@your-db-host:5432/remote' \
+  --from-literal=electric-url='postgresql://electric_sync:pass@your-db-host:5432/remote?sslmode=disable'
 
 # Application secrets
 kubectl create secret generic vibe-kanban-secrets \

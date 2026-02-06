@@ -48,8 +48,8 @@ resources:
 # 3. Create Kubernetes secrets:
 #
 #    kubectl create secret generic vibe-kanban-db \
-#      --from-literal=url='postgres://user:pass@host:5432/vibe_kanban' \
-#      --from-literal=electric-url='postgresql://electric_sync:pass@host:5432/vibe_kanban?sslmode=disable'
+#      --from-literal=url='postgres://user:pass@host:5432/remote' \
+#      --from-literal=electric-url='postgresql://electric_sync:pass@host:5432/remote?sslmode=disable'
 #
 #    kubectl create secret generic vibe-kanban-secrets \
 #      --from-literal=jwt-secret='your-32-byte-jwt-secret' \
