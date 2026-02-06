@@ -3,7 +3,7 @@
 
 # Image configuration
 image:
-  repository: registry.gitlab.example.com/community-infra/vibe-kanban-cloud/vibe-kanban-remote
+  repository: registry.example.com/community-infra/vibe-kanban-cloud/vibe-kanban-remote
   tag: ""  # Defaults to chart appVersion; set to a version to pin
   pullPolicy: Always
 
