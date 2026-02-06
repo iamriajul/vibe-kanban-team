@@ -1,5 +1,5 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/sh
+set -eu
 
 usage() {
   cat <<'USAGE'
@@ -15,7 +15,7 @@ if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
   exit 0
 fi
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TARGET_REPO="${1:-${REPO_ROOT}/vibe-kanban}"
 SERIES_FILE="${REPO_ROOT}/patches/series"
 
@@ -29,14 +29,13 @@ if [ ! -f "${SERIES_FILE}" ]; then
   exit 1
 fi
 
-mapfile -t PATCHES < <(grep -v '^[[:space:]]*$' "${SERIES_FILE}" | grep -v '^[[:space:]]*#')
+APPLIED=0
+while IFS= read -r patch; do
+  # Skip empty lines and comments
+  case "${patch}" in
+    ""|\#*) continue ;;
+  esac
 
-if [ "${#PATCHES[@]}" -eq 0 ]; then
-  echo "No patches to apply."
-  exit 0
-fi
-
-for patch in "${PATCHES[@]}"; do
   PATCH_PATH="${REPO_ROOT}/patches/${patch}"
   if [ ! -f "${PATCH_PATH}" ]; then
     echo "Patch not found: ${PATCH_PATH}"
@@ -44,4 +43,9 @@ for patch in "${PATCHES[@]}"; do
   fi
   git -C "${TARGET_REPO}" apply --whitespace=nowarn "${PATCH_PATH}"
   echo "Applied patch: ${patch}"
-done
+  APPLIED=1
+done < "${SERIES_FILE}"
+
+if [ "${APPLIED}" -eq 0 ]; then
+  echo "No patches to apply."
+fi
