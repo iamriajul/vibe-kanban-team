@@ -1,0 +1,31 @@
+# Helm
+helm/vibe-kanban-cloud/charts/
+*.tgz
+
+# Values files with secrets
+values-production.yaml
+values-*.local.yaml
+*-secrets.yaml
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.serena/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Kubernetes
+kubeconfig
+*.kubeconfig
+
+# Logs
+*.log

@@ -1,0 +1,65 @@
+Vibe Kanban Cloud has been deployed!
+
+{{- if .Values.ingress.enabled }}
+1. Access the application at:
+{{- range $host := .Values.ingress.hosts }}
+  {{- range .paths }}
+   https://{{ $host.host }}{{ .path }}
+  {{- end }}
+{{- end }}
+{{- else if contains "NodePort" .Values.service.type }}
+1. Get the application URL by running:
+   export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ include "vibe-kanban-cloud.fullname" . }})
+   export NODE_IP=$(kubectl get nodes --namespace {{ .Release.Namespace }} -o jsonpath="{.items[0].status.addresses[0].address}")
+   echo http://$NODE_IP:$NODE_PORT
+{{- else if contains "LoadBalancer" .Values.service.type }}
+1. Get the application URL by running:
+   NOTE: It may take a few minutes for the LoadBalancer IP to be available.
+   kubectl get --namespace {{ .Release.Namespace }} svc -w {{ include "vibe-kanban-cloud.fullname" . }}
+{{- else if contains "ClusterIP" .Values.service.type }}
+1. Get the application URL by running:
+   kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "vibe-kanban-cloud.fullname" . }} 8081:{{ .Values.service.port }}
+   echo "Visit http://localhost:8081"
+{{- end }}
+
+2. Components deployed:
+   - Vibe Kanban Remote Server: {{ include "vibe-kanban-cloud.fullname" . }}
+{{- if .Values.electric.enabled }}
+   - ElectricSQL: {{ include "vibe-kanban-cloud.electric.fullname" . }}
+{{- end }}
+
+3. Check deployment status:
+   kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }}
+
+4. View logs:
+   kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/name={{ include "vibe-kanban-cloud.name" . }} -f
+
+================================================================================
+IMPORTANT: Database Requirements
+================================================================================
+
+This chart expects an EXTERNAL PostgreSQL database. You must:
+
+1. Provision a PostgreSQL 14+ database with logical replication enabled:
+   - CloudNativePG: wal_level=logical is enabled by default
+   - Other providers: Set wal_level=logical in postgresql.conf
+
+2. Create the electric_sync role for ElectricSQL:
+   CREATE ROLE electric_sync WITH LOGIN PASSWORD 'your-password' REPLICATION;
+   GRANT ALL PRIVILEGES ON DATABASE yourdb TO electric_sync;
+
+3. Create a Kubernetes secret with your database URLs:
+   kubectl create secret generic vibe-kanban-db \
+     --namespace {{ .Release.Namespace }} \
+     --from-literal=url='postgres://user:pass@host:5432/dbname' \
+     --from-literal=electric-url='postgresql://electric_sync:pass@host:5432/dbname?sslmode=disable'
+
+4. Reference the secret in your values.yaml:
+   env:
+     - name: SERVER_DATABASE_URL
+       valueFrom:
+         secretKeyRef:
+           name: vibe-kanban-db
+           key: url
+
+================================================================================

@@ -1,0 +1,16 @@
+# Patterns to ignore when building packages.
+.DS_Store
+.git/
+.gitignore
+.helmignore
+.project
+.idea/
+*.swp
+*.bak
+*.tmp
+*.orig
+*~
+# Values files with secrets
+values-production.yaml
+values-*.local.yaml
+*-secrets.yaml

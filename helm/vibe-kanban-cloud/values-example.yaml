@@ -1,0 +1,153 @@
+# Example values for Vibe Kanban Cloud
+# This follows the same pattern as the Coder Helm chart
+
+# Image configuration
+image:
+  repository: registry.gitlab.example.com/community-infra/vibe-kanban-cloud/vibe-kanban-remote
+  tag: ""  # Defaults to chart appVersion; set to a version to pin
+  pullPolicy: Always
+
+# Image pull secrets for private registry
+imagePullSecrets:
+  - name: gitlab-registry-secret
+
+# Ingress configuration
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+  hosts:
+    - host: vibe-kanban.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: vibe-kanban-tls
+      hosts:
+        - vibe-kanban.example.com
+
+# Resource limits
+resources:
+  limits:
+    cpu: 2000m
+    memory: 2Gi
+  requests:
+    cpu: 500m
+    memory: 512Mi
+
+# =============================================================================
+# Environment Variables - Reference your own secrets
+# =============================================================================
+#
+# Prerequisites:
+# 1. Create a PostgreSQL database (CloudNativePG, RDS, etc.) with wal_level=logical
+# 2. Create the electric_sync role:
+#    CREATE ROLE electric_sync WITH LOGIN PASSWORD 'xxx' REPLICATION;
+# 3. Create Kubernetes secrets:
+#
+#    kubectl create secret generic vibe-kanban-db \
+#      --from-literal=url='postgres://user:pass@host:5432/vibe_kanban' \
+#      --from-literal=electric-url='postgresql://electric_sync:pass@host:5432/vibe_kanban?sslmode=disable'
+#
+#    kubectl create secret generic vibe-kanban-secrets \
+#      --from-literal=jwt-secret='your-32-byte-jwt-secret' \
+#      --from-literal=electric-role-password='electric-sync-password'
+#
+#    kubectl create secret generic vibe-kanban-oauth \
+#      --from-literal=github-client-id='your-github-client-id' \
+#      --from-literal=github-client-secret='your-github-client-secret'
+#
+# =============================================================================
+
+env:
+  # Database connection
+  - name: SERVER_DATABASE_URL
+    valueFrom:
+      secretKeyRef:
+        name: vibe-kanban-db
+        key: url
+
+  # JWT secret
+  - name: VIBEKANBAN_REMOTE_JWT_SECRET
+    valueFrom:
+      secretKeyRef:
+        name: vibe-kanban-secrets
+        key: jwt-secret
+
+  # ElectricSQL role password
+  - name: ELECTRIC_ROLE_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: vibe-kanban-secrets
+        key: electric-role-password
+
+  # GitHub OAuth
+  - name: GITHUB_OAUTH_CLIENT_ID
+    valueFrom:
+      secretKeyRef:
+        name: vibe-kanban-oauth
+        key: github-client-id
+  - name: GITHUB_OAUTH_CLIENT_SECRET
+    valueFrom:
+      secretKeyRef:
+        name: vibe-kanban-oauth
+        key: github-client-secret
+
+  # Optional: Google OAuth (uncomment if using)
+  # - name: GOOGLE_OAUTH_CLIENT_ID
+  #   valueFrom:
+  #     secretKeyRef:
+  #       name: vibe-kanban-oauth
+  #       key: google-client-id
+  # - name: GOOGLE_OAUTH_CLIENT_SECRET
+  #   valueFrom:
+  #     secretKeyRef:
+  #       name: vibe-kanban-oauth
+  #       key: google-client-secret
+
+# Non-secret environment variables
+extraEnv:
+  - name: RUST_LOG
+    value: "info"
+  - name: SERVER_LISTEN_ADDR
+    value: "0.0.0.0:8081"
+  # Optional: Public URL (for OAuth callbacks)
+  # - name: SERVER_PUBLIC_BASE_URL
+  #   value: "https://vibe-kanban.example.com"
+
+# =============================================================================
+# ElectricSQL Configuration
+# =============================================================================
+
+electric:
+  enabled: true
+
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 200m
+      memory: 256Mi
+
+  # ElectricSQL database connection
+  env:
+    - name: DATABASE_URL
+      valueFrom:
+        secretKeyRef:
+          name: vibe-kanban-db
+          key: electric-url
+
+  extraEnv:
+    - name: AUTH_MODE
+      value: "insecure"
+    - name: ELECTRIC_INSECURE
+      value: "true"
+    - name: ELECTRIC_MANUAL_TABLE_PUBLISHING
+      value: "true"
+    - name: ELECTRIC_USAGE_REPORTING
+      value: "false"
+    - name: ELECTRIC_FEATURE_FLAGS
+      value: "allow_subqueries,tagged_subqueries"

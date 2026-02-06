@@ -1,93 +1,337 @@
-# vibe-kanban-cloud
+# Vibe Kanban Cloud
 
+Helm chart and CI/CD pipeline for deploying [Vibe Kanban](https://github.com/BloopAI/vibe-kanban) to Kubernetes.
 
+## Overview
 
-## Getting started
+This repository provides a production-ready deployment solution for Vibe Kanban Cloud with:
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+- **Helm Chart**: Deploys Vibe Kanban server and ElectricSQL
+- **GitLab CI/CD**: Automated image build pipeline
+- **Environment-Agnostic Images**: Build once, deploy anywhere
+- **External Database**: Bring your own PostgreSQL (CloudNativePG, RDS, etc.)
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
-
-## Add your files
-
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
+## Architecture
 
 ```
-cd existing_repo
-git remote add origin https://gitlab.example.com/community-infra/vibe-kanban-cloud.git
-git branch -M main
-git push -uf origin main
+┌─────────────────────────────────────────────────────────────────┐
+│                        Kubernetes Cluster                        │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌─────────────────┐    ┌─────────────────┐                     │
+│  │                 │    │                 │                     │
+│  │  Vibe Kanban    │───▶│   ElectricSQL   │──┐                  │
+│  │  Remote Server  │    │   (Sync Layer)  │  │                  │
+│  │                 │    │                 │  │                  │
+│  │  Port: 8081     │    │  Port: 3000     │  │                  │
+│  └────────┬────────┘    └─────────────────┘  │                  │
+│           │                                   │                  │
+│  ┌────────▼────────┐                         │                  │
+│  │     Ingress     │                         │                  │
+│  └────────┬────────┘                         │                  │
+│           │                                   │                  │
+└───────────┼───────────────────────────────────┼──────────────────┘
+            │                                   │
+            ▼                                   ▼
+        Internet                     ┌──────────────────┐
+                                     │    PostgreSQL    │
+                                     │  (External DB)   │
+                                     │  CloudNativePG   │
+                                     │  RDS / etc.      │
+                                     └──────────────────┘
 ```
 
-## Integrate with your tools
+## Prerequisites
 
-- [ ] [Set up project integrations](https://gitlab.example.com/community-infra/vibe-kanban-cloud/-/settings/integrations)
+- Kubernetes cluster (1.24+)
+- Helm 3.x
+- PostgreSQL 14+ with `wal_level=logical` (CloudNativePG recommended)
+- kubectl configured to access your cluster
 
-## Collaborate with your team
+## Installation (Private Repo)
 
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+This chart is stored in a private GitLab repository and is not published to a public Helm repository. Install it by cloning the repo (requires access):
 
-## Test and Deploy
+```bash
+git clone ssh://git@gitlab.example.com:2222/community-infra/vibe-kanban-cloud.git
+cd vibe-kanban-cloud
+```
 
-Use the built-in continuous integration in GitLab.
+You can then install from the local path `./helm/vibe-kanban-cloud` (see Quick Start below). If you use GitOps (Argo CD / Flux), point your HelmRelease to the `helm/vibe-kanban-cloud` path in this repo.
 
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
+### Versioned Chart Installs (Helm Registry)
 
-***
+When we publish chart releases, you can choose a specific version at install/upgrade time (similar to Coder). This uses the GitLab Helm Package Registry for this project.
 
-# Editing this README
+```bash
+helm repo add vibe-kanban-cloud \
+  --username "<gitlab-username>" \
+  --password "<gitlab-token>" \
+  "https://gitlab.example.com/api/v4/projects/<project_id>/packages/helm/stable"
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+helm repo update
 
-## Suggestions for a good README
+helm install vibe-kanban vibe-kanban-cloud/vibe-kanban-cloud \
+  --namespace vibe-kanban \
+  --create-namespace \
+  --version 1.2.3 \
+  -f values-production.yaml
+```
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+If you install from the repo directly, you can still pin a chart version by checking out the tag first:
 
-## Name
-Choose a self-explaining name for your project.
+```bash
+git checkout v1.2.3
+helm upgrade --install vibe-kanban ./helm/vibe-kanban-cloud \
+  --namespace vibe-kanban \
+  --create-namespace \
+  -f values-production.yaml
+```
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+## Quick Start
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+### 1. Prepare PostgreSQL Database
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+Your PostgreSQL must have logical replication enabled:
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+```sql
+-- CloudNativePG has wal_level=logical by default
+-- For other providers, ensure wal_level=logical in postgresql.conf
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+-- Create the electric_sync role for ElectricSQL
+CREATE ROLE electric_sync WITH LOGIN PASSWORD 'your-electric-password' REPLICATION;
+GRANT ALL PRIVILEGES ON DATABASE your_database TO electric_sync;
+```
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+### 2. Create Namespace and Kubernetes Secrets
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+```bash
+kubectl create namespace vibe-kanban
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+# Database connection URLs
+kubectl create secret generic vibe-kanban-db \
+  --namespace vibe-kanban \
+  --from-literal=url='postgres://user:pass@your-db-host:5432/vibe_kanban' \
+  --from-literal=electric-url='postgresql://electric_sync:pass@your-db-host:5432/vibe_kanban?sslmode=disable'
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+# Application secrets
+kubectl create secret generic vibe-kanban-secrets \
+  --namespace vibe-kanban \
+  --from-literal=jwt-secret="$(openssl rand -base64 32)" \
+  --from-literal=electric-role-password='your-electric-password'
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+# OAuth credentials
+kubectl create secret generic vibe-kanban-oauth \
+  --namespace vibe-kanban \
+  --from-literal=github-client-id='your-github-client-id' \
+  --from-literal=github-client-secret='your-github-client-secret'
+```
 
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+### 3. (If Needed) Create Image Pull Secret
+
+If your GitLab registry is private, create a pull secret and reference it in `imagePullSecrets`:
+
+```bash
+kubectl create secret docker-registry gitlab-registry-secret \
+  --namespace vibe-kanban \
+  --docker-server=registry.gitlab.example.com \
+  --docker-username='your-gitlab-username' \
+  --docker-password='your-gitlab-token' \
+  --docker-email='your-email@example.com'
+```
+
+### 4. Create Values File
+
+```bash
+cp helm/vibe-kanban-cloud/values-example.yaml values-production.yaml
+# Edit values-production.yaml with your secret names
+# If your registry host differs, update image.repository accordingly.
+```
+
+### 5. Deploy
+
+```bash
+helm upgrade --install vibe-kanban ./helm/vibe-kanban-cloud \
+  --namespace vibe-kanban \
+  --create-namespace \
+  -f values-production.yaml
+```
+
+If you want to pin a specific image tag (recommended), use:
+
+```bash
+scripts/deploy.sh <commit-sha>
+```
+
+## Configuration
+
+This chart follows the same pattern as the [Coder Helm chart](https://coder.com/docs/install/kubernetes) - you reference your own Kubernetes secrets via `secretKeyRef`.
+
+### Example values.yaml
+
+```yaml
+env:
+  # Database connection (REQUIRED)
+  - name: SERVER_DATABASE_URL
+    valueFrom:
+      secretKeyRef:
+        name: vibe-kanban-db
+        key: url
+
+  # JWT secret (REQUIRED)
+  - name: VIBEKANBAN_REMOTE_JWT_SECRET
+    valueFrom:
+      secretKeyRef:
+        name: vibe-kanban-secrets
+        key: jwt-secret
+
+  # ElectricSQL role password (REQUIRED)
+  - name: ELECTRIC_ROLE_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: vibe-kanban-secrets
+        key: electric-role-password
+
+  # GitHub OAuth (REQUIRED - at least one OAuth provider)
+  - name: GITHUB_OAUTH_CLIENT_ID
+    valueFrom:
+      secretKeyRef:
+        name: vibe-kanban-oauth
+        key: github-client-id
+  - name: GITHUB_OAUTH_CLIENT_SECRET
+    valueFrom:
+      secretKeyRef:
+        name: vibe-kanban-oauth
+        key: github-client-secret
+
+# ElectricSQL database connection
+electric:
+  enabled: true
+  env:
+    - name: DATABASE_URL
+      valueFrom:
+        secretKeyRef:
+          name: vibe-kanban-db
+          key: electric-url
+```
+
+### Required Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `SERVER_DATABASE_URL` | PostgreSQL connection URL |
+| `VIBEKANBAN_REMOTE_JWT_SECRET` | JWT secret (generate with `openssl rand -base64 32`) |
+| `ELECTRIC_ROLE_PASSWORD` | Password for the `electric_sync` database role |
+| `GITHUB_OAUTH_CLIENT_ID` | GitHub OAuth client ID |
+| `GITHUB_OAUTH_CLIENT_SECRET` | GitHub OAuth client secret |
+
+### Database Requirements
+
+Your PostgreSQL database must have:
+
+1. **Logical replication enabled**: `wal_level=logical`
+   - CloudNativePG: Enabled by default
+   - Other providers: Set in `postgresql.conf`
+
+2. **ElectricSQL role**: User with `REPLICATION` privilege
+   ```sql
+   CREATE ROLE electric_sync WITH LOGIN PASSWORD 'xxx' REPLICATION;
+   ```
+
+### OAuth Setup
+
+#### GitHub OAuth
+
+1. Go to GitHub → Settings → Developer settings → OAuth Apps
+2. Create new OAuth App:
+   - Homepage URL: `https://your-domain.com`
+   - Callback URL: `https://your-domain.com/v1/oauth/callback/github`
+3. Copy Client ID and Client Secret
+
+#### Google OAuth
+
+1. Go to Google Cloud Console → APIs & Services → Credentials
+2. Create OAuth 2.0 Client ID:
+   - Application type: Web application
+   - Authorized redirect URIs: `https://your-domain.com/v1/oauth/callback/google`
+3. Copy Client ID and Client Secret
+
+## CI/CD Pipeline
+
+The CI/CD pipeline builds the Docker image and pushes it to the GitLab registry.
+
+### Pipeline Stages
+
+1. **Build**: Builds Docker image and pushes to GitLab registry
+2. **Release**: On tags, publishes versioned images and the Helm chart package
+3. **Notify**: Sends Discord notification (optional)
+
+### Image Output
+
+After a successful build:
+- `$CI_REGISTRY_IMAGE/vibe-kanban-remote:$CI_COMMIT_SHA`
+- `$CI_REGISTRY_IMAGE/vibe-kanban-remote:latest`
+
+The Helm chart defaults to the chart `appVersion` (which is `latest` on main). To pin a specific build, set `image.tag` or install a chart release with `--version`.
+
+## Release Tracking (Upstream Vibe Kanban)
+
+We track upstream releases from the Vibe Kanban GitHub repo and bump the submodule when we want a new feature or fix. Keep it simple:
+
+1. Watch for new upstream releases (GitHub Releases/notifications).
+2. Decide the version to adopt (e.g. `v1.4.0`).
+3. Update the submodule and open a merge request.
+4. Merge → CI builds a new image.
+5. Deploy by pinning the image tag.
+
+## Upgrading Vibe Kanban (Process)
+
+```bash
+# 1) Update the submodule to a tag or commit
+scripts/update-vibe-kanban.sh v1.4.0
+
+# 2) Review and commit
+git status
+git commit -m "chore: bump vibe-kanban to v1.4.0"
+git push
+```
+
+After merge, CI builds and pushes a new image tagged with the commit SHA.
+
+```bash
+# 3) Deploy the new build by pinning the image tag
+scripts/deploy.sh <commit-sha>
+```
+
+If you want a versioned release tag for this repo (optional), create a tag like `v1.4.0` and push it. CI will also publish a release image tag and a chart package.
+
+## Troubleshooting
+
+### Check Pod Status
+
+```bash
+kubectl get pods -n vibe-kanban
+kubectl describe pod <pod-name> -n vibe-kanban
+```
+
+### View Logs
+
+```bash
+# Vibe Kanban server
+kubectl logs -n vibe-kanban -l app.kubernetes.io/name=vibe-kanban-cloud -f
+
+# ElectricSQL
+kubectl logs -n vibe-kanban -l app.kubernetes.io/component=electric -f
+```
+
+### ElectricSQL Health
+
+```bash
+kubectl port-forward -n vibe-kanban svc/<release>-electric 3000:3000
+curl http://localhost:3000/v1/health
+```
 
 ## License
-For open source projects, say how it is licensed.
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+This deployment configuration is provided under the MIT License.
+Vibe Kanban is licensed under the [BSL License](https://github.com/BloopAI/vibe-kanban/blob/main/LICENSE).

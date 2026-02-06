@@ -1,0 +1,20 @@
+# GitLab CI/CD Pipeline for Vibe Kanban Cloud
+# Builds the remote server image and pushes to GitLab Registry
+
+stages:
+  - build
+  - release
+  - notify
+
+variables:
+  IMAGE_NAME: $CI_REGISTRY_IMAGE/vibe-kanban-remote
+  IMAGE_TAG: $CI_COMMIT_SHA
+  DOCKER_TLS_CERTDIR: "/certs"
+
+# Default settings
+default:
+  interruptible: true
+
+# Include component pipelines
+include:
+  - local: '/.gitlab/ci/image-build.yml'

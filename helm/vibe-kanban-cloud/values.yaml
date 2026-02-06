@@ -1,0 +1,212 @@
+# Default values for vibe-kanban-cloud
+# This is a YAML-formatted file.
+
+# =============================================================================
+# Vibe Kanban Server Configuration
+# =============================================================================
+
+replicaCount: 1
+
+image:
+  repository: registry.gitlab.example.com/community-infra/vibe-kanban-cloud/vibe-kanban-remote
+  pullPolicy: IfNotPresent
+  tag: ""  # Defaults to chart appVersion (latest in repo; release packages set appVersion to version)
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  fsGroup: 10001
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+
+service:
+  type: ClusterIP
+  port: 8081
+
+ingress:
+  enabled: false
+  className: "nginx"
+  annotations: {}
+  hosts:
+    - host: vibe-kanban.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+resources:
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+  requests:
+    cpu: 100m
+    memory: 256Mi
+
+livenessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 30
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 80
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# =============================================================================
+# Environment Variables
+# =============================================================================
+# Pass configuration via environment variables, referencing your own secrets.
+# This follows the same pattern as the Coder Helm chart.
+#
+# Example:
+#   env:
+#     - name: SERVER_DATABASE_URL
+#       valueFrom:
+#         secretKeyRef:
+#           name: vibe-kanban-db
+#           key: url
+#     - name: VIBEKANBAN_REMOTE_JWT_SECRET
+#       valueFrom:
+#         secretKeyRef:
+#           name: vibe-kanban-secrets
+#           key: jwt-secret
+# =============================================================================
+
+env:
+  # REQUIRED: PostgreSQL connection URL
+  # Database must have wal_level=logical for ElectricSQL
+  # Example: postgres://user:pass@host:5432/dbname
+  - name: SERVER_DATABASE_URL
+    valueFrom:
+      secretKeyRef:
+        name: ""  # Your database secret name
+        key: url  # Key containing the connection URL
+
+  # REQUIRED: JWT secret for authentication
+  # Generate with: openssl rand -base64 32
+  - name: VIBEKANBAN_REMOTE_JWT_SECRET
+    valueFrom:
+      secretKeyRef:
+        name: ""  # Your secrets name
+        key: jwt-secret
+
+  # REQUIRED: ElectricSQL database role password
+  # This role needs REPLICATION privilege
+  - name: ELECTRIC_ROLE_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: ""  # Your secrets name
+        key: electric-role-password
+
+  # REQUIRED (at least one): OAuth provider credentials
+  # GitHub OAuth
+  - name: GITHUB_OAUTH_CLIENT_ID
+    valueFrom:
+      secretKeyRef:
+        name: ""  # Your OAuth secret name
+        key: github-client-id
+  - name: GITHUB_OAUTH_CLIENT_SECRET
+    valueFrom:
+      secretKeyRef:
+        name: ""  # Your OAuth secret name
+        key: github-client-secret
+
+  # OR Google OAuth
+  # - name: GOOGLE_OAUTH_CLIENT_ID
+  #   valueFrom:
+  #     secretKeyRef:
+  #       name: ""
+  #       key: google-client-id
+  # - name: GOOGLE_OAUTH_CLIENT_SECRET
+  #   valueFrom:
+  #     secretKeyRef:
+  #       name: ""
+  #       key: google-client-secret
+
+# Additional environment variables (non-secret)
+extraEnv:
+  - name: RUST_LOG
+    value: "info"
+  - name: SERVER_LISTEN_ADDR
+    value: "0.0.0.0:8081"
+
+# =============================================================================
+# ElectricSQL Configuration
+# =============================================================================
+
+electric:
+  enabled: true
+
+  image:
+    repository: electricsql/electric
+    tag: "1.3.3"
+    pullPolicy: IfNotPresent
+
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+  service:
+    type: ClusterIP
+    port: 3000
+
+  # ElectricSQL environment variables
+  # The DATABASE_URL will be constructed from the same secret as the server
+  env:
+    # REQUIRED: Database URL for ElectricSQL (uses electric_sync role)
+    # Example: postgresql://electric_sync:pass@host:5432/dbname?sslmode=disable
+    - name: DATABASE_URL
+      valueFrom:
+        secretKeyRef:
+          name: ""  # Your database secret name
+          key: electric-url  # Key containing ElectricSQL connection URL
+
+  # Additional ElectricSQL environment variables
+  extraEnv:
+    - name: AUTH_MODE
+      value: "insecure"
+    - name: ELECTRIC_INSECURE
+      value: "true"
+    - name: ELECTRIC_MANUAL_TABLE_PUBLISHING
+      value: "true"
+    - name: ELECTRIC_USAGE_REPORTING
+      value: "false"
+    - name: ELECTRIC_FEATURE_FLAGS
+      value: "allow_subqueries,tagged_subqueries"
