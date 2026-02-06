@@ -13,6 +13,18 @@ build-image:
     DOCKER_BUILDKIT: "1"
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
+      changes:
+        # Submodule pointer change (gitlink) means upstream source changed
+        - vibe-kanban
+        # Submodule fetch/config changes can affect resolved source
+        - .gitmodules
+        # Local patch overlay applied before image build
+        - patches/**/*
+        - scripts/apply-patches.sh
+        # Build pipeline config itself
+        - .gitlab/ci/image-build.yml
+        - .gitlab-ci.yml
+    - when: never
   before_script:
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
     # Initialize submodules
@@ -69,7 +81,8 @@ build-image-release:
     DOCKER_DRIVER: overlay2
     DOCKER_BUILDKIT: "1"
   rules:
-    - if: $CI_COMMIT_TAG
+    - if: '$CI_COMMIT_TAG =~ /^v?[0-9]+\.[0-9]+\.[0-9]+([-.].*)?$/'
+    - when: never
   before_script:
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
     # Initialize submodules
@@ -109,7 +122,8 @@ release-chart:
   stage: release
   image: alpine:3.20
   rules:
-    - if: $CI_COMMIT_TAG
+    - if: '$CI_COMMIT_TAG =~ /^v?[0-9]+\.[0-9]+\.[0-9]+([-.].*)?$/'
+    - when: never
   needs:
     - job: build-image-release
   before_script:
@@ -147,7 +161,15 @@ notify-discord:
   image: alpine:latest
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
+      changes:
+        - vibe-kanban
+        - .gitmodules
+        - patches/**/*
+        - scripts/apply-patches.sh
+        - .gitlab/ci/image-build.yml
+        - .gitlab-ci.yml
       when: always
+    - when: never
   needs:
     - job: build-image
       optional: true
