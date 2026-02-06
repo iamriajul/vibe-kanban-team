@@ -1,0 +1,17 @@
+diff --git a/crates/remote/src/mail.rs b/crates/remote/src/mail.rs
+index 0ae806c7..2f6660ac 100644
+--- a/crates/remote/src/mail.rs
++++ b/crates/remote/src/mail.rs
+@@ -5,9 +5,9 @@ use serde_json::json;
+ 
+ use crate::db::organization_members::MemberRole;
+ 
+-const LOOPS_INVITE_TEMPLATE_ID: &str = "cmhvy2wgs3s13z70i1pxakij9";
+-const LOOPS_REVIEW_READY_TEMPLATE_ID: &str = "cmj47k5ge16990iylued9by17";
+-const LOOPS_REVIEW_FAILED_TEMPLATE_ID: &str = "cmj49ougk1c8s0iznavijdqpo";
++const LOOPS_INVITE_TEMPLATE_ID: &str = "cmlb3zqwe03960i159htyb93d";
++const LOOPS_REVIEW_READY_TEMPLATE_ID: &str = "cmlb45ki603ia0i1pdiq2ekyr";
++const LOOPS_REVIEW_FAILED_TEMPLATE_ID: &str = "cmlb44vqe03p90i04bwkfqjv3";
+ 
+ #[async_trait]
+ pub trait Mailer: Send + Sync {
