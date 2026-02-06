@@ -16,8 +16,13 @@ build-image:
   before_script:
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
     # Initialize submodules
-    - apk add --no-cache git
+    - apk add --no-cache git python3
     - git submodule update --init --recursive
+    # Strip private billing dependency unless explicitly enabled
+    - |
+      if ! printf '%s' "${FEATURES:-}" | grep -Eq '(^|[ ,])vk-billing([ ,]|$)'; then
+        python3 scripts/strip-billing-lock.py
+      fi
   script:
     # Pull latest for cache
     - docker pull $IMAGE_NAME:latest || true
@@ -72,8 +77,13 @@ build-image-release:
   before_script:
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
     # Initialize submodules
-    - apk add --no-cache git
+    - apk add --no-cache git python3
     - git submodule update --init --recursive
+    # Strip private billing dependency unless explicitly enabled
+    - |
+      if ! printf '%s' "${FEATURES:-}" | grep -Eq '(^|[ ,])vk-billing([ ,]|$)'; then
+        python3 scripts/strip-billing-lock.py
+      fi
   script:
     - |
       RELEASE_VERSION="${CI_COMMIT_TAG#v}"
