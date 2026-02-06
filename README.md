@@ -57,7 +57,12 @@ kubectl apply -f k8s/namespace.yaml
 kubectl apply -f k8s/cnpg/
 ```
 
-Update the `CHANGEME_*` values in `k8s/cnpg/01-secrets.yaml` and `k8s/cnpg/02-initdb-secret.yaml` before applying.
+Copy the example secrets, then update the `CHANGEME_*` values before applying:
+
+```bash
+cp k8s/cnpg/examples/01-secrets.yaml k8s/cnpg/01-secrets.yaml
+cp k8s/cnpg/examples/02-initdb-secret.yaml k8s/cnpg/02-initdb-secret.yaml
+```
 
 ## Installation (Private Repo)
 
@@ -113,6 +118,8 @@ Your PostgreSQL must have logical replication enabled:
 CREATE ROLE electric_sync WITH LOGIN PASSWORD 'your-electric-password' REPLICATION;
 GRANT ALL PRIVILEGES ON DATABASE your_database TO electric_sync;
 ```
+
+If you use the CNPG manifests in `k8s/cnpg/`, the `electric_sync` role is created and granted automatically via the init SQL secret. Keep the ElectricSQL password in sync with the value in `k8s/cnpg/02-initdb-secret.yaml`.
 
 ### 2. Create Namespace and Kubernetes Secrets
 
@@ -236,6 +243,8 @@ electric:
 | `GITHUB_OAUTH_CLIENT_ID` | GitHub OAuth client ID |
 | `GITHUB_OAUTH_CLIENT_SECRET` | GitHub OAuth client secret |
 
+If you're using the CNPG manifests, set `ELECTRIC_ROLE_PASSWORD` to the same value as `CHANGEME_ELECTRIC_PASSWORD` in `k8s/cnpg/02-initdb-secret.yaml`.
+
 ### Database Requirements
 
 Your PostgreSQL database must have:
@@ -248,6 +257,8 @@ Your PostgreSQL database must have:
    ```sql
    CREATE ROLE electric_sync WITH LOGIN PASSWORD 'xxx' REPLICATION;
    ```
+
+If you use the CNPG manifests, the role is created by the init SQL secret.
 
 ### OAuth Setup
 

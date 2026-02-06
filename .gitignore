@@ -6,6 +6,7 @@ helm/vibe-kanban-cloud/charts/
 values-production.yaml
 values-*.local.yaml
 *-secrets.yaml
+k8s/cnpg/*-secret.yaml
 
 # Environment files
 .env
