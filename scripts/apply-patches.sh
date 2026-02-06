@@ -19,7 +19,7 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TARGET_REPO="${1:-${REPO_ROOT}/vibe-kanban}"
 SERIES_FILE="${REPO_ROOT}/patches/series"
 
-if [ ! -d "${TARGET_REPO}/.git" ]; then
+if ! git -C "${TARGET_REPO}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   echo "Target repo not found or not a git repo: ${TARGET_REPO}"
   exit 1
 fi
