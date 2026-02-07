@@ -1,6 +1,6 @@
-From 2399b6df71e71319a07859554e34ed966e42e94b Mon Sep 17 00:00:00 2001
+From 5078a2430da561ce15bf25d8fc48dbcc1c044729 Mon Sep 17 00:00:00 2001
 From: Riajul Islam <kmriajulislami@gmail.com>
-Date: Sat, 7 Feb 2026 04:28:58 +0000
+Date: Sat, 7 Feb 2026 08:41:51 +0000
 Subject: [PATCH] feat: load remote api base at runtime
 
 ---
@@ -174,7 +174,7 @@ index 2f8d717f..5312e85a 100644
                rel="noopener noreferrer"
                className={cn(
 diff --git a/frontend/src/lib/electric/collections.ts b/frontend/src/lib/electric/collections.ts
-index 30594731..153fa481 100644
+index 03e8c1b5..cdc372f4 100644
 --- a/frontend/src/lib/electric/collections.ts
 +++ b/frontend/src/lib/electric/collections.ts
 @@ -2,7 +2,7 @@ import { electricCollectionOptions } from '@tanstack/electric-db-collection';
@@ -183,7 +183,7 @@ index 30594731..153fa481 100644
  import { tokenManager } from '../auth/tokenManager';
 -import { makeRequest, REMOTE_API_URL } from '@/lib/remoteApi';
 +import { getRemoteApiUrl, makeRequest } from '@/lib/remoteApi';
- import type { EntityDefinition, ShapeDefinition } from 'shared/remote-types';
+ import type { MutationDefinition, ShapeDefinition } from 'shared/remote-types';
  import type { CollectionConfig, SyncError } from './types';
  
 @@ -122,6 +122,7 @@ function getAuthenticatedShapeOptions(
