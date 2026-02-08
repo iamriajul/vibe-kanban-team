@@ -438,6 +438,7 @@ zip -j "${DIST_DIR}/vibe-kanban-review.zip" "${WORK_DIR}/vibe-kanban-review" >/d
 rm -rf "${WORK_DIR}"
 
 echo "Generating manifest..."
+PLATFORM_MANIFEST_PATH="${TMP_DIR}/platform-manifest.json"
 MANIFEST_PATH="${TMP_DIR}/version-manifest.json"
 ${NODE_CMD} -e "
   const fs = require('fs');
@@ -455,7 +456,7 @@ ${NODE_CMD} -e "
       size: data.length,
     };
   }
-  fs.writeFileSync('${MANIFEST_PATH}', JSON.stringify(manifest, null, 2));
+  fs.writeFileSync('${PLATFORM_MANIFEST_PATH}', JSON.stringify(manifest, null, 2));
 "
 
 echo "Uploading to R2..."
@@ -463,6 +464,38 @@ export AWS_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID}"
 export AWS_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY}"
 export AWS_DEFAULT_REGION="${R2_REGION:-auto}"
 export AWS_EC2_METADATA_DISABLED=true
+
+EXISTING_MANIFEST_PATH="${TMP_DIR}/existing-manifest.json"
+if aws --endpoint-url "${R2_ENDPOINT}" s3 cp \
+  "s3://${R2_BUCKET}/binaries/${RELEASE_TAG}/manifest.json" \
+  "${EXISTING_MANIFEST_PATH}" >/dev/null 2>&1; then
+  echo "Merging with existing manifest for ${RELEASE_TAG}..."
+else
+  rm -f "${EXISTING_MANIFEST_PATH}"
+fi
+
+${NODE_CMD} -e "
+  const fs = require('fs');
+  const outPath = '${MANIFEST_PATH}';
+  const platformPath = '${PLATFORM_MANIFEST_PATH}';
+  const existingPath = '${EXISTING_MANIFEST_PATH}';
+
+  const merged = { version: '${RELEASE_TAG}', platforms: {} };
+  if (fs.existsSync(existingPath)) {
+    try {
+      const existing = JSON.parse(fs.readFileSync(existingPath, 'utf8'));
+      if (existing && typeof existing === 'object' && existing.platforms && typeof existing.platforms === 'object') {
+        merged.platforms = existing.platforms;
+      }
+    } catch {}
+  }
+
+  const platformManifest = JSON.parse(fs.readFileSync(platformPath, 'utf8'));
+  merged.version = '${RELEASE_TAG}';
+  merged.platforms['${PLATFORM_DIR}'] = platformManifest.platforms?.['${PLATFORM_DIR}'] || {};
+
+  fs.writeFileSync(outPath, JSON.stringify(merged, null, 2));
+"
 
 for bin in vibe-kanban vibe-kanban-mcp vibe-kanban-review; do
   ZIP_PATH="${DIST_DIR}/${bin}.zip"
