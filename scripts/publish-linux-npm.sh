@@ -354,7 +354,7 @@ if [ -z "${RELEASE_TAG}" ]; then
 fi
 if [ -z "${RELEASE_TAG}" ]; then
   BASE_VERSION="$(${NODE_CMD} -p "require('${VIBE_DIR}/package.json').version")"
-  RELEASE_TAG="v${BASE_VERSION}-$(date +%Y%m%d%H%M%S)"
+  RELEASE_TAG="v${BASE_VERSION}-$(date +%Y%m%d%H%M%S)" 
 fi
 
 VERSION="${RELEASE_TAG#v}"
@@ -375,7 +375,7 @@ ${NODE_CMD} -e "
   const fs = require('fs');
   const path = '${VIBE_DIR}/npx-cli/package.json';
   const pkg = JSON.parse(fs.readFileSync(path, 'utf8'));
-  pkg.name = '@iamriajul/vibe-kanban';
+  pkg.name = '@iamriajul/vibe-kanban-fork';
   pkg.version = '${VERSION}';
   pkg.publishConfig = { access: 'public' };
   pkg.author = 'iamriajul';

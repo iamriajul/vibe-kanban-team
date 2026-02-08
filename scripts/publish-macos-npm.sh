@@ -327,7 +327,7 @@ ${NODE_CMD} -e "
   const fs = require('fs');
   const path = '${VIBE_DIR}/npx-cli/package.json';
   const pkg = JSON.parse(fs.readFileSync(path, 'utf8'));
-  pkg.name = '@iamriajul/vibe-kanban';
+  pkg.name = '@iamriajul/vibe-kanban-fork';
   pkg.version = '${VERSION}';
   pkg.publishConfig = { access: 'public' };
   pkg.author = 'iamriajul';
@@ -498,7 +498,7 @@ NPMRC_BAK="${TMP_DIR}/.npmrc"
 umask 077
 printf "//registry.npmjs.org/:_authToken=%s\n" "${NPM_TOKEN}" > "${NPMRC_BAK}"
 
-if (cd "${VIBE_DIR}/npx-cli" && npm view "@iamriajul/vibe-kanban@${VERSION}" version >/dev/null 2>&1); then
+if (cd "${VIBE_DIR}/npx-cli" && npm view "@iamriajul/vibe-kanban-fork@${VERSION}" version >/dev/null 2>&1); then
   echo "npm version ${VERSION} already exists; skipping publish."
 else
   if [[ "${VERSION}" == *-* ]]; then
