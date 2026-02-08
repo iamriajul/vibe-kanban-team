@@ -32,7 +32,11 @@ cleanup() {
 
   if [ "${PATCHES_APPLIED}" -eq 1 ]; then
     if [ -f "${SERIES_FILE}" ]; then
-      mapfile -t PATCH_LIST < <(grep -v '^[[:space:]]*$' "${SERIES_FILE}" | grep -v '^[[:space:]]*#')
+      PATCH_LIST=()
+      while IFS= read -r patch_line; do
+        PATCH_LIST+=("${patch_line}")
+      done < <(grep -v '^[[:space:]]*$' "${SERIES_FILE}" | grep -v '^[[:space:]]*#')
+
       for ((idx=${#PATCH_LIST[@]}-1; idx>=0; idx--)); do
         PATCH_PATH="${ROOT_DIR}/patches/${PATCH_LIST[$idx]}"
         if [ -f "${PATCH_PATH}" ]; then
@@ -74,6 +78,10 @@ detect_runtime_cmds() {
   fi
 }
 
+if [ "$(uname -s)" != "Darwin" ]; then
+  die "This script must be run on macOS."
+fi
+
 SUDO=""
 if [ "${EUID:-$(id -u)}" -ne 0 ]; then
   if have_cmd sudo; then
@@ -81,85 +89,23 @@ if [ "${EUID:-$(id -u)}" -ne 0 ]; then
   fi
 fi
 
-PKG_MANAGER=""
-PKG_UPDATED=0
+BREW_UPDATED=0
 
-detect_pkg_manager() {
-  if have_cmd apt-get; then
-    echo "apt"
-  elif have_cmd dnf; then
-    echo "dnf"
-  elif have_cmd yum; then
-    echo "yum"
-  elif have_cmd pacman; then
-    echo "pacman"
-  elif have_cmd apk; then
-    echo "apk"
-  elif have_cmd zypper; then
-    echo "zypper"
-  else
-    echo ""
-  fi
-}
-
-pkg_update() {
-  local pm="$1"
-  if [ "${PKG_UPDATED}" -eq 1 ]; then
+brew_update() {
+  if [ "${BREW_UPDATED}" -eq 1 ]; then
     return
   fi
-  case "${pm}" in
-    apt)
-      ${SUDO} apt-get update -y
-      ;;
-    dnf)
-      ${SUDO} dnf makecache -y
-      ;;
-    yum)
-      ${SUDO} yum makecache -y
-      ;;
-    pacman)
-      ${SUDO} pacman -Sy --noconfirm
-      ;;
-    apk)
-      ${SUDO} apk update
-      ;;
-    zypper)
-      ${SUDO} zypper --non-interactive refresh
-      ;;
-    *)
-      ;;
-  esac
-  PKG_UPDATED=1
+  brew update
+  BREW_UPDATED=1
 }
 
-pkg_install() {
-  local pm="$1"
-  shift
-  local pkgs=("$@")
-  pkg_update "${pm}"
-  case "${pm}" in
-    apt)
-      DEBIAN_FRONTEND=noninteractive ${SUDO} apt-get install -y --no-install-recommends "${pkgs[@]}"
-      ;;
-    dnf)
-      ${SUDO} dnf install -y "${pkgs[@]}"
-      ;;
-    yum)
-      ${SUDO} yum install -y "${pkgs[@]}"
-      ;;
-    pacman)
-      ${SUDO} pacman -S --noconfirm --needed "${pkgs[@]}"
-      ;;
-    apk)
-      ${SUDO} apk add --no-cache "${pkgs[@]}"
-      ;;
-    zypper)
-      ${SUDO} zypper --non-interactive install -y "${pkgs[@]}"
-      ;;
-    *)
-      die "Unsupported package manager for auto-install."
-      ;;
-  esac
+brew_install_formula() {
+  local formula="$1"
+  if brew list --formula "${formula}" >/dev/null 2>&1; then
+    return
+  fi
+  brew_update
+  brew install "${formula}"
 }
 
 ensure_system_packages() {
@@ -181,7 +127,7 @@ ensure_system_packages() {
     missing=1
   fi
 
-  if ! have_cmd cmake || ! have_cmd pkg-config || (! have_cmd gcc && ! have_cmd clang) || ! have_cmd make; then
+  if ! have_cmd cmake || ! have_cmd pkg-config || ! have_cmd make || (! have_cmd gcc && ! have_cmd clang); then
     missing=1
   fi
 
@@ -189,41 +135,41 @@ ensure_system_packages() {
     return
   fi
 
-  PKG_MANAGER="$(detect_pkg_manager)"
-  if [ -z "${PKG_MANAGER}" ]; then
-    die "No supported package manager found. Install deps manually or set SKIP_SYSTEM_DEPS=1."
+  if ! have_cmd brew; then
+    die "Missing dependencies and Homebrew is not available. Install deps manually or set SKIP_SYSTEM_DEPS=1."
   fi
 
-  log "Installing system build dependencies via ${PKG_MANAGER}..."
-  case "${PKG_MANAGER}" in
-    apt)
-      pkg_install apt git curl ca-certificates zip nodejs npm python3 python3-pip \
-        build-essential clang cmake pkg-config libssl-dev zlib1g-dev
-      ;;
-    dnf)
-      pkg_install dnf git curl ca-certificates zip nodejs npm python3 python3-pip \
-        gcc gcc-c++ make clang cmake pkgconfig openssl-devel zlib-devel
-      ;;
-    yum)
-      pkg_install yum git curl ca-certificates zip nodejs npm python3 python3-pip \
-        gcc gcc-c++ make clang cmake pkgconfig openssl-devel zlib-devel
-      ;;
-    pacman)
-      pkg_install pacman git curl ca-certificates zip nodejs npm python python-pip \
-        base-devel clang cmake pkgconf openssl zlib
-      ;;
-    apk)
-      pkg_install apk git curl ca-certificates zip nodejs npm python3 py3-pip \
-        build-base clang cmake pkgconf openssl-dev zlib-dev
-      ;;
-    zypper)
-      pkg_install zypper git curl ca-certificates zip nodejs npm python3 python3-pip \
-        gcc gcc-c++ make clang cmake pkg-config libopenssl-devel zlib-devel
-      ;;
-    *)
-      die "Unsupported package manager: ${PKG_MANAGER}"
-      ;;
-  esac
+  if ! xcode-select -p >/dev/null 2>&1; then
+    die "Xcode Command Line Tools are required. Run: xcode-select --install"
+  fi
+
+  log "Installing system build dependencies via Homebrew..."
+
+  if ! have_cmd git; then
+    brew_install_formula git
+  fi
+  if ! have_cmd curl; then
+    brew_install_formula curl
+  fi
+  if ! have_cmd zip; then
+    brew_install_formula zip
+  fi
+  if (! have_cmd node && ! have_cmd nodejs) || ! have_cmd npm; then
+    brew_install_formula node
+  fi
+  if (! have_cmd python3 && ! have_cmd python); then
+    brew_install_formula python
+  fi
+  if ! have_cmd cmake; then
+    brew_install_formula cmake
+  fi
+  if ! have_cmd pkg-config; then
+    brew_install_formula pkg-config
+  fi
+
+  if ! have_cmd make || (! have_cmd gcc && ! have_cmd clang); then
+    die "C/C++ toolchain still missing after dependency install. Ensure Xcode Command Line Tools are installed."
+  fi
 }
 
 ensure_rustup() {
@@ -275,6 +221,12 @@ ensure_pnpm() {
 
 ensure_awscli() {
   if have_cmd aws; then
+    return
+  fi
+
+  if have_cmd brew; then
+    log "Installing awscli via Homebrew..."
+    brew_install_formula awscli
     return
   fi
 
@@ -383,7 +335,7 @@ ${NODE_CMD} -e "
   fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + '\\n');
 "
 
-sed -i "s/npx vibe-kanban/npx @iamriajul\\/vibe-kanban/g" "${VIBE_DIR}/npx-cli/README.md"
+sed -i '' "s/npx vibe-kanban/npx @iamriajul\\/vibe-kanban/g" "${VIBE_DIR}/npx-cli/README.md"
 
 echo "Installing dependencies..."
 (cd "${VIBE_DIR}" && pnpm install)
@@ -392,9 +344,15 @@ echo "Building frontend..."
 (cd "${VIBE_DIR}/frontend" && pnpm run build)
 
 HOST_TRIPLE="$(rustc -vV | awk '/host/ {print $2}')"
-LINUX_TARGET="${LINUX_TARGET:-x86_64-unknown-linux-gnu}"
+case "${HOST_TRIPLE}" in
+  *apple-darwin)
+    ;;
+  *)
+    die "Rust host target '${HOST_TRIPLE}' is not macOS. Run this script on a macOS host."
+    ;;
+esac
 
-TARGET_TRIPLE="${LINUX_TARGET}"
+TARGET_TRIPLE="${MACOS_TARGET:-${HOST_TRIPLE}}"
 if [ "${TARGET_TRIPLE}" != "${HOST_TRIPLE}" ]; then
   echo "Adding Rust target ${TARGET_TRIPLE}..."
   rustup target add "${TARGET_TRIPLE}"
@@ -414,10 +372,17 @@ if [ ! -f "${TARGET_DIR}/server" ]; then
   exit 1
 fi
 
-PLATFORM_DIR="linux-x64"
-if [[ "${TARGET_TRIPLE}" == *"aarch64"* ]]; then
-  PLATFORM_DIR="linux-arm64"
-fi
+case "${TARGET_TRIPLE}" in
+  x86_64-apple-darwin)
+    PLATFORM_DIR="macos-x64"
+    ;;
+  aarch64-apple-darwin|arm64-apple-darwin)
+    PLATFORM_DIR="macos-arm64"
+    ;;
+  *)
+    die "Unsupported macOS target triple: ${TARGET_TRIPLE}. Supported: x86_64-apple-darwin, aarch64-apple-darwin"
+    ;;
+esac
 
 DIST_DIR="${VIBE_DIR}/npx-cli/dist/${PLATFORM_DIR}"
 rm -rf "${DIST_DIR}"
@@ -438,6 +403,7 @@ zip -j "${DIST_DIR}/vibe-kanban-review.zip" "${WORK_DIR}/vibe-kanban-review" >/d
 rm -rf "${WORK_DIR}"
 
 echo "Generating manifest..."
+PLATFORM_MANIFEST_PATH="${TMP_DIR}/platform-manifest.json"
 MANIFEST_PATH="${TMP_DIR}/version-manifest.json"
 ${NODE_CMD} -e "
   const fs = require('fs');
@@ -455,7 +421,7 @@ ${NODE_CMD} -e "
       size: data.length,
     };
   }
-  fs.writeFileSync('${MANIFEST_PATH}', JSON.stringify(manifest, null, 2));
+  fs.writeFileSync('${PLATFORM_MANIFEST_PATH}', JSON.stringify(manifest, null, 2));
 "
 
 echo "Uploading to R2..."
@@ -463,6 +429,38 @@ export AWS_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID}"
 export AWS_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY}"
 export AWS_DEFAULT_REGION="${R2_REGION:-auto}"
 export AWS_EC2_METADATA_DISABLED=true
+
+EXISTING_MANIFEST_PATH="${TMP_DIR}/existing-manifest.json"
+if aws --endpoint-url "${R2_ENDPOINT}" s3 cp \
+  "s3://${R2_BUCKET}/binaries/${RELEASE_TAG}/manifest.json" \
+  "${EXISTING_MANIFEST_PATH}" >/dev/null 2>&1; then
+  echo "Merging with existing manifest for ${RELEASE_TAG}..."
+else
+  rm -f "${EXISTING_MANIFEST_PATH}"
+fi
+
+${NODE_CMD} -e "
+  const fs = require('fs');
+  const outPath = '${MANIFEST_PATH}';
+  const platformPath = '${PLATFORM_MANIFEST_PATH}';
+  const existingPath = '${EXISTING_MANIFEST_PATH}';
+
+  const merged = { version: '${RELEASE_TAG}', platforms: {} };
+  if (fs.existsSync(existingPath)) {
+    try {
+      const existing = JSON.parse(fs.readFileSync(existingPath, 'utf8'));
+      if (existing && typeof existing === 'object' && existing.platforms && typeof existing.platforms === 'object') {
+        merged.platforms = existing.platforms;
+      }
+    } catch {}
+  }
+
+  const platformManifest = JSON.parse(fs.readFileSync(platformPath, 'utf8'));
+  merged.version = '${RELEASE_TAG}';
+  merged.platforms['${PLATFORM_DIR}'] = platformManifest.platforms?.['${PLATFORM_DIR}'] || {};
+
+  fs.writeFileSync(outPath, JSON.stringify(merged, null, 2));
+"
 
 for bin in vibe-kanban vibe-kanban-mcp vibe-kanban-review; do
   ZIP_PATH="${DIST_DIR}/${bin}.zip"
@@ -500,6 +498,16 @@ NPMRC_BAK="${TMP_DIR}/.npmrc"
 umask 077
 printf "//registry.npmjs.org/:_authToken=%s\n" "${NPM_TOKEN}" > "${NPMRC_BAK}"
 
-(cd "${VIBE_DIR}/npx-cli" && NPM_CONFIG_USERCONFIG="${NPMRC_BAK}" npm publish --ignore-scripts --access public)
+if (cd "${VIBE_DIR}/npx-cli" && npm view "@iamriajul/vibe-kanban@${VERSION}" version >/dev/null 2>&1); then
+  echo "npm version ${VERSION} already exists; skipping publish."
+else
+  if [[ "${VERSION}" == *-* ]]; then
+    NPM_TAG="${NPM_TAG:-next}"
+    echo "Publishing prerelease with npm tag: ${NPM_TAG}"
+    (cd "${VIBE_DIR}/npx-cli" && NPM_CONFIG_USERCONFIG="${NPMRC_BAK}" npm publish --ignore-scripts --access public --tag "${NPM_TAG}")
+  else
+    (cd "${VIBE_DIR}/npx-cli" && NPM_CONFIG_USERCONFIG="${NPMRC_BAK}" npm publish --ignore-scripts --access public)
+  fi
+fi
 
 echo "Publish complete."
