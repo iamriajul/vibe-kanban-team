@@ -6,7 +6,13 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VIBE_DIR="${ROOT_DIR}/vibe-kanban"
 SERIES_FILE="${ROOT_DIR}/patches/series"
 
-source "${ROOT_DIR}/scripts/publish-credentials.bashrc"
+# Optional local credentials file (intentionally gitignored).
+# If present, it should export NPM_TOKEN/R2_* and other required env vars.
+CREDENTIALS_FILE="${ROOT_DIR}/scripts/publish-credentials.bashrc"
+if [ -f "${CREDENTIALS_FILE}" ]; then
+  # shellcheck disable=SC1090
+  source "${CREDENTIALS_FILE}"
+fi
 
 PATCHES_APPLIED=0
 TMP_DIR=""
@@ -351,18 +357,59 @@ scripts/apply-patches.sh
 PATCHES_APPLIED=1
 
 RELEASE_TAG="${RELEASE_TAG:-}"
-if [ -z "${RELEASE_TAG}" ]; then
-  RELEASE_TAG="$(git -C "${VIBE_DIR}" tag -l 'v[0-9]*' --sort=creatordate | tail -n 1)"
-fi
-if [ -z "${RELEASE_TAG}" ]; then
-  BASE_VERSION="$(${NODE_CMD} -p "require('${VIBE_DIR}/package.json').version")"
-  RELEASE_TAG="v${BASE_VERSION}-$(date +%Y%m%d%H%M%S)"
+# Publishing controls:
+# - NPM_TAG: npm dist-tag to publish under (default: latest)
+# - NPM_VERSION: override npm package version (semver). If set, RELEASE_TAG defaults to v${NPM_VERSION}.
+# - RELEASE_TAG: override binary tag (R2 path + embedded in download.js). If set, VERSION defaults to ${RELEASE_TAG#v}.
+# - RELEASE_TAG_MODE: "timestamp" (default) or "git". "git" uses latest upstream git tag v* if present.
+# - BASE_VERSION_OVERRIDE: overrides base version used when auto-generating timestamp release tags.
+NPM_TAG="${NPM_TAG:-latest}"
+NPM_VERSION="${NPM_VERSION:-}"
+RELEASE_TAG_MODE="${RELEASE_TAG_MODE:-timestamp}"
+BASE_VERSION_OVERRIDE="${BASE_VERSION_OVERRIDE:-}"
+
+if [[ "${NPM_VERSION}" == v* ]]; then
+  die "NPM_VERSION should not include a leading 'v' (got: ${NPM_VERSION}). Use e.g. 0.1.8-20260210120000."
 fi
 
-VERSION="${RELEASE_TAG#v}"
+if [ -n "${NPM_VERSION}" ] && [ -n "${RELEASE_TAG}" ]; then
+  if [ "${RELEASE_TAG#v}" != "${NPM_VERSION}" ] && [ "${RELEASE_TAG}" != "${NPM_VERSION}" ]; then
+    die "NPM_VERSION (${NPM_VERSION}) does not match RELEASE_TAG (${RELEASE_TAG}). Either set one, or make them consistent."
+  fi
+fi
+
+if [ -z "${RELEASE_TAG}" ]; then
+  if [ -n "${NPM_VERSION}" ]; then
+    RELEASE_TAG="v${NPM_VERSION}"
+  else
+    case "${RELEASE_TAG_MODE}" in
+      git)
+        RELEASE_TAG="$(git -C "${VIBE_DIR}" tag -l 'v[0-9]*' --sort=creatordate | tail -n 1)"
+        ;;
+      timestamp)
+        RELEASE_TAG=""
+        ;;
+      *)
+        die "Invalid RELEASE_TAG_MODE: ${RELEASE_TAG_MODE}. Expected 'timestamp' or 'git'."
+        ;;
+    esac
+
+    if [ -z "${RELEASE_TAG}" ]; then
+      if [ -n "${BASE_VERSION_OVERRIDE}" ]; then
+        BASE_VERSION="${BASE_VERSION_OVERRIDE}"
+      else
+        BASE_VERSION="$(${NODE_CMD} -p "require('${VIBE_DIR}/package.json').version")"
+      fi
+      RELEASE_TAG="v${BASE_VERSION}-$(date +%Y%m%d%H%M%S)"
+    fi
+  fi
+fi
+
+VERSION="${NPM_VERSION:-${RELEASE_TAG#v}}"
 
 echo "Using release tag: ${RELEASE_TAG}"
 echo "Using npm version: ${VERSION}"
+echo "Using npm dist-tag: ${NPM_TAG}"
 
 TMP_DIR="$(mktemp -d)"
 DOWNLOAD_JS_BAK="${TMP_DIR}/download.js.bak"
@@ -535,6 +582,11 @@ NPMRC_BAK="${TMP_DIR}/.npmrc"
 umask 077
 printf "//registry.npmjs.org/:_authToken=%s\n" "${NPM_TOKEN}" > "${NPMRC_BAK}"
 
-(cd "${VIBE_DIR}/npx-cli" && NPM_CONFIG_USERCONFIG="${NPMRC_BAK}" npm publish --ignore-scripts --access public)
+if (cd "${VIBE_DIR}/npx-cli" && npm view "@iamriajul/vibe-kanban-fork@${VERSION}" version >/dev/null 2>&1); then
+  echo "npm version ${VERSION} already exists; skipping publish."
+else
+  echo "Publishing to npm with dist-tag: ${NPM_TAG}"
+  (cd "${VIBE_DIR}/npx-cli" && NPM_CONFIG_USERCONFIG="${NPMRC_BAK}" npm publish --ignore-scripts --access public --tag "${NPM_TAG}")
+fi
 
 echo "Publish complete."

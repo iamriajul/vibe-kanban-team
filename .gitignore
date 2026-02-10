@@ -30,3 +30,6 @@ kubeconfig
 
 # Logs
 *.log
+
+# Local publish credentials (never commit)
+scripts/publish-credentials.bashrc

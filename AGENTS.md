@@ -87,6 +87,6 @@ When patching app code, useful upstream checks are run from `vibe-kanban/`:
 - Include verification commands run and results in PR description.
 
 ## Security and Secrets
-- Never commit secrets or inline credentials.
+- Never commit secrets or inline credentials. (exception: [publish-credentials.bashrc](scripts/publish-credentials.bashrc))
 - Use Kubernetes secrets via `secretKeyRef`.
 - `values-production.yaml`, `*-secret.yaml`, and `.env*` are intentionally ignored; keep it that way.
