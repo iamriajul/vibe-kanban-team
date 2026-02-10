@@ -6,6 +6,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VIBE_DIR="${ROOT_DIR}/vibe-kanban"
 SERIES_FILE="${ROOT_DIR}/patches/series"
 
+source "${ROOT_DIR}/scripts/publish-credentials.bashrc"
+
 PATCHES_APPLIED=0
 TMP_DIR=""
 DOWNLOAD_JS_BAK=""
@@ -273,7 +275,6 @@ require_cmd rustc
 require_cmd zip
 require_cmd aws
 
-require_env NPM_TOKEN
 require_env R2_ACCESS_KEY_ID
 require_env R2_SECRET_ACCESS_KEY
 require_env R2_ENDPOINT
@@ -297,7 +298,7 @@ if [ ! -f "${SERIES_FILE}" ]; then
 fi
 
 echo "Applying downstream patches..."
-scripts/apply-patches.sh
+"${ROOT_DIR}/scripts/apply-patches.sh"
 PATCHES_APPLIED=1
 
 RELEASE_TAG="${RELEASE_TAG:-}"
@@ -494,9 +495,11 @@ echo "Removing local dist artifacts before npm publish..."
 rm -rf "${VIBE_DIR}/npx-cli/dist"
 
 echo "Publishing to npm..."
-NPMRC_BAK="${TMP_DIR}/.npmrc"
-umask 077
-printf "//registry.npmjs.org/:_authToken=%s\n" "${NPM_TOKEN}" > "${NPMRC_BAK}"
+if [ -n "${NPM_TOKEN:-}" ]; then
+  NPMRC_BAK="${TMP_DIR}/.npmrc"
+  umask 077
+  printf "//registry.npmjs.org/:_authToken=%s\n" "${NPM_TOKEN}" > "${NPMRC_BAK}"
+fi
 
 if (cd "${VIBE_DIR}/npx-cli" && npm view "@iamriajul/vibe-kanban-fork@${VERSION}" version >/dev/null 2>&1); then
   echo "npm version ${VERSION} already exists; skipping publish."
@@ -504,9 +507,23 @@ else
   if [[ "${VERSION}" == *-* ]]; then
     NPM_TAG="${NPM_TAG:-next}"
     echo "Publishing prerelease with npm tag: ${NPM_TAG}"
-    (cd "${VIBE_DIR}/npx-cli" && NPM_CONFIG_USERCONFIG="${NPMRC_BAK}" npm publish --ignore-scripts --access public --tag "${NPM_TAG}")
+    if [ -n "${NPMRC_BAK}" ]; then
+      (cd "${VIBE_DIR}/npx-cli" && NPM_CONFIG_USERCONFIG="${NPMRC_BAK}" npm publish --ignore-scripts --access public --tag "${NPM_TAG}")
+    else
+      if ! (cd "${VIBE_DIR}/npx-cli" && npm whoami >/dev/null 2>&1); then
+        die "NPM_TOKEN is not set and npm is not logged in. Set NPM_TOKEN (recommended) or run: npm login"
+      fi
+      (cd "${VIBE_DIR}/npx-cli" && npm publish --ignore-scripts --access public --tag "${NPM_TAG}")
+    fi
   else
-    (cd "${VIBE_DIR}/npx-cli" && NPM_CONFIG_USERCONFIG="${NPMRC_BAK}" npm publish --ignore-scripts --access public)
+    if [ -n "${NPMRC_BAK}" ]; then
+      (cd "${VIBE_DIR}/npx-cli" && NPM_CONFIG_USERCONFIG="${NPMRC_BAK}" npm publish --ignore-scripts --access public)
+    else
+      if ! (cd "${VIBE_DIR}/npx-cli" && npm whoami >/dev/null 2>&1); then
+        die "NPM_TOKEN is not set and npm is not logged in. Set NPM_TOKEN (recommended) or run: npm login"
+      fi
+      (cd "${VIBE_DIR}/npx-cli" && npm publish --ignore-scripts --access public)
+    fi
   fi
 fi
 

@@ -6,6 +6,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VIBE_DIR="${ROOT_DIR}/vibe-kanban"
 SERIES_FILE="${ROOT_DIR}/patches/series"
 
+source "${ROOT_DIR}/scripts/publish-credentials.bashrc"
+
 PATCHES_APPLIED=0
 TMP_DIR=""
 DOWNLOAD_JS_BAK=""
@@ -354,7 +356,7 @@ if [ -z "${RELEASE_TAG}" ]; then
 fi
 if [ -z "${RELEASE_TAG}" ]; then
   BASE_VERSION="$(${NODE_CMD} -p "require('${VIBE_DIR}/package.json').version")"
-  RELEASE_TAG="v${BASE_VERSION}-$(date +%Y%m%d%H%M%S)" 
+  RELEASE_TAG="v${BASE_VERSION}-$(date +%Y%m%d%H%M%S)"
 fi
 
 VERSION="${RELEASE_TAG#v}"
