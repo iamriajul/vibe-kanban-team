@@ -336,7 +336,7 @@ ${NODE_CMD} -e "
   fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + '\\n');
 "
 
-sed -i '' "s/npx vibe-kanban/npx @iamriajul\\/vibe-kanban/g" "${VIBE_DIR}/npx-cli/README.md"
+sed -i '' "s/npx vibe-kanban/npx @iamriajul\\/vibe-kanban-fork/g" "${VIBE_DIR}/npx-cli/README.md"
 
 echo "Installing dependencies..."
 (cd "${VIBE_DIR}" && pnpm install)
