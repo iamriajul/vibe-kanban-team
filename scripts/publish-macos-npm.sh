@@ -312,11 +312,11 @@ RELEASE_TAG="${RELEASE_TAG:-}"
 # - NPM_TAG: npm dist-tag to publish under (default: latest)
 # - NPM_VERSION: override npm package version (semver). If set, RELEASE_TAG defaults to v${NPM_VERSION}.
 # - RELEASE_TAG: override binary tag (R2 path + embedded in download.js). If set, VERSION defaults to ${RELEASE_TAG#v}.
-# - RELEASE_TAG_MODE: "timestamp" (default) or "git". "git" uses latest upstream git tag v* if present.
+# - RELEASE_TAG_MODE: "git" (default) or "timestamp". "git" uses latest upstream git tag v* if present.
 # - BASE_VERSION_OVERRIDE: overrides base version used when auto-generating timestamp release tags.
 NPM_TAG="${NPM_TAG:-latest}"
 NPM_VERSION="${NPM_VERSION:-}"
-RELEASE_TAG_MODE="${RELEASE_TAG_MODE:-timestamp}"
+RELEASE_TAG_MODE="${RELEASE_TAG_MODE:-git}"
 BASE_VERSION_OVERRIDE="${BASE_VERSION_OVERRIDE:-}"
 
 if [[ "${NPM_VERSION}" == v* ]]; then
