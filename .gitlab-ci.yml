@@ -18,3 +18,4 @@ default:
 # Include component pipelines
 include:
   - local: '/.gitlab/ci/image-build.yml'
+  - local: '/.gitlab/ci/npm-publish.yml'

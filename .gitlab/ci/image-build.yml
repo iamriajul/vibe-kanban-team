@@ -1,6 +1,10 @@
 # Image Build Pipeline
 # Builds Docker image and pushes to GitLab Registry
 # Deployment to MicroK8s is done manually using the Helm chart
+#
+# Release tag format: remote-vX.Y.Z or remote-X.Y.Z
+# Examples: remote-v0.1.2, remote-v0.1.9-20260210214134, remote-v0.2.0-rc.1
+# The "remote-" prefix is stripped for the actual image/chart version
 
 # Build Docker image for the Vibe Kanban Remote Server
 build-image:
@@ -71,7 +75,7 @@ build-image:
   tags:
     - docker
 
-# Build Docker image for release tags (vX.Y.Z or X.Y.Z)
+# Build Docker image for remote server release tags (remote-vX.Y.Z or remote-X.Y.Z)
 build-image-release:
   stage: build
   image: docker:27
@@ -81,7 +85,7 @@ build-image-release:
     DOCKER_DRIVER: overlay2
     DOCKER_BUILDKIT: "1"
   rules:
-    - if: '$CI_COMMIT_TAG =~ /^v?[0-9]+\.[0-9]+\.[0-9]+([-.].*)?$/'
+    - if: '$CI_COMMIT_TAG =~ /^remote-v?[0-9]+\.[0-9]+\.[0-9]+([-.].*)?$/'
     - when: never
   before_script:
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
@@ -91,9 +95,11 @@ build-image-release:
     - scripts/apply-patches.sh
   script:
     - |
-      RELEASE_VERSION="${CI_COMMIT_TAG#v}"
+      # Extract version from tag: remote-v0.1.2 -> 0.1.2
+      RELEASE_VERSION="${CI_COMMIT_TAG#remote-}"
+      RELEASE_VERSION="${RELEASE_VERSION#v}"
       if [ -z "$RELEASE_VERSION" ]; then
-        echo "Release tag is empty; expected vX.Y.Z or X.Y.Z"
+        echo "Release tag is empty; expected remote-vX.Y.Z or remote-X.Y.Z"
         exit 1
       fi
 
@@ -117,12 +123,12 @@ build-image-release:
   tags:
     - docker
 
-# Package and publish Helm chart for release tags
+# Package and publish Helm chart for remote server release tags
 release-chart:
   stage: release
   image: alpine:3.20
   rules:
-    - if: '$CI_COMMIT_TAG =~ /^v?[0-9]+\.[0-9]+\.[0-9]+([-.].*)?$/'
+    - if: '$CI_COMMIT_TAG =~ /^remote-v?[0-9]+\.[0-9]+\.[0-9]+([-.].*)?$/'
     - when: never
   needs:
     - job: build-image-release
@@ -134,9 +140,11 @@ release-chart:
     - mv /tmp/linux-amd64/helm /usr/local/bin/helm
   script:
     - |
-      RELEASE_VERSION="${CI_COMMIT_TAG#v}"
+      # Extract version from tag: remote-v0.1.2 -> 0.1.2
+      RELEASE_VERSION="${CI_COMMIT_TAG#remote-}"
+      RELEASE_VERSION="${RELEASE_VERSION#v}"
       if [ -z "$RELEASE_VERSION" ]; then
-        echo "Release tag is empty; expected vX.Y.Z or X.Y.Z"
+        echo "Release tag is empty; expected remote-vX.Y.Z or remote-X.Y.Z"
         exit 1
       fi
 
