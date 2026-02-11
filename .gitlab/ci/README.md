@@ -107,8 +107,10 @@ build → release → notify
 ```
 
 - **build**: Builds Docker images
-- **release**: Publishes npm packages and Helm charts
+- **release**: Publishes npm packages and Helm charts (npm jobs run independently, Helm waits for image build)
 - **notify**: Sends notifications to Discord
+
+**Note:** NPM publish jobs have `needs: []` which allows them to start immediately without waiting for Docker image builds to complete. This makes npm publishing independent and faster.
 
 ## Troubleshooting
 

@@ -14,6 +14,7 @@
 publish-npm:
   stage: release
   image: ubuntu:22.04
+  needs: []  # Run independently, don't wait for build stage
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
       changes:
@@ -58,6 +59,7 @@ publish-npm:
 publish-npm-release:
   stage: release
   image: ubuntu:22.04
+  needs: []  # Run independently, don't wait for build stage
   rules:
     - if: '$CI_COMMIT_TAG =~ /^v?[0-9]+\.[0-9]+\.[0-9]+([-.].*)?$/ && $CI_COMMIT_TAG !~ /^remote-/'
     - when: never
