@@ -1,10 +1,19 @@
+From 6e0e823ff91f5ccb9f055a88b4041528ad826b35 Mon Sep 17 00:00:00 2001
+From: Riajul Islam <kmriajulislami@gmail.com>
+Date: Wed, 11 Feb 2026 11:52:40 +0600
+Subject: [PATCH] update: loops template IDs
+
+---
+ crates/remote/src/mail.rs | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
 diff --git a/crates/remote/src/mail.rs b/crates/remote/src/mail.rs
-index 0ae806c7..2f6660ac 100644
+index 35b1ab5e..db41eaec 100644
 --- a/crates/remote/src/mail.rs
 +++ b/crates/remote/src/mail.rs
 @@ -5,9 +5,9 @@ use serde_json::json;
  
- use crate::db::organization_members::MemberRole;
+ use api_types::MemberRole;
  
 -const LOOPS_INVITE_TEMPLATE_ID: &str = "cmhvy2wgs3s13z70i1pxakij9";
 -const LOOPS_REVIEW_READY_TEMPLATE_ID: &str = "cmj47k5ge16990iylued9by17";
@@ -15,3 +24,6 @@ index 0ae806c7..2f6660ac 100644
  
  #[async_trait]
  pub trait Mailer: Send + Sync {
+-- 
+2.50.1 (Apple Git-155)
+
