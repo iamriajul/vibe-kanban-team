@@ -34,16 +34,28 @@ publish-npm:
         - .gitlab-ci.yml
     - when: never
   before_script:
-    # Install git for submodule operations
-    - apt-get update && apt-get install -y git curl
+    # Install Linux build/runtime deps in CI and skip Homebrew fallback in script
+    - |
+      apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        awscli \
+        build-essential \
+        ca-certificates \
+        cmake \
+        curl \
+        git \
+        nodejs \
+        npm \
+        pkg-config \
+        python3 \
+        zip
     # Initialize submodules
     - git submodule update --init --recursive
   script:
     # Run the publish script with environment variables from CI/CD settings
     - ./scripts/publish-npm.sh
   variables:
-    # Skip system deps installation - rely on script to install what's needed
-    SKIP_SYSTEM_DEPS: "0"
+    # CI installs deps via apt-get in before_script
+    SKIP_SYSTEM_DEPS: "1"
   tags:
     - docker
   # Allow manual retry on failure
@@ -64,8 +76,20 @@ publish-npm-release:
     - if: '$CI_COMMIT_TAG =~ /^v?[0-9]+\.[0-9]+\.[0-9]+([-.].*)?$/ && $CI_COMMIT_TAG !~ /^remote-/'
     - when: never
   before_script:
-    # Install git for submodule operations
-    - apt-get update && apt-get install -y git curl
+    # Install Linux build/runtime deps in CI and skip Homebrew fallback in script
+    - |
+      apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        awscli \
+        build-essential \
+        ca-certificates \
+        cmake \
+        curl \
+        git \
+        nodejs \
+        npm \
+        pkg-config \
+        python3 \
+        zip
     # Initialize submodules
     - git submodule update --init --recursive
   script:
@@ -81,7 +105,7 @@ publish-npm-release:
     # Run the publish script with explicit version
     - ./scripts/publish-npm.sh
   variables:
-    SKIP_SYSTEM_DEPS: "0"
+    SKIP_SYSTEM_DEPS: "1"
   tags:
     - docker
   retry:
