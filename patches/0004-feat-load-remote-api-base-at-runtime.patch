@@ -1,11 +1,11 @@
-From 8a62d657a63b7077e95f2f43c8d773a581ceee4f Mon Sep 17 00:00:00 2001
+From 6328f6f6c5ffd0f3edcd48e70c29dd9d47543466 Mon Sep 17 00:00:00 2001
 From: Riajul Islam <kmriajulislami@gmail.com>
-Date: Sat, 14 Feb 2026 14:57:24 +0600
+Date: Sat, 14 Feb 2026 16:19:14 +0600
 Subject: [PATCH] feat: load remote api base at runtime
 
 ---
  crates/server/src/routes/frontend.rs          | 24 +++++++++++++++++++
- crates/server/src/routes/mod.rs               |  6 ++++-
+ crates/server/src/routes/mod.rs               |  1 +
  frontend/index.html                           |  3 ++-
  frontend/public/runtime-config.js             |  2 ++
  .../dialogs/org/InviteMemberDialog.tsx        |  7 +++---
@@ -14,7 +14,7 @@ Subject: [PATCH] feat: load remote api base at runtime
  frontend/src/lib/remoteApi.ts                 |  8 ++++---
  frontend/src/lib/runtimeConfig.ts             | 22 +++++++++++++++++
  frontend/src/vite-env.d.ts                    |  6 +++++
- 10 files changed, 77 insertions(+), 13 deletions(-)
+ 10 files changed, 73 insertions(+), 12 deletions(-)
  create mode 100644 frontend/public/runtime-config.js
  create mode 100644 frontend/src/lib/runtimeConfig.ts
 
@@ -61,27 +61,17 @@ index 4aedff0c..9a41383e 100644
      let file = Assets::get(path);
  
 diff --git a/crates/server/src/routes/mod.rs b/crates/server/src/routes/mod.rs
-index 0e4d0d53..8a9a2bd5 100644
+index d2e78691..cebe56c0 100644
 --- a/crates/server/src/routes/mod.rs
 +++ b/crates/server/src/routes/mod.rs
-@@ -10,6 +10,7 @@ pub mod approvals;
- pub mod config;
- pub mod containers;
- pub mod filesystem;
-+pub mod frontend;
- // pub mod github;
- pub mod events;
- pub mod execution_processes;
-@@ -58,5 +59,8 @@ pub fn router(deployment: DeploymentImpl) -> IntoMakeService<Router> {
-         ))
-         .with_state(deployment);
+@@ -61,6 +61,7 @@ pub fn router(deployment: DeploymentImpl) -> IntoMakeService<Router> {
  
--    Router::new().nest("/api", base_routes).into_make_service()
-+    Router::new()
+     Router::new()
+         .route("/", get(frontend::serve_frontend_root))
 +        .route("/runtime-config.js", get(frontend::serve_runtime_config))
-+        .nest("/api", base_routes)
-+        .into_make_service()
- }
+         .route("/{*path}", get(frontend::serve_frontend))
+         .nest("/api", base_routes)
+         .into_make_service()
 diff --git a/frontend/index.html b/frontend/index.html
 index 37f9787c..32dd0166 100644
 --- a/frontend/index.html
@@ -184,7 +174,7 @@ index 617a99e5..b73585e1 100644
                rel="noopener noreferrer"
                className={cn(
 diff --git a/frontend/src/lib/electric/collections.ts b/frontend/src/lib/electric/collections.ts
-index 03e8c1b5..cdc372f4 100644
+index ee38ad89..3c9bfedb 100644
 --- a/frontend/src/lib/electric/collections.ts
 +++ b/frontend/src/lib/electric/collections.ts
 @@ -2,7 +2,7 @@ import { electricCollectionOptions } from '@tanstack/electric-db-collection';
@@ -196,7 +186,7 @@ index 03e8c1b5..cdc372f4 100644
  import type { MutationDefinition, ShapeDefinition } from 'shared/remote-types';
  import type { CollectionConfig, SyncError } from './types';
  
-@@ -122,6 +122,7 @@ function getAuthenticatedShapeOptions(
+@@ -135,6 +135,7 @@ function getAuthenticatedShapeOptions(
    config?: CollectionConfig
  ) {
    const url = buildUrl(shape.url, params);
@@ -204,7 +194,7 @@ index 03e8c1b5..cdc372f4 100644
  
    // Create error handler for this shape's lifecycle
    const errorHandler = new ErrorHandler();
-@@ -155,7 +156,7 @@ function getAuthenticatedShapeOptions(
+@@ -169,7 +170,7 @@ function getAuthenticatedShapeOptions(
    };
  
    return {
@@ -214,10 +204,10 @@ index 03e8c1b5..cdc372f4 100644
      headers: {
        Authorization: async () => {
 diff --git a/frontend/src/lib/remoteApi.ts b/frontend/src/lib/remoteApi.ts
-index b30618a6..755d0eeb 100644
+index c6b9ee69..56f7a77d 100644
 --- a/frontend/src/lib/remoteApi.ts
 +++ b/frontend/src/lib/remoteApi.ts
-@@ -3,14 +3,16 @@ import type {
+@@ -10,14 +10,16 @@ import type {
    UpdateProjectStatusRequest,
  } from 'shared/remote-types';
  import { tokenManager } from './auth/tokenManager';
@@ -235,7 +225,7 @@ index b30618a6..755d0eeb 100644
    const token = await tokenManager.getToken();
    if (!token) {
      throw new Error('Not authenticated');
-@@ -24,7 +26,7 @@ export const makeRequest = async (
+@@ -31,7 +33,7 @@ export const makeRequest = async (
    headers.set('X-Client-Version', __APP_VERSION__);
    headers.set('X-Client-Type', 'frontend');
  
@@ -244,7 +234,7 @@ index b30618a6..755d0eeb 100644
      ...options,
      headers,
      credentials: 'include',
-@@ -36,7 +38,7 @@ export const makeRequest = async (
+@@ -43,7 +45,7 @@ export const makeRequest = async (
      if (newToken) {
        // Retry the request with the new token
        headers.set('Authorization', `Bearer ${newToken}`);
