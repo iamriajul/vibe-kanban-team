@@ -44,6 +44,9 @@ publish-npm:
         curl \
         git \
         gnupg \
+        clang \
+        libclang-dev \
+        libsqlite3-dev \
         libssl-dev \
         pkg-config \
         python3 \
@@ -61,6 +64,9 @@ publish-npm:
       export OPENSSL_INCLUDE_DIR="/usr/include"
       export PKG_CONFIG_PATH="${OPENSSL_LIB_DIR}/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig"
       test -f "${OPENSSL_LIB_DIR}/libssl.so"
+      LIBCLANG_SO="$(find /usr/lib -type f -name 'libclang.so*' | head -n 1)"
+      test -n "${LIBCLANG_SO}"
+      export LIBCLANG_PATH="$(dirname "${LIBCLANG_SO}")"
     # Initialize submodules
     - git submodule update --init --recursive
   script:
@@ -69,6 +75,7 @@ publish-npm:
   variables:
     # CI installs deps via apt-get in before_script
     SKIP_SYSTEM_DEPS: "1"
+    LIBSQLITE3_SYS_USE_PKG_CONFIG: "1"
   tags:
     - docker
   # Allow manual retry on failure
@@ -99,6 +106,9 @@ publish-npm-release:
         curl \
         git \
         gnupg \
+        clang \
+        libclang-dev \
+        libsqlite3-dev \
         libssl-dev \
         pkg-config \
         python3 \
@@ -116,6 +126,9 @@ publish-npm-release:
       export OPENSSL_INCLUDE_DIR="/usr/include"
       export PKG_CONFIG_PATH="${OPENSSL_LIB_DIR}/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig"
       test -f "${OPENSSL_LIB_DIR}/libssl.so"
+      LIBCLANG_SO="$(find /usr/lib -type f -name 'libclang.so*' | head -n 1)"
+      test -n "${LIBCLANG_SO}"
+      export LIBCLANG_PATH="$(dirname "${LIBCLANG_SO}")"
     # Initialize submodules
     - git submodule update --init --recursive
   script:
@@ -132,6 +145,7 @@ publish-npm-release:
     - ./scripts/publish-npm.sh
   variables:
     SKIP_SYSTEM_DEPS: "1"
+    LIBSQLITE3_SYS_USE_PKG_CONFIG: "1"
   tags:
     - docker
   retry:
