@@ -1,11 +1,11 @@
-From 5078a2430da561ce15bf25d8fc48dbcc1c044729 Mon Sep 17 00:00:00 2001
+From 8a62d657a63b7077e95f2f43c8d773a581ceee4f Mon Sep 17 00:00:00 2001
 From: Riajul Islam <kmriajulislami@gmail.com>
-Date: Sat, 7 Feb 2026 08:41:51 +0000
+Date: Sat, 14 Feb 2026 14:57:24 +0600
 Subject: [PATCH] feat: load remote api base at runtime
 
 ---
  crates/server/src/routes/frontend.rs          | 24 +++++++++++++++++++
- crates/server/src/routes/mod.rs               |  1 +
+ crates/server/src/routes/mod.rs               |  6 ++++-
  frontend/index.html                           |  3 ++-
  frontend/public/runtime-config.js             |  2 ++
  .../dialogs/org/InviteMemberDialog.tsx        |  7 +++---
@@ -14,7 +14,7 @@ Subject: [PATCH] feat: load remote api base at runtime
  frontend/src/lib/remoteApi.ts                 |  8 ++++---
  frontend/src/lib/runtimeConfig.ts             | 22 +++++++++++++++++
  frontend/src/vite-env.d.ts                    |  6 +++++
- 10 files changed, 73 insertions(+), 12 deletions(-)
+ 10 files changed, 77 insertions(+), 13 deletions(-)
  create mode 100644 frontend/public/runtime-config.js
  create mode 100644 frontend/src/lib/runtimeConfig.ts
 
@@ -61,17 +61,27 @@ index 4aedff0c..9a41383e 100644
      let file = Assets::get(path);
  
 diff --git a/crates/server/src/routes/mod.rs b/crates/server/src/routes/mod.rs
-index c7c40a04..0d1aded9 100644
+index 0e4d0d53..8a9a2bd5 100644
 --- a/crates/server/src/routes/mod.rs
 +++ b/crates/server/src/routes/mod.rs
-@@ -59,6 +59,7 @@ pub fn router(deployment: DeploymentImpl) -> IntoMakeService<Router> {
+@@ -10,6 +10,7 @@ pub mod approvals;
+ pub mod config;
+ pub mod containers;
+ pub mod filesystem;
++pub mod frontend;
+ // pub mod github;
+ pub mod events;
+ pub mod execution_processes;
+@@ -58,5 +59,8 @@ pub fn router(deployment: DeploymentImpl) -> IntoMakeService<Router> {
+         ))
+         .with_state(deployment);
  
-     Router::new()
-         .route("/", get(frontend::serve_frontend_root))
+-    Router::new().nest("/api", base_routes).into_make_service()
++    Router::new()
 +        .route("/runtime-config.js", get(frontend::serve_runtime_config))
-         .route("/{*path}", get(frontend::serve_frontend))
-         .nest("/api", base_routes)
-         .into_make_service()
++        .nest("/api", base_routes)
++        .into_make_service()
+ }
 diff --git a/frontend/index.html b/frontend/index.html
 index 37f9787c..32dd0166 100644
 --- a/frontend/index.html
@@ -135,7 +145,7 @@ index ee07405b..9ed11acb 100644
                            )
                          }
 diff --git a/frontend/src/components/ui-new/dialogs/settings/OrganizationsSettingsSection.tsx b/frontend/src/components/ui-new/dialogs/settings/OrganizationsSettingsSection.tsx
-index 2f8d717f..5312e85a 100644
+index 617a99e5..b73585e1 100644
 --- a/frontend/src/components/ui-new/dialogs/settings/OrganizationsSettingsSection.tsx
 +++ b/frontend/src/components/ui-new/dialogs/settings/OrganizationsSettingsSection.tsx
 @@ -28,7 +28,7 @@ import { PendingInvitationItem } from '@/components/org/PendingInvitationItem';
@@ -286,5 +296,5 @@ index dbb4c627..a04c7ed8 100644
 +  };
 +}
 -- 
-2.50.1
+2.50.1 (Apple Git-155)
 
