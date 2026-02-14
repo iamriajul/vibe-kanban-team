@@ -34,7 +34,7 @@ publish-npm:
         - .gitlab-ci.yml
     - when: never
   before_script:
-    # Install Linux build/runtime deps in CI and skip Homebrew fallback in script
+    # Install Linux build/runtime deps in CI and force modern Node.js
     - |
       apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         awscli \
@@ -43,11 +43,14 @@ publish-npm:
         cmake \
         curl \
         git \
-        nodejs \
-        npm \
+        gnupg \
         pkg-config \
         python3 \
         zip
+      curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+      DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends nodejs
+      node --version
+      npm --version
     # Initialize submodules
     - git submodule update --init --recursive
   script:
@@ -76,7 +79,7 @@ publish-npm-release:
     - if: '$CI_COMMIT_TAG =~ /^v?[0-9]+\.[0-9]+\.[0-9]+([-.].*)?$/ && $CI_COMMIT_TAG !~ /^remote-/'
     - when: never
   before_script:
-    # Install Linux build/runtime deps in CI and skip Homebrew fallback in script
+    # Install Linux build/runtime deps in CI and force modern Node.js
     - |
       apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         awscli \
@@ -85,11 +88,14 @@ publish-npm-release:
         cmake \
         curl \
         git \
-        nodejs \
-        npm \
+        gnupg \
         pkg-config \
         python3 \
         zip
+      curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+      DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends nodejs
+      node --version
+      npm --version
     # Initialize submodules
     - git submodule update --init --recursive
   script:
