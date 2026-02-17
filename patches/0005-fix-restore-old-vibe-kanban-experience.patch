@@ -1,0 +1,130 @@
+From 739bcb7fcf0e0ce24c6956ca110e2ee17d839c96 Mon Sep 17 00:00:00 2001
+From: Riajul Islam <kmriajulislami@gmail.com>
+Date: Tue, 17 Feb 2026 14:37:42 +0000
+Subject: [PATCH] fix: restore old vibe kanban experience
+
+Disables cloud migration prompts to preserve the original local-first
+experience which is better suited for agent orchestration workflows.
+
+Changes:
+- Redirect root URL (/) to /local-projects instead of cloud UI
+- Disable BetaWorkspacesDialog modal that prompts migration on page load
+- Hide migration alert box on kanban dashboard
+
+These changes are applied as a downstream patch to maintain the
+preferred local project workflow.
+---
+ frontend/src/pages/ProjectTasks.tsx           | 15 +++---
+ .../src/pages/ui-new/RootRedirectPage.tsx     | 53 +------------------
+ 2 files changed, 11 insertions(+), 57 deletions(-)
+
+diff --git a/frontend/src/pages/ProjectTasks.tsx b/frontend/src/pages/ProjectTasks.tsx
+index 535667b7..8857e486 100644
+--- a/frontend/src/pages/ProjectTasks.tsx
++++ b/frontend/src/pages/ProjectTasks.tsx
+@@ -215,17 +215,18 @@ export function ProjectTasks() {
+   ]);
+ 
+   useEffect(() => {
++    // Migration dialog disabled - always use old UI
+     if (!isLoaded) return;
+     if (hasShownMigrationDialogRef.current) return;
+ 
+     hasShownMigrationDialogRef.current = true;
+ 
+-    BetaWorkspacesDialog.show().then((shouldMigrate) => {
+-      BetaWorkspacesDialog.hide();
+-      if (shouldMigrate === true) {
+-        navigate('/migrate');
+-      }
+-    });
++    // BetaWorkspacesDialog.show().then((shouldMigrate) => {
++    //   BetaWorkspacesDialog.hide();
++    //   if (shouldMigrate === true) {
++    //     navigate('/migrate');
++    //   }
++    // });
+   }, [isLoaded, navigate]);
+ 
+   const isLatest = attemptId === 'latest';
+@@ -906,6 +907,7 @@ export function ProjectTasks() {
+         </Alert>
+       )}
+ 
++      {/* Migration alert box disabled - always use old UI
+       <div className="mx-4 my-4 flex justify-center">
+         <div className="max-w-2xl w-full p-3 border border-orange-500/30 bg-orange-500/5 rounded flex items-center gap-4">
+           <div className="flex items-center gap-3 flex-1">
+@@ -961,6 +963,7 @@ export function ProjectTasks() {
+           )}
+         </div>
+       </div>
++      */}
+ 
+       <div className="flex-1 min-h-0">{attemptArea}</div>
+     </div>
+diff --git a/frontend/src/pages/ui-new/RootRedirectPage.tsx b/frontend/src/pages/ui-new/RootRedirectPage.tsx
+index aafec902..8fb2ff1e 100644
+--- a/frontend/src/pages/ui-new/RootRedirectPage.tsx
++++ b/frontend/src/pages/ui-new/RootRedirectPage.tsx
+@@ -1,55 +1,6 @@
+-import { useEffect, useState } from 'react';
+ import { Navigate } from 'react-router-dom';
+-import { useUserSystem } from '@/components/ConfigProvider';
+-import { getFirstProjectDestination } from '@/lib/firstProjectDestination';
+-import { useOrganizationStore } from '@/stores/useOrganizationStore';
+-
+-const DEFAULT_DESTINATION = '/workspaces/create';
+ 
+ export function RootRedirectPage() {
+-  const { config, loading, loginStatus } = useUserSystem();
+-  const setSelectedOrgId = useOrganizationStore((s) => s.setSelectedOrgId);
+-  const [destination, setDestination] = useState<string | null>(null);
+-
+-  useEffect(() => {
+-    let cancelled = false;
+-
+-    const resolveDestination = async () => {
+-      if (loading || !config) {
+-        return;
+-      }
+-
+-      if (!config.remote_onboarding_acknowledged) {
+-        setDestination('/onboarding');
+-        return;
+-      }
+-
+-      if (loginStatus?.status !== 'loggedin') {
+-        setDestination(DEFAULT_DESTINATION);
+-        return;
+-      }
+-
+-      const firstProjectDestination =
+-        await getFirstProjectDestination(setSelectedOrgId);
+-      if (!cancelled) {
+-        setDestination(firstProjectDestination ?? DEFAULT_DESTINATION);
+-      }
+-    };
+-
+-    void resolveDestination();
+-
+-    return () => {
+-      cancelled = true;
+-    };
+-  }, [config, loading, loginStatus?.status, setSelectedOrgId]);
+-
+-  if (loading || !config || !destination) {
+-    return (
+-      <div className="h-screen bg-primary flex items-center justify-center">
+-        <p className="text-low">Loading...</p>
+-      </div>
+-    );
+-  }
+-
+-  return <Navigate to={destination} replace />;
++  // Always redirect to the old UI at /local-projects
++  return <Navigate to="/local-projects" replace />;
+ }
+-- 
+2.50.1
+
