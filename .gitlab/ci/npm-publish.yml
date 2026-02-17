@@ -11,80 +11,8 @@
 # Note: Tags starting with "remote-" are excluded (used for Docker image releases)
 
 # Publish to npm when relevant files change on main branch
-publish-npm:
-  stage: release
-  image: ubuntu:22.04
-  needs: []  # Run independently, don't wait for build stage
-  rules:
-    - if: $CI_COMMIT_BRANCH == "main"
-      changes:
-        # Submodule pointer change means upstream source changed
-        - vibe-kanban
-        # Submodule fetch/config changes can affect resolved source
-        - .gitmodules
-        # Local patch overlay applied before publish
-        - patches/**/*
-        - scripts/apply-patches.sh
-        # Publish script itself
-        - scripts/publish-npm.sh
-        # NPM CLI package files
-        - vibe-kanban/npx-cli/**/*
-        # Pipeline config
-        - .gitlab/ci/npm-publish.yml
-        - .gitlab-ci.yml
-    - when: never
-  before_script:
-    # Install Linux build/runtime deps in CI and force modern Node.js
-    - |
-      apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        awscli \
-        build-essential \
-        ca-certificates \
-        cmake \
-        curl \
-        git \
-        gnupg \
-        clang \
-        libclang-dev \
-        libsqlite3-dev \
-        libssl-dev \
-        pkg-config \
-        python3 \
-        zip
-      curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-      DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends nodejs
-      node --version
-      npm --version
-      case "$(uname -m)" in
-        x86_64) export OPENSSL_LIB_DIR="/usr/lib/x86_64-linux-gnu" ;;
-        aarch64|arm64) export OPENSSL_LIB_DIR="/usr/lib/aarch64-linux-gnu" ;;
-        *) echo "Unsupported architecture for OpenSSL path auto-detect: $(uname -m)" && exit 1 ;;
-      esac
-      export OPENSSL_DIR="/usr"
-      export OPENSSL_INCLUDE_DIR="/usr/include"
-      export PKG_CONFIG_PATH="${OPENSSL_LIB_DIR}/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig"
-      test -f "${OPENSSL_LIB_DIR}/libssl.so"
-      LIBCLANG_SO="$(find /usr/lib -name 'libclang.so*' -print -quit 2>/dev/null || true)"
-      test -n "${LIBCLANG_SO}"
-      export LIBCLANG_PATH="$(dirname "${LIBCLANG_SO}")"
-    # Initialize submodules
-    - git submodule update --init --recursive
-  script:
-    # Run the publish script with environment variables from CI/CD settings
-    - ./scripts/publish-npm.sh
-  variables:
-    # CI installs deps via apt-get in before_script
-    SKIP_SYSTEM_DEPS: "1"
-    LIBSQLITE3_SYS_USE_PKG_CONFIG: "1"
-  tags:
-    - docker
-  # Allow manual retry on failure
-  retry:
-    max: 1
-    when:
-      - script_failure
-  # Don't block pipeline if publish fails (can be manually retried)
-  allow_failure: true
+# REMOVED: This job previously triggered on main branch pushes
+# Now we only publish npm packages via tag-based releases (see publish-npm-release below)
 
 # Publish to npm for npm package release tags (vX.Y.Z or X.Y.Z, NOT remote-*)
 # Note: Remote server images use remote-vX.Y.Z tags
@@ -153,25 +81,16 @@ publish-npm-release:
     when:
       - script_failure
 
-# Discord notification for npm publish
-notify-discord-npm:
+# Discord notification for npm package release
+notify-discord-npm-release:
   stage: notify
   image: alpine:latest
   rules:
-    - if: $CI_COMMIT_BRANCH == "main"
-      changes:
-        - vibe-kanban
-        - .gitmodules
-        - patches/**/*
-        - scripts/apply-patches.sh
-        - scripts/publish-npm.sh
-        - vibe-kanban/npx-cli/**/*
-        - .gitlab/ci/npm-publish.yml
-        - .gitlab-ci.yml
+    - if: '$CI_COMMIT_TAG =~ /^v?[0-9]+\.[0-9]+\.[0-9]+([-.].*)?$/ && $CI_COMMIT_TAG !~ /^remote-/'
       when: always
     - when: never
   needs:
-    - job: publish-npm
+    - job: publish-npm-release
       optional: true
   before_script:
     - apk add --no-cache curl jq
@@ -182,6 +101,9 @@ notify-discord-npm:
         echo "Discord webhook URL not configured, skipping notification"
         exit 0
       fi
+
+      # Extract version from tag (remove 'v' prefix if present)
+      RELEASE_VERSION="${CI_COMMIT_TAG#v}"
 
       # Determine publish status
       if [ "$CI_JOB_STATUS" == "success" ]; then
@@ -204,14 +126,26 @@ notify-discord-npm:
         --arg project "$CI_PROJECT_PATH" \
         --arg project_url "$CI_PROJECT_URL" \
         --arg pipeline_url "$CI_PIPELINE_URL" \
+        --arg version "$RELEASE_VERSION" \
+        --arg tag "$CI_COMMIT_TAG" \
         --arg timestamp "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)" \
         --argjson color "$COLOR" \
         '{
           "embeds": [{
-            "title": ("NPM Package Publish " + $status),
-            "description": "NPM package published to npm registry",
+            "title": ("NPM Package Release " + $status),
+            "description": ("Version " + $version + " - Published to npm registry"),
             "color": $color,
             "fields": [
+              {
+                "name": "Version",
+                "value": ("`" + $version + "`"),
+                "inline": true
+              },
+              {
+                "name": "Tag",
+                "value": ("`" + $tag + "`"),
+                "inline": true
+              },
               {
                 "name": "Commit",
                 "value": ("[`" + $commit + "`](" + $project_url + "/-/commit/" + $full_commit + ")"),
