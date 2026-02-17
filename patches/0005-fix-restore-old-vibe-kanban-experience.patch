@@ -1,6 +1,6 @@
-From 739bcb7fcf0e0ce24c6956ca110e2ee17d839c96 Mon Sep 17 00:00:00 2001
+From abc7a04d2dd6f13bf88e8b754373a8960fadbbad Mon Sep 17 00:00:00 2001
 From: Riajul Islam <kmriajulislami@gmail.com>
-Date: Tue, 17 Feb 2026 14:37:42 +0000
+Date: Tue, 17 Feb 2026 14:55:19 +0000
 Subject: [PATCH] fix: restore old vibe kanban experience
 
 Disables cloud migration prompts to preserve the original local-first
@@ -10,19 +10,52 @@ Changes:
 - Redirect root URL (/) to /local-projects instead of cloud UI
 - Disable BetaWorkspacesDialog modal that prompts migration on page load
 - Hide migration alert box on kanban dashboard
+- Remove unused imports and variables (Cloud, ExternalLink, Sparkles, BetaWorkspacesDialog)
 
 These changes are applied as a downstream patch to maintain the
 preferred local project workflow.
 ---
- frontend/src/pages/ProjectTasks.tsx           | 15 +++---
+ frontend/src/pages/ProjectTasks.tsx           | 23 ++++----
  .../src/pages/ui-new/RootRedirectPage.tsx     | 53 +------------------
- 2 files changed, 11 insertions(+), 57 deletions(-)
+ 2 files changed, 13 insertions(+), 63 deletions(-)
 
 diff --git a/frontend/src/pages/ProjectTasks.tsx b/frontend/src/pages/ProjectTasks.tsx
-index 535667b7..8857e486 100644
+index 535667b7..fe7e909c 100644
 --- a/frontend/src/pages/ProjectTasks.tsx
 +++ b/frontend/src/pages/ProjectTasks.tsx
-@@ -215,17 +215,18 @@ export function ProjectTasks() {
+@@ -5,17 +5,13 @@ import { Button } from '@/components/ui/button';
+ import { Card, CardContent } from '@/components/ui/card';
+ import {
+   AlertTriangle,
+-  Cloud,
+-  ExternalLink,
+   Plus,
+-  Sparkles,
+ } from 'lucide-react';
+ import { Loader } from '@/components/ui/loader';
+ import { tasksApi } from '@/lib/api';
+ import type { RepoBranchStatus, Workspace } from 'shared/types';
+ import { openTaskForm } from '@/lib/openTaskForm';
+ import { FeatureShowcaseDialog } from '@/components/dialogs/global/FeatureShowcaseDialog';
+-import { BetaWorkspacesDialog } from '@/components/dialogs/global/BetaWorkspacesDialog';
+ import { showcases } from '@/config/showcases';
+ import { useUserSystem } from '@/components/ConfigProvider';
+ import { usePostHog } from 'posthog-js/react';
+@@ -149,11 +145,11 @@ export function ProjectTasks() {
+ 
+   const {
+     projectId,
+-    project,
++    project: _project,
+     isLoading: projectLoading,
+     error: projectError,
+   } = useProject();
+-  const selectedOrgId = useSelectedOrgId();
++  const _selectedOrgId = useSelectedOrgId();
+   const hasShownMigrationDialogRef = useRef(false);
+ 
+   useEffect(() => {
+@@ -215,17 +211,18 @@ export function ProjectTasks() {
    ]);
  
    useEffect(() => {
@@ -47,7 +80,7 @@ index 535667b7..8857e486 100644
    }, [isLoaded, navigate]);
  
    const isLatest = attemptId === 'latest';
-@@ -906,6 +907,7 @@ export function ProjectTasks() {
+@@ -906,6 +903,7 @@ export function ProjectTasks() {
          </Alert>
        )}
  
@@ -55,7 +88,7 @@ index 535667b7..8857e486 100644
        <div className="mx-4 my-4 flex justify-center">
          <div className="max-w-2xl w-full p-3 border border-orange-500/30 bg-orange-500/5 rounded flex items-center gap-4">
            <div className="flex items-center gap-3 flex-1">
-@@ -961,6 +963,7 @@ export function ProjectTasks() {
+@@ -961,6 +959,7 @@ export function ProjectTasks() {
            )}
          </div>
        </div>
