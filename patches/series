@@ -1,6 +1,5 @@
 # List patch files in application order (one per line).
-0001-remote-strip-billing-lock.patch
-0002-disable-billing-dependency.patch
+# Patches 0001 and 0002 removed - upstream Dockerfile auto-removes billing when FEATURES is empty
 0003-update-loops-template-ids.patch
 0004-feat-load-remote-api-base-at-runtime.patch
 0005-fix-restore-old-vibe-kanban-experience.patch
