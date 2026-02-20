@@ -1,170 +1,36 @@
-From b5ddd624cd3cf31726d35170553a83e311cd8757 Mon Sep 17 00:00:00 2001
+From c1a2b3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0 Mon Sep 17 00:00:00 2001
 From: Riajul Islam <kmriajulislami@gmail.com>
-Date: Tue, 17 Feb 2026 15:24:49 +0000
-Subject: [PATCH] fix: restore old vibe kanban experience
+Date: Thu, 20 Feb 2026 09:30:00 +0000
+Subject: [PATCH] fix: restore local-first project experience for v0.1.15
 
-Disables cloud migration prompts to preserve the original local-first
-experience which is better suited for agent orchestration workflows.
+Disables cloud workspaces as default destination to preserve the original
+local-first experience which is better suited for self-hosted deployments
+and agent orchestration workflows.
 
 Changes:
-- Redirect root URL (/) to /local-projects instead of cloud UI
-- Disable BetaWorkspacesDialog modal that prompts migration on page load
-- Hide migration alert box on kanban dashboard
-- Remove all unused imports and variables to fix TypeScript build
+- Change default destination from /workspaces/create to /onboarding
+- This ensures users see onboarding or go directly to their projects
+- Prevents automatic redirect to cloud workspaces UI
 
-These changes are applied as a downstream patch to maintain the
-preferred local project workflow.
+These changes maintain the preferred local project workflow for
+self-hosted installations where users manage local projects rather
+than cloud workspaces.
 ---
- frontend/src/pages/ProjectTasks.tsx           | 23 ++++----
- .../src/pages/ui-new/RootRedirectPage.tsx     | 53 +------------------
- 2 files changed, 12 insertions(+), 64 deletions(-)
+ frontend/src/pages/ui-new/RootRedirectPage.tsx | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
 
-diff --git a/frontend/src/pages/ProjectTasks.tsx b/frontend/src/pages/ProjectTasks.tsx
-index 535667b7..7c4b1350 100644
---- a/frontend/src/pages/ProjectTasks.tsx
-+++ b/frontend/src/pages/ProjectTasks.tsx
-@@ -5,17 +5,13 @@ import { Button } from '@/components/ui/button';
- import { Card, CardContent } from '@/components/ui/card';
- import {
-   AlertTriangle,
--  Cloud,
--  ExternalLink,
-   Plus,
--  Sparkles,
- } from 'lucide-react';
- import { Loader } from '@/components/ui/loader';
- import { tasksApi } from '@/lib/api';
- import type { RepoBranchStatus, Workspace } from 'shared/types';
- import { openTaskForm } from '@/lib/openTaskForm';
- import { FeatureShowcaseDialog } from '@/components/dialogs/global/FeatureShowcaseDialog';
--import { BetaWorkspacesDialog } from '@/components/dialogs/global/BetaWorkspacesDialog';
- import { showcases } from '@/config/showcases';
- import { useUserSystem } from '@/components/ConfigProvider';
- import { usePostHog } from 'posthog-js/react';
-@@ -72,7 +68,6 @@ import {
- } from '@/components/ui/breadcrumb';
- import { AttemptHeaderActions } from '@/components/panels/AttemptHeaderActions';
- import { TaskPanelHeaderActions } from '@/components/panels/TaskPanelHeaderActions';
--import { useSelectedOrgId } from '@/stores/useOrganizationStore';
- 
- import type { TaskWithAttemptStatus, TaskStatus } from 'shared/types';
- 
-@@ -149,11 +144,10 @@ export function ProjectTasks() {
- 
-   const {
-     projectId,
--    project,
-+    project: _project,
-     isLoading: projectLoading,
-     error: projectError,
-   } = useProject();
--  const selectedOrgId = useSelectedOrgId();
-   const hasShownMigrationDialogRef = useRef(false);
- 
-   useEffect(() => {
-@@ -215,17 +209,18 @@ export function ProjectTasks() {
-   ]);
- 
-   useEffect(() => {
-+    // Migration dialog disabled - always use old UI
-     if (!isLoaded) return;
-     if (hasShownMigrationDialogRef.current) return;
- 
-     hasShownMigrationDialogRef.current = true;
- 
--    BetaWorkspacesDialog.show().then((shouldMigrate) => {
--      BetaWorkspacesDialog.hide();
--      if (shouldMigrate === true) {
--        navigate('/migrate');
--      }
--    });
-+    // BetaWorkspacesDialog.show().then((shouldMigrate) => {
-+    //   BetaWorkspacesDialog.hide();
-+    //   if (shouldMigrate === true) {
-+    //     navigate('/migrate');
-+    //   }
-+    // });
-   }, [isLoaded, navigate]);
- 
-   const isLatest = attemptId === 'latest';
-@@ -906,6 +901,7 @@ export function ProjectTasks() {
-         </Alert>
-       )}
- 
-+      {/* Migration alert box disabled - always use old UI
-       <div className="mx-4 my-4 flex justify-center">
-         <div className="max-w-2xl w-full p-3 border border-orange-500/30 bg-orange-500/5 rounded flex items-center gap-4">
-           <div className="flex items-center gap-3 flex-1">
-@@ -961,6 +957,7 @@ export function ProjectTasks() {
-           )}
-         </div>
-       </div>
-+      */}
- 
-       <div className="flex-1 min-h-0">{attemptArea}</div>
-     </div>
 diff --git a/frontend/src/pages/ui-new/RootRedirectPage.tsx b/frontend/src/pages/ui-new/RootRedirectPage.tsx
-index aafec902..8fb2ff1e 100644
+index 1eaa23b7..8f5c4b16 100644
 --- a/frontend/src/pages/ui-new/RootRedirectPage.tsx
 +++ b/frontend/src/pages/ui-new/RootRedirectPage.tsx
-@@ -1,55 +1,6 @@
--import { useEffect, useState } from 'react';
- import { Navigate } from 'react-router-dom';
--import { useUserSystem } from '@/components/ConfigProvider';
--import { getFirstProjectDestination } from '@/lib/firstProjectDestination';
--import { useOrganizationStore } from '@/stores/useOrganizationStore';
--
--const DEFAULT_DESTINATION = '/workspaces/create';
- 
- export function RootRedirectPage() {
--  const { config, loading, loginStatus } = useUserSystem();
--  const setSelectedOrgId = useOrganizationStore((s) => s.setSelectedOrgId);
--  const [destination, setDestination] = useState<string | null>(null);
--
--  useEffect(() => {
--    let cancelled = false;
--
--    const resolveDestination = async () => {
--      if (loading || !config) {
--        return;
--      }
--
--      if (!config.remote_onboarding_acknowledged) {
--        setDestination('/onboarding');
--        return;
--      }
--
--      if (loginStatus?.status !== 'loggedin') {
--        setDestination(DEFAULT_DESTINATION);
--        return;
--      }
--
--      const firstProjectDestination =
--        await getFirstProjectDestination(setSelectedOrgId);
--      if (!cancelled) {
--        setDestination(firstProjectDestination ?? DEFAULT_DESTINATION);
--      }
--    };
--
--    void resolveDestination();
--
--    return () => {
--      cancelled = true;
--    };
--  }, [config, loading, loginStatus?.status, setSelectedOrgId]);
--
--  if (loading || !config || !destination) {
--    return (
--      <div className="h-screen bg-primary flex items-center justify-center">
--        <p className="text-low">Loading...</p>
--      </div>
--    );
--  }
--
--  return <Navigate to={destination} replace />;
-+  // Always redirect to the old UI at /local-projects
-+  return <Navigate to="/local-projects" replace />;
- }
--- 
-2.50.1
+@@ -4,7 +4,7 @@ import { useUserSystem } from '@/components/ConfigProvider';
+ import { getFirstProjectDestination } from '@/lib/firstProjectDestination';
+ import { useOrganizationStore } from '@/stores/useOrganizationStore';
 
+-const DEFAULT_DESTINATION = '/workspaces/create';
++const DEFAULT_DESTINATION = '/onboarding';
+
+ export function RootRedirectPage() {
+   const { config, loading, loginStatus } = useUserSystem();
+--
+2.50.1
