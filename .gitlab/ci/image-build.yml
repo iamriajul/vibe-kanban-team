@@ -24,10 +24,10 @@ build-image-release:
     - when: never
   before_script:
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
-    # Initialize submodules
+    # Initialize vibe-kanban-remote submodule only (for remote server builds)
     - apk add --no-cache git
-    - git submodule update --init --recursive
-    - scripts/apply-patches.sh
+    - git submodule update --init vibe-kanban-remote
+    - scripts/apply-patches.sh vibe-kanban-remote
   script:
     - |
       # Extract version from tag: remote-v0.1.2 -> 0.1.2
@@ -41,15 +41,15 @@ build-image-release:
       # Pull latest for cache
       docker pull $IMAGE_NAME:latest || true
 
-      # Build with release tag
+      # Build with release tag (using vibe-kanban-remote submodule)
       docker build \
         --cache-from $IMAGE_NAME:latest \
-        -f vibe-kanban/crates/remote/Dockerfile \
+        -f vibe-kanban-remote/crates/remote/Dockerfile \
         --build-arg FEATURES="${FEATURES:-}" \
         --build-arg POSTHOG_API_KEY="${POSTHOG_API_KEY:-}" \
         --build-arg POSTHOG_API_ENDPOINT="${POSTHOG_API_ENDPOINT:-}" \
         -t $IMAGE_NAME:$RELEASE_VERSION \
-        ./vibe-kanban
+        ./vibe-kanban-remote
 
       # Push release tag
       docker push $IMAGE_NAME:$RELEASE_VERSION

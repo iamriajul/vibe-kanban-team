@@ -14,40 +14,58 @@ It is not the upstream application source of truth.
 ## What This Repository Owns
 - `helm/vibe-kanban-cloud/`: Helm chart and chart defaults.
 - `k8s/`: cluster manifests and environment-specific Kubernetes resources.
-- `scripts/`: operational helpers (`apply-patches.sh`, `update-vibe-kanban.sh`, `deploy.sh`).
-- `patches/` and `patches/series`: downstream patch architecture.
+- `scripts/`: operational helpers (`apply-patches.sh`, `update-vibe-kanban.sh`, `update-vibe-kanban-remote.sh`, `deploy.sh`).
+- `patches/`: downstream patch architecture with subdirectories:
+  - `patches/common/`: patches for both submodules
+  - `patches/frontend/`: NPM package-specific patches
+  - `patches/remote/`: remote server-specific patches
 - `.gitlab-ci.yml` and `.gitlab/ci/`: build/release pipeline behavior.
-- `vibe-kanban/` submodule pointer (which upstream commit/tag we track).
+- `vibe-kanban/` submodule pointer (NPM package, frozen at v0.1.14)
+- `vibe-kanban-remote/` submodule pointer (remote server, tracks latest upstream)
 
 ## What This Repository Does Not Own
 - Upstream implementation policy for backend/frontend internals.
 - Upstream coding conventions beyond what is required to produce a downstream patch.
 
-If work must happen inside `vibe-kanban/`, use `vibe-kanban/AGENTS.md` for
-implementation guidance there, then return to this repo workflow to persist
-changes as patch files.
+If work must happen inside `vibe-kanban/` or `vibe-kanban-remote/`, use their
+respective `AGENTS.md` files for implementation guidance, then return to this
+repo workflow to persist changes as patch files in the appropriate directory.
 
 ## Agent Operating Model
 1. Treat this repo as deployment/integration first.
 2. Prefer edits in `helm/`, `k8s/`, `scripts/`, CI config, docs, and `patches/`.
-3. Use `vibe-kanban/` direct edits only as an intermediate step to generate/update patches.
+3. Use submodule direct edits (`vibe-kanban/` or `vibe-kanban-remote/`) only as intermediate steps to generate/update patches.
 4. Never leave durable behavior changes only in submodule working tree state.
 5. Keep downstream patch stack small, explicit, and reproducible.
+6. See [ARCHITECTURE.md](./ARCHITECTURE.md) for dual submodule design rationale.
 
 ## Mandatory Patch Architecture
-Downstream app behavior changes must be represented in `patches/*.patch` and
-ordered in `patches/series`.
+Downstream app behavior changes must be represented as patches organized by target:
+- `patches/common/` - patches for both submodules
+- `patches/frontend/` - patches for NPM package (`vibe-kanban/`)
+- `patches/remote/` - patches for remote server (`vibe-kanban-remote/`)
 
 CI expectation:
-- patch series is applied to `vibe-kanban/` before image build.
+- Frontend patches applied to `vibe-kanban/` before NPM publish
+- Remote patches applied to `vibe-kanban-remote/` before Docker image build
 
 Required workflow for app behavior changes:
-1. Make the code change in `vibe-kanban/`.
-2. Commit in submodule (local temporary commit is acceptable for patch export).
-3. Export patch: `git -C vibe-kanban format-patch -1 -o ../patches`.
-4. Add/update filename in `patches/series` in exact apply order.
-5. Validate: `scripts/apply-patches.sh`.
-6. Commit patch artifacts in this repo (`patches/*`, `patches/series`, and related deployment changes).
+
+**For frontend/NPM changes:**
+1. Make code changes in `vibe-kanban/`.
+2. Commit in submodule (local temporary commit is acceptable).
+3. Export patch: `git -C vibe-kanban format-patch -1 -o ../patches/frontend/`.
+4. Add filename to `patches/frontend/series` in apply order.
+5. Validate: `scripts/apply-patches.sh vibe-kanban`.
+6. Commit patch artifacts in this repo.
+
+**For remote server changes:**
+1. Make code changes in `vibe-kanban-remote/`.
+2. Commit in submodule (local temporary commit is acceptable).
+3. Export patch: `git -C vibe-kanban-remote format-patch -1 -o ../patches/remote/`.
+4. Add filename to `patches/remote/series` in apply order.
+5. Validate: `scripts/apply-patches.sh vibe-kanban-remote`.
+6. Commit patch artifacts in this repo.
 
 ## Common Repository Workflows
 
@@ -56,29 +74,42 @@ Required workflow for app behavior changes:
 - Validate rendered/manifests or command syntax as appropriate.
 - Commit only downstream deployment/integration files.
 
-### 2) Upstream version bump
-- Update submodule ref: `scripts/update-vibe-kanban.sh <tag-or-commit>`.
-- Re-apply/refresh downstream patch stack.
-- Ensure `patches/series` still applies cleanly and in order.
+### 2) Upstream version bump (frontend/NPM)
+- Update submodule: `scripts/update-vibe-kanban.sh <tag-or-commit>`.
+- Re-apply frontend patches: `scripts/apply-patches.sh vibe-kanban`.
+- Ensure `patches/frontend/series` still applies cleanly.
 - Commit updated submodule pointer plus any patch refresh.
 
-### 3) Downstream app behavior change
-- Implement in `vibe-kanban/` only to generate patch artifacts.
-- Persist final change in `patches/` and `patches/series`.
-- Verify patch application with `scripts/apply-patches.sh`.
+### 3) Upstream version bump (remote server)
+- Update submodule: `scripts/update-vibe-kanban-remote.sh <tag-or-commit>`.
+- Re-apply remote patches: `scripts/apply-patches.sh vibe-kanban-remote`.
+- Ensure `patches/remote/series` still applies cleanly.
+- Commit updated submodule pointer plus any patch refresh.
+
+### 4) Downstream app behavior change
+- Implement in appropriate submodule to generate patch artifacts.
+- Persist in `patches/frontend/` or `patches/remote/` with updated series file.
+- Verify patch application with `scripts/apply-patches.sh <submodule>`.
 
 ## Build, Test, and Deployment Commands
 Run from repository root unless noted.
 
-- `scripts/apply-patches.sh`: apply `patches/series` onto submodule.
-- `scripts/update-vibe-kanban.sh <tag-or-commit>`: move submodule to target upstream ref.
-- `scripts/deploy.sh <commit-sha>`: deploy specific image tag.
-- `helm upgrade --install vibe-kanban ./helm/vibe-kanban-cloud -n vibe-kanban-cloud -f values-production.yaml`: deploy/update chart.
+**Patch management:**
+- `scripts/apply-patches.sh vibe-kanban`: apply frontend patches
+- `scripts/apply-patches.sh vibe-kanban-remote`: apply remote server patches
 
-When patching app code, useful upstream checks are run from `vibe-kanban/`:
-- `pnpm run lint`
-- `pnpm run check`
-- `cargo test --workspace`
+**Submodule updates:**
+- `scripts/update-vibe-kanban.sh <tag>`: update NPM package submodule
+- `scripts/update-vibe-kanban-remote.sh <tag>`: update remote server submodule
+
+**Deployment:**
+- `scripts/deploy.sh <commit-sha>`: deploy specific image tag
+- `helm upgrade --install vibe-kanban ./helm/vibe-kanban-cloud -n vibe-kanban-cloud -f values-production.yaml`: deploy/update chart
+
+**Testing (run from appropriate submodule):**
+- `pnpm run lint` - from `vibe-kanban/` or `vibe-kanban-remote/`
+- `pnpm run check` - from `vibe-kanban/` or `vibe-kanban-remote/`
+- `cargo test --workspace` - from `vibe-kanban/` or `vibe-kanban-remote/`
 
 ## Commit and PR Expectations
 - Use Conventional Commits (`fix:`, `feat:`, `docs:`, `ci:`, `chore:`).
