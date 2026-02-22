@@ -1,3 +1,6 @@
 [submodule "vibe-kanban"]
 	path = vibe-kanban
 	url = https://github.com/BloopAI/vibe-kanban.git
+[submodule "vibe-kanban-remote"]
+	path = vibe-kanban-remote
+	url = https://github.com/BloopAI/vibe-kanban.git
