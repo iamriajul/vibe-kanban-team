@@ -57,8 +57,10 @@ publish-npm-release:
       LIBCLANG_SO="$(find /usr/lib -name 'libclang.so*' -print -quit 2>/dev/null || true)"
       test -n "${LIBCLANG_SO}"
       export LIBCLANG_PATH="$(dirname "${LIBCLANG_SO}")"
-    # Initialize submodules
-    - git submodule update --init --recursive
+    # Initialize vibe-kanban submodule only (for NPM package builds)
+    - git submodule update --init vibe-kanban
+    # Apply frontend patches
+    - ./scripts/apply-patches.sh vibe-kanban
   script:
     # Extract version from tag (remove 'v' prefix if present)
     - |
