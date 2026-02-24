@@ -1,2 +1,3 @@
 # Remote server-specific patches (applied to vibe-kanban-remote/ submodule only)
 # Patch 0003 removed - template IDs already updated in upstream v0.1.18
+0001-feat-remote-use-R2-for-attachment-storage.patch
