@@ -28,15 +28,11 @@ This repository uses different tag prefixes for different release types:
 Builds and publishes Docker images for the Vibe Kanban Remote Server.
 
 **Triggers:**
-- On `main` branch when relevant files change:
-  - Submodule changes (`vibe-kanban`, `.gitmodules`)
-  - Patches (`patches/**/*`, `scripts/apply-patches.sh`)
-  - Pipeline configs (`.gitlab/ci/image-build.yml`, `.gitlab-ci.yml`)
 - On release tags starting with `remote-` (e.g., `remote-v0.1.2`)
 
 **Outputs:**
-- Docker image tagged with commit SHA and `latest` (for main branch)
-- Docker image tagged with version for release tags (e.g., `0.1.2` from `remote-v0.1.2`)
+- Docker image tagged with version (e.g., `0.1.2` from `remote-v0.1.2`)
+- Docker image tagged with `latest`
 - Helm chart packaged and published to GitLab registry
 
 ### 2. NPM Publish (`npm-publish.yml`)

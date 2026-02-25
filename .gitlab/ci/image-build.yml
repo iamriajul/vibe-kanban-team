@@ -41,7 +41,7 @@ build-image-release:
       # Pull latest for cache
       docker pull $IMAGE_NAME:latest || true
 
-      # Build with release tag (using vibe-kanban-remote submodule)
+      # Build and tag both release version and latest (using vibe-kanban-remote submodule)
       docker build \
         --cache-from $IMAGE_NAME:latest \
         -f vibe-kanban-remote/crates/remote/Dockerfile \
@@ -49,12 +49,14 @@ build-image-release:
         --build-arg POSTHOG_API_KEY="${POSTHOG_API_KEY:-}" \
         --build-arg POSTHOG_API_ENDPOINT="${POSTHOG_API_ENDPOINT:-}" \
         -t $IMAGE_NAME:$RELEASE_VERSION \
+        -t $IMAGE_NAME:latest \
         ./vibe-kanban-remote
 
-      # Push release tag
+      # Push both release and latest tags
       docker push $IMAGE_NAME:$RELEASE_VERSION
+      docker push $IMAGE_NAME:latest
 
-      echo "Release image pushed: $IMAGE_NAME:$RELEASE_VERSION"
+      echo "Release images pushed: $IMAGE_NAME:$RELEASE_VERSION and $IMAGE_NAME:latest"
   tags:
     - docker
 

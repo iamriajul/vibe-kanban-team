@@ -291,7 +291,7 @@ The CI/CD pipeline builds the Docker image and pushes it to the GitLab registry.
 ### Image Output
 
 After a successful build:
-- `$CI_REGISTRY_IMAGE/vibe-kanban-remote:$CI_COMMIT_SHA`
+- `$CI_REGISTRY_IMAGE/vibe-kanban-remote:<release-version>`
 - `$CI_REGISTRY_IMAGE/vibe-kanban-remote:latest`
 
 The Helm chart defaults to the chart `appVersion` (which is `latest` on main). To pin a specific build, set `image.tag` or install a chart release with `--version`.
