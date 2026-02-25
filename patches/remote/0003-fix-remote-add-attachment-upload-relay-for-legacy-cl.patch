@@ -1,15 +1,15 @@
-From 9809a5eee5ec869faefe5f333a7fde7a9ae1bb8f Mon Sep 17 00:00:00 2001
+From f2579649965e4cfc42d735b76e116d07d205232b Mon Sep 17 00:00:00 2001
 From: Riajul Islam <kmriajulislami@gmail.com>
 Date: Wed, 25 Feb 2026 12:01:31 +0600
 Subject: [PATCH] fix(remote): add attachment upload relay for legacy clients
 
 ---
- crates/remote/src/routes/attachments.rs | 65 ++++++++++++++++++++++---
+ crates/remote/src/routes/attachments.rs | 81 ++++++++++++++++++++++---
  crates/remote/src/routes/mod.rs         |  1 +
- 2 files changed, 58 insertions(+), 8 deletions(-)
+ 2 files changed, 74 insertions(+), 8 deletions(-)
 
 diff --git a/crates/remote/src/routes/attachments.rs b/crates/remote/src/routes/attachments.rs
-index d215a5562..4a1a88c67 100644
+index d215a5562..1f538d846 100644
 --- a/crates/remote/src/routes/attachments.rs
 +++ b/crates/remote/src/routes/attachments.rs
 @@ -1,9 +1,10 @@
@@ -36,7 +36,7 @@ index d215a5562..4a1a88c67 100644
  #[derive(Debug, Serialize, Deserialize, TS)]
  #[ts(export)]
  pub struct InitUploadRequest {
-@@ -179,29 +184,69 @@ async fn init_upload(
+@@ -179,29 +184,85 @@ async fn init_upload(
          }));
      }
  
@@ -103,7 +103,23 @@ index d215a5562..4a1a88c67 100644
 +        .to_string();
 +
 +    let r2 = state.r2().ok_or(RouteError::NotConfigured)?;
-+    r2.upload_blob(&pending.blob_path, body.to_vec(), content_type).await?;
++    let upload = r2.create_upload_url(&pending.blob_path, None).await?;
++    let response = state
++        .http_client
++        .put(upload.upload_url)
++        .header(header::CONTENT_TYPE, content_type)
++        .body(body.to_vec())
++        .send()
++        .await
++        .map_err(|e| RouteError::R2(R2Error::Upload(format!("relay upload request failed: {e}"))))?;
++
++    if !response.status().is_success() {
++        let status = response.status();
++        let body = response.text().await.unwrap_or_default();
++        return Err(RouteError::R2(R2Error::Upload(format!(
++            "relay upload failed with status {status}: {body}"
++        ))));
++    }
 +
 +    // Keep legacy client compatibility: existing uploader treats 201 as success.
 +    Ok(StatusCode::CREATED)
@@ -112,7 +128,7 @@ index d215a5562..4a1a88c67 100644
  #[instrument(name = "attachments.confirm_upload", skip(state, ctx, payload), fields(project_id = %payload.project_id, user_id = %ctx.user.id))]
  async fn confirm_upload(
      State(state): State<AppState>,
-@@ -232,6 +277,10 @@ async fn confirm_upload(
+@@ -232,6 +293,10 @@ async fn confirm_upload(
              .await?
              .ok_or(RouteError::UploadNotFound)?;
  
