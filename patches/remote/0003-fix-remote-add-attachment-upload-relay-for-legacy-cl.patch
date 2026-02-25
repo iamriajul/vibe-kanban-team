@@ -1,15 +1,139 @@
-From 36d417f43a2daec2045bd6c8f7521e3616a59574 Mon Sep 17 00:00:00 2001
+From 9f3a93b194b05ae557e7af04c84b30e66834296f Mon Sep 17 00:00:00 2001
 From: Riajul Islam <kmriajulislami@gmail.com>
 Date: Wed, 25 Feb 2026 12:01:31 +0600
 Subject: [PATCH] fix(remote): add attachment upload relay for legacy clients
 
 ---
- crates/remote/src/routes/attachments.rs | 157 +++++++++++++++++++++---
- crates/remote/src/routes/mod.rs         |   1 +
- 2 files changed, 144 insertions(+), 14 deletions(-)
+ crates/remote/Cargo.toml                |  2 +-
+ crates/remote/src/r2.rs                 | 33 +++++++----
+ crates/remote/src/routes/attachments.rs | 73 +++++++++++++++++++++----
+ crates/remote/src/routes/mod.rs         |  1 +
+ 4 files changed, 88 insertions(+), 21 deletions(-)
 
+diff --git a/crates/remote/Cargo.toml b/crates/remote/Cargo.toml
+index 255ef304a..453c2b24d 100644
+--- a/crates/remote/Cargo.toml
++++ b/crates/remote/Cargo.toml
+@@ -50,7 +50,7 @@ hex = "0.4"
+ urlencoding = "2.1"
+ url = "2.5"
+ base64 = "0.22"
+-aws-sdk-s3 = { version = "1.65", default-features = false, features = ["behavior-version-latest", "rt-tokio"] }
++aws-sdk-s3 = { version = "1.65", default-features = false, features = ["behavior-version-latest", "rt-tokio", "rustls", "default-https-client"] }
+ aws-credential-types = "1.2"
+ azure_core = "0.31"
+ azure_storage_blob = "0.8"
+diff --git a/crates/remote/src/r2.rs b/crates/remote/src/r2.rs
+index 135f6bd36..659abf58e 100644
+--- a/crates/remote/src/r2.rs
++++ b/crates/remote/src/r2.rs
+@@ -1,4 +1,4 @@
+-use std::time::Duration;
++use std::{error::Error as StdError, time::Duration};
+ 
+ use aws_credential_types::Credentials;
+ use aws_sdk_s3::{
+@@ -56,6 +56,19 @@ pub enum R2Error {
+     Storage(String),
+ }
+ 
++fn format_error_chain<E: StdError>(err: &E) -> String {
++    let mut message = err.to_string();
++    let mut source = err.source();
++
++    while let Some(cause) = source {
++        message.push_str(": ");
++        message.push_str(&cause.to_string());
++        source = cause.source();
++    }
++
++    message
++}
++
+ impl R2Service {
+     pub fn new(config: &R2Config) -> Self {
+         let credentials = Credentials::new(
+@@ -113,7 +126,7 @@ impl R2Service {
+         let presigned = request
+             .presigned(presigning_config)
+             .await
+-            .map_err(|e| R2Error::Presign(e.to_string()))?;
++            .map_err(|e| R2Error::Presign(format_error_chain(&e)))?;
+ 
+         let expires_at = Utc::now()
+             + chrono::Duration::from_std(self.presign_expiry).unwrap_or(chrono::Duration::hours(1));
+@@ -149,7 +162,7 @@ impl R2Service {
+         let presigned = request
+             .presigned(presigning_config)
+             .await
+-            .map_err(|e| R2Error::Presign(e.to_string()))?;
++            .map_err(|e| R2Error::Presign(format_error_chain(&e)))?;
+ 
+         let expires_at = Utc::now()
+             + chrono::Duration::from_std(self.presign_expiry).unwrap_or(chrono::Duration::hours(1));
+@@ -174,7 +187,7 @@ impl R2Service {
+             .key(blob_path)
+             .presigned(presigning_config)
+             .await
+-            .map_err(|e| R2Error::Presign(e.to_string()))?;
++            .map_err(|e| R2Error::Presign(format_error_chain(&e)))?;
+ 
+         Ok(presigned.uri().to_string())
+     }
+@@ -187,7 +200,7 @@ impl R2Service {
+             .key(blob_path)
+             .send()
+             .await
+-            .map_err(|e| R2Error::Storage(e.to_string()))?;
++            .map_err(|e| R2Error::Storage(format_error_chain(&e)))?;
+ 
+         Ok(BlobProperties {
+             content_length: output.content_length().unwrap_or(0),
+@@ -202,13 +215,13 @@ impl R2Service {
+             .key(blob_path)
+             .send()
+             .await
+-            .map_err(|e| R2Error::Storage(e.to_string()))?;
++            .map_err(|e| R2Error::Storage(format_error_chain(&e)))?;
+ 
+         let body = output
+             .body
+             .collect()
+             .await
+-            .map_err(|e| R2Error::Storage(e.to_string()))?;
++            .map_err(|e| R2Error::Storage(format_error_chain(&e)))?;
+ 
+         Ok(body.into_bytes().to_vec())
+     }
+@@ -227,7 +240,7 @@ impl R2Service {
+             .content_type(content_type)
+             .send()
+             .await
+-            .map_err(|e| R2Error::Upload(e.to_string()))?;
++            .map_err(|e| R2Error::Upload(format_error_chain(&e)))?;
+ 
+         Ok(())
+     }
+@@ -239,7 +252,7 @@ impl R2Service {
+             .key(blob_path)
+             .send()
+             .await
+-            .map_err(|e| R2Error::Storage(e.to_string()))?;
++            .map_err(|e| R2Error::Storage(format_error_chain(&e)))?;
+ 
+         Ok(())
+     }
+@@ -259,7 +272,7 @@ impl R2Service {
+             .content_type("application/gzip")
+             .send()
+             .await
+-            .map_err(|e| R2Error::Upload(e.to_string()))?;
++            .map_err(|e| R2Error::Upload(format_error_chain(&e)))?;
+ 
+         Ok(folder_path)
+     }
 diff --git a/crates/remote/src/routes/attachments.rs b/crates/remote/src/routes/attachments.rs
-index d215a5562..d2f7e3a69 100644
+index d215a5562..219d7d4c2 100644
 --- a/crates/remote/src/routes/attachments.rs
 +++ b/crates/remote/src/routes/attachments.rs
 @@ -1,9 +1,10 @@
@@ -36,7 +160,7 @@ index d215a5562..d2f7e3a69 100644
  #[derive(Debug, Serialize, Deserialize, TS)]
  #[ts(export)]
  pub struct InitUploadRequest {
-@@ -179,29 +184,85 @@ async fn init_upload(
+@@ -179,29 +184,70 @@ async fn init_upload(
          }));
      }
  
@@ -103,23 +227,8 @@ index d215a5562..d2f7e3a69 100644
 +        .to_string();
 +
 +    let r2 = state.r2().ok_or(RouteError::NotConfigured)?;
-+    let upload = r2.create_upload_url(&pending.blob_path, None).await?;
-+    let response = state
-+        .http_client
-+        .put(upload.upload_url)
-+        .header(header::CONTENT_TYPE, content_type)
-+        .body(body.to_vec())
-+        .send()
-+        .await
-+        .map_err(|e| RouteError::R2(R2Error::Upload(format!("relay upload request failed: {e}"))))?;
-+
-+    if !response.status().is_success() {
-+        let status = response.status();
-+        let body = response.text().await.unwrap_or_default();
-+        return Err(RouteError::R2(R2Error::Upload(format!(
-+            "relay upload failed with status {status}: {body}"
-+        ))));
-+    }
++    r2.upload_blob(&pending.blob_path, body.to_vec(), content_type)
++        .await?;
 +
 +    // Keep legacy client compatibility: existing uploader treats 201 as success.
 +    Ok(StatusCode::CREATED)
@@ -128,102 +237,29 @@ index d215a5562..d2f7e3a69 100644
  #[instrument(name = "attachments.confirm_upload", skip(state, ctx, payload), fields(project_id = %payload.project_id, user_id = %ctx.user.id))]
  async fn confirm_upload(
      State(state): State<AppState>,
-@@ -232,15 +293,59 @@ async fn confirm_upload(
+@@ -232,8 +278,11 @@ async fn confirm_upload(
              .await?
              .ok_or(RouteError::UploadNotFound)?;
  
+-        let blob_path = &pending.blob_path;
 +        if pending.expires_at < Utc::now() {
 +            return Err(RouteError::UploadNotFound);
 +        }
-+
-         let blob_path = &pending.blob_path;
  
--        let props = r2.get_blob_properties(blob_path).await?;
--        if props.content_length > MAX_FILE_SIZE {
--            let _ = r2.delete_blob(blob_path).await;
-+        let read_url = r2.create_read_url(blob_path).await?;
-+        let head_response = state
-+            .http_client
-+            .head(&read_url)
-+            .send()
-+            .await
-+            .map_err(|e| RouteError::R2(R2Error::Storage(format!("relay head request failed: {e}"))))?;
-+
-+        if !head_response.status().is_success() {
-+            let status = head_response.status();
-+            let body = head_response.text().await.unwrap_or_default();
-+            return Err(RouteError::R2(R2Error::Storage(format!(
-+                "relay head failed with status {status}: {body}"
-+            ))));
-+        }
-+
-+        let content_length = head_response
-+            .headers()
-+            .get(header::CONTENT_LENGTH)
-+            .and_then(|v| v.to_str().ok())
-+            .and_then(|v| v.parse::<i64>().ok())
-+            .unwrap_or(0);
-+
-+        if content_length > MAX_FILE_SIZE {
-             return Err(RouteError::FileTooLarge);
-         }
- 
--        let blob_data = r2.download_blob(blob_path).await?;
-+        let download_response = state
-+            .http_client
-+            .get(&read_url)
-+            .send()
-+            .await
-+            .map_err(|e| RouteError::R2(R2Error::Storage(format!("relay download request failed: {e}"))))?;
-+
-+        if !download_response.status().is_success() {
-+            let status = download_response.status();
-+            let body = download_response.text().await.unwrap_or_default();
-+            return Err(RouteError::R2(R2Error::Storage(format!(
-+                "relay download failed with status {status}: {body}"
-+            ))));
-+        }
-+
-+        let blob_data = download_response
-+            .bytes()
-+            .await
-+            .map_err(|e| RouteError::R2(R2Error::Storage(format!("relay download body read failed: {e}"))))?
-+            .to_vec();
-         let thumbnail_result = ThumbnailService::generate(&blob_data, payload.content_type.as_deref())
-             .map_err(|e| RouteError::ThumbnailError(e.to_string()))?;
- 
-@@ -249,8 +354,32 @@ async fn confirm_upload(
-         let (thumbnail_blob_path, width, height) = match thumbnail_result {
++        let blob_path = &pending.blob_path;
+         let props = r2.get_blob_properties(blob_path).await?;
+         if props.content_length > MAX_FILE_SIZE {
+             let _ = r2.delete_blob(blob_path).await;
+@@ -250,7 +299,11 @@ async fn confirm_upload(
              Some(thumb) => {
                  let thumb_path = format!("thumbnails/{}", blob_path);
--                r2.upload_blob(&thumb_path, thumb.bytes, thumb.mime_type).await?;
+                 r2.upload_blob(&thumb_path, thumb.bytes, thumb.mime_type).await?;
 -                (Some(thumb_path), Some(thumb.original_width as i32), Some(thumb.original_height as i32))
-+                let thumb_width = thumb.original_width as i32;
-+                let thumb_height = thumb.original_height as i32;
-+                let mime_type = thumb.mime_type;
-+                let upload = r2.create_upload_url(&thumb_path, Some(&mime_type)).await?;
-+                let response = state
-+                    .http_client
-+                    .put(upload.upload_url)
-+                    .header(header::CONTENT_TYPE, mime_type)
-+                    .body(thumb.bytes)
-+                    .send()
-+                    .await
-+                    .map_err(|e| {
-+                        RouteError::R2(R2Error::Upload(format!(
-+                            "relay thumbnail upload request failed: {e}"
-+                        )))
-+                    })?;
-+
-+                if !response.status().is_success() {
-+                    let status = response.status();
-+                    let body = response.text().await.unwrap_or_default();
-+                    return Err(RouteError::R2(R2Error::Upload(format!(
-+                        "relay thumbnail upload failed with status {status}: {body}"
-+                    ))));
-+                }
-+
-+                (Some(thumb_path), Some(thumb_width), Some(thumb_height))
++                (
++                    Some(thumb_path),
++                    Some(thumb.original_width as i32),
++                    Some(thumb.original_height as i32),
++                )
              }
              None => (None, None, None),
          };
