@@ -1,14 +1,15 @@
-From c965743781f547d7de462c9c58ff405df51a62bd Mon Sep 17 00:00:00 2001
+From 9809a5eee5ec869faefe5f333a7fde7a9ae1bb8f Mon Sep 17 00:00:00 2001
 From: Riajul Islam <kmriajulislami@gmail.com>
-Date: Wed, 25 Feb 2026 11:44:22 +0600
+Date: Wed, 25 Feb 2026 12:01:31 +0600
 Subject: [PATCH] fix(remote): add attachment upload relay for legacy clients
 
 ---
- crates/remote/src/routes/attachments.rs | 67 ++++++++++++++++++++++---
- 1 file changed, 59 insertions(+), 8 deletions(-)
+ crates/remote/src/routes/attachments.rs | 65 ++++++++++++++++++++++---
+ crates/remote/src/routes/mod.rs         |  1 +
+ 2 files changed, 58 insertions(+), 8 deletions(-)
 
 diff --git a/crates/remote/src/routes/attachments.rs b/crates/remote/src/routes/attachments.rs
-index d215a5562..abbea6a99 100644
+index d215a5562..4a1a88c67 100644
 --- a/crates/remote/src/routes/attachments.rs
 +++ b/crates/remote/src/routes/attachments.rs
 @@ -1,9 +1,10 @@
@@ -24,15 +25,18 @@ index d215a5562..abbea6a99 100644
  };
  use chrono::{DateTime, Utc};
  use serde::{Deserialize, Serialize};
-@@ -27,6 +28,7 @@ use crate::{
- pub fn router() -> Router<AppState> {
-     Router::new()
-         .route("/attachments/init", post(init_upload))
-+        .route("/attachments/upload/{upload_id}", put(upload_pending_upload))
-         .route("/attachments/confirm", post(confirm_upload))
-         .route("/attachments/{id}/file", get(get_attachment_file))
-         .route("/attachments/{id}/thumbnail", get(get_attachment_thumbnail))
-@@ -179,29 +181,74 @@ async fn init_upload(
+@@ -37,6 +38,10 @@ pub fn router() -> Router<AppState> {
+         .route("/comments/{comment_id}/attachments/commit", post(commit_comment_attachments))
+ }
+ 
++pub fn public_router() -> Router<AppState> {
++    Router::new().route("/attachments/upload/{upload_id}", put(upload_pending_upload))
++}
++
+ #[derive(Debug, Serialize, Deserialize, TS)]
+ #[ts(export)]
+ pub struct InitUploadRequest {
+@@ -179,29 +184,69 @@ async fn init_upload(
          }));
      }
  
@@ -72,10 +76,9 @@ index d215a5562..abbea6a99 100644
      }))
  }
  
-+#[instrument(name = "attachments.upload_pending", skip(state, ctx, headers, body), fields(upload_id = %upload_id, user_id = %ctx.user.id))]
++#[instrument(name = "attachments.upload_pending", skip(state, headers, body), fields(upload_id = %upload_id))]
 +async fn upload_pending_upload(
 +    State(state): State<AppState>,
-+    Extension(ctx): Extension<RequestContext>,
 +    Path(upload_id): Path<Uuid>,
 +    headers: HeaderMap,
 +    body: Bytes,
@@ -92,10 +95,6 @@ index d215a5562..abbea6a99 100644
 +        return Err(RouteError::UploadNotFound);
 +    }
 +
-+    ensure_project_access(state.pool(), ctx.user.id, pending.project_id)
-+        .await
-+        .map_err(|_| RouteError::AccessDenied)?;
-+
 +    let content_type = headers
 +        .get(header::CONTENT_TYPE)
 +        .and_then(|v| v.to_str().ok())
@@ -106,14 +105,14 @@ index d215a5562..abbea6a99 100644
 +    let r2 = state.r2().ok_or(RouteError::NotConfigured)?;
 +    r2.upload_blob(&pending.blob_path, body.to_vec(), content_type).await?;
 +
-+    // Preserve legacy client expectation (Azure-style 201 on successful upload).
++    // Keep legacy client compatibility: existing uploader treats 201 as success.
 +    Ok(StatusCode::CREATED)
 +}
 +
  #[instrument(name = "attachments.confirm_upload", skip(state, ctx, payload), fields(project_id = %payload.project_id, user_id = %ctx.user.id))]
  async fn confirm_upload(
      State(state): State<AppState>,
-@@ -232,6 +279,10 @@ async fn confirm_upload(
+@@ -232,6 +277,10 @@ async fn confirm_upload(
              .await?
              .ok_or(RouteError::UploadNotFound)?;
  
@@ -124,6 +123,18 @@ index d215a5562..abbea6a99 100644
          let blob_path = &pending.blob_path;
  
          let props = r2.get_blob_properties(blob_path).await?;
+diff --git a/crates/remote/src/routes/mod.rs b/crates/remote/src/routes/mod.rs
+index 2b778cfe1..e83da8b65 100644
+--- a/crates/remote/src/routes/mod.rs
++++ b/crates/remote/src/routes/mod.rs
+@@ -105,6 +105,7 @@ pub fn router(state: AppState) -> Router {
+         .merge(oauth::public_router())
+         .merge(organization_members::public_router())
+         .merge(tokens::public_router())
++        .merge(attachments::public_router())
+         .merge(review::public_router())
+         .merge(github_app::public_router())
+         .merge(billing::public_router());
 -- 
 2.50.1 (Apple Git-155)
 
