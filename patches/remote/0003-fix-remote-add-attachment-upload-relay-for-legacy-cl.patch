@@ -1,0 +1,129 @@
+From c965743781f547d7de462c9c58ff405df51a62bd Mon Sep 17 00:00:00 2001
+From: Riajul Islam <kmriajulislami@gmail.com>
+Date: Wed, 25 Feb 2026 11:44:22 +0600
+Subject: [PATCH] fix(remote): add attachment upload relay for legacy clients
+
+---
+ crates/remote/src/routes/attachments.rs | 67 ++++++++++++++++++++++---
+ 1 file changed, 59 insertions(+), 8 deletions(-)
+
+diff --git a/crates/remote/src/routes/attachments.rs b/crates/remote/src/routes/attachments.rs
+index d215a5562..abbea6a99 100644
+--- a/crates/remote/src/routes/attachments.rs
++++ b/crates/remote/src/routes/attachments.rs
+@@ -1,9 +1,10 @@
+ use axum::{
+     Json, Router,
++    body::Bytes,
+     extract::{Extension, Path, State},
+-    http::StatusCode,
++    http::{HeaderMap, StatusCode, header},
+     response::{IntoResponse, Response},
+-    routing::{delete, get, post},
++    routing::{delete, get, post, put},
+ };
+ use chrono::{DateTime, Utc};
+ use serde::{Deserialize, Serialize};
+@@ -27,6 +28,7 @@ use crate::{
+ pub fn router() -> Router<AppState> {
+     Router::new()
+         .route("/attachments/init", post(init_upload))
++        .route("/attachments/upload/{upload_id}", put(upload_pending_upload))
+         .route("/attachments/confirm", post(confirm_upload))
+         .route("/attachments/{id}/file", get(get_attachment_file))
+         .route("/attachments/{id}/thumbnail", get(get_attachment_thumbnail))
+@@ -179,29 +181,74 @@ async fn init_upload(
+         }));
+     }
+ 
+-    let r2 = state.r2().ok_or(RouteError::NotConfigured)?;
++    state.r2().ok_or(RouteError::NotConfigured)?;
+     let sanitized_filename = sanitize_filename(&payload.filename);
+     let blob_path = format!("attachments/{}/{}_{}", payload.project_id, Uuid::new_v4(), sanitized_filename);
+-    let upload = r2.create_upload_url(&blob_path, None).await?;
++
++    let expires_at = Utc::now() + chrono::Duration::minutes(5);
+ 
+     let pending = PendingUploadRepository::create(
+         state.pool(),
+         payload.project_id,
+-        upload.blob_path,
++        blob_path,
+         payload.hash.clone(),
+-        upload.expires_at,
++        expires_at,
+     )
+     .await?;
+ 
++    let upload_url = format!(
++        "{}/v1/attachments/upload/{}",
++        state.server_public_base_url.trim_end_matches('/'),
++        pending.id
++    );
++
+     Ok(Json(InitUploadResponse {
+-        upload_url: upload.upload_url,
++        upload_url,
+         upload_id: pending.id,
+-        expires_at: upload.expires_at,
++        expires_at,
+         skip_upload: false,
+         existing_blob_id: None,
+     }))
+ }
+ 
++#[instrument(name = "attachments.upload_pending", skip(state, ctx, headers, body), fields(upload_id = %upload_id, user_id = %ctx.user.id))]
++async fn upload_pending_upload(
++    State(state): State<AppState>,
++    Extension(ctx): Extension<RequestContext>,
++    Path(upload_id): Path<Uuid>,
++    headers: HeaderMap,
++    body: Bytes,
++) -> Result<StatusCode, RouteError> {
++    if body.len() as i64 > MAX_FILE_SIZE {
++        return Err(RouteError::FileTooLarge);
++    }
++
++    let pending = PendingUploadRepository::find_by_id(state.pool(), upload_id)
++        .await?
++        .ok_or(RouteError::UploadNotFound)?;
++
++    if pending.expires_at < Utc::now() {
++        return Err(RouteError::UploadNotFound);
++    }
++
++    ensure_project_access(state.pool(), ctx.user.id, pending.project_id)
++        .await
++        .map_err(|_| RouteError::AccessDenied)?;
++
++    let content_type = headers
++        .get(header::CONTENT_TYPE)
++        .and_then(|v| v.to_str().ok())
++        .filter(|v| !v.is_empty())
++        .unwrap_or("application/octet-stream")
++        .to_string();
++
++    let r2 = state.r2().ok_or(RouteError::NotConfigured)?;
++    r2.upload_blob(&pending.blob_path, body.to_vec(), content_type).await?;
++
++    // Preserve legacy client expectation (Azure-style 201 on successful upload).
++    Ok(StatusCode::CREATED)
++}
++
+ #[instrument(name = "attachments.confirm_upload", skip(state, ctx, payload), fields(project_id = %payload.project_id, user_id = %ctx.user.id))]
+ async fn confirm_upload(
+     State(state): State<AppState>,
+@@ -232,6 +279,10 @@ async fn confirm_upload(
+             .await?
+             .ok_or(RouteError::UploadNotFound)?;
+ 
++        if pending.expires_at < Utc::now() {
++            return Err(RouteError::UploadNotFound);
++        }
++
+         let blob_path = &pending.blob_path;
+ 
+         let props = r2.get_blob_properties(blob_path).await?;
+-- 
+2.50.1 (Apple Git-155)
+
