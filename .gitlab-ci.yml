@@ -9,7 +9,6 @@ stages:
 variables:
   IMAGE_NAME: $CI_REGISTRY_IMAGE/vibe-kanban-remote
   IMAGE_TAG: $CI_COMMIT_SHA
-  DOCKER_TLS_CERTDIR: "/certs"
 
 # Default settings
 default:
