@@ -642,11 +642,11 @@ NPMRC_BAK="${TMP_DIR}/.npmrc"
 umask 077
 printf "//registry.npmjs.org/:_authToken=%s\n" "${NPM_TOKEN}" > "${NPMRC_BAK}"
 
-if (cd "${VIBE_DIR}/npx-cli" && npm view "@iamriajul/vibe-kanban-fork@${VERSION}" version >/dev/null 2>&1); then
+if (cd "${VIBE_DIR}/npx-cli" && npm --userconfig "${NPMRC_BAK}" view "@iamriajul/vibe-kanban-fork@${VERSION}" version >/dev/null 2>&1); then
   echo "npm version ${VERSION} already exists; skipping publish."
 else
   echo "Publishing to npm with dist-tag: ${NPM_TAG}"
-  (cd "${VIBE_DIR}/npx-cli" && NPM_CONFIG_USERCONFIG="${NPMRC_BAK}" npm publish --ignore-scripts --access public --tag "${NPM_TAG}")
+  (cd "${VIBE_DIR}/npx-cli" && npm --userconfig "${NPMRC_BAK}" publish --ignore-scripts --access public --tag "${NPM_TAG}")
 fi
 
 echo "Publish complete."
