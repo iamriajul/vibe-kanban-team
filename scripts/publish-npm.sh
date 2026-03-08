@@ -394,7 +394,13 @@ echo "Installing dependencies..."
 (cd "${VIBE_DIR}" && pnpm install)
 
 echo "Building frontend..."
-(cd "${VIBE_DIR}/frontend" && pnpm run build)
+if [ -d "${VIBE_DIR}/packages/local-web" ]; then
+  (cd "${VIBE_DIR}" && pnpm --filter @vibe/local-web run build)
+elif [ -d "${VIBE_DIR}/frontend" ]; then
+  (cd "${VIBE_DIR}/frontend" && pnpm run build)
+else
+  die "Frontend source directory not found. Expected '${VIBE_DIR}/packages/local-web' or '${VIBE_DIR}/frontend'."
+fi
 
 HOST_TRIPLE="$(rustc -vV | awk '/host/ {print $2}')"
 
@@ -444,17 +450,53 @@ if [ "${TARGET_TRIPLE}" != "${HOST_TRIPLE}" ]; then
   rustup target add "${TARGET_TRIPLE}"
 fi
 
+echo "Resolving MCP binary target..."
+MCP_BIN_TARGET="$(
+  cd "${VIBE_DIR}" && cargo metadata --no-deps --format-version 1 | ${NODE_CMD} -e '
+    let data = "";
+    process.stdin.on("data", chunk => data += chunk);
+    process.stdin.on("end", () => {
+      const metadata = JSON.parse(data);
+      const binTargets = new Set();
+      for (const pkg of metadata.packages || []) {
+        for (const target of pkg.targets || []) {
+          if ((target.kind || []).includes("bin")) {
+            binTargets.add(target.name);
+          }
+        }
+      }
+      if (binTargets.has("vibe-kanban-mcp")) {
+        process.stdout.write("vibe-kanban-mcp");
+      } else if (binTargets.has("mcp_task_server")) {
+        process.stdout.write("mcp_task_server");
+      }
+    });
+  '
+)"
+if [ -z "${MCP_BIN_TARGET}" ]; then
+  die "Unable to detect MCP binary target. Expected 'vibe-kanban-mcp' or 'mcp_task_server'."
+fi
+echo "Using MCP binary target: ${MCP_BIN_TARGET}"
+
 echo "Building backend binaries for ${TARGET_TRIPLE}..."
 if [ "${TARGET_TRIPLE}" = "${HOST_TRIPLE}" ]; then
-  (cd "${VIBE_DIR}" && cargo build --release --bin server --bin mcp_task_server --bin review)
+  (cd "${VIBE_DIR}" && cargo build --release --bin server --bin "${MCP_BIN_TARGET}" --bin review)
   TARGET_DIR="${VIBE_DIR}/target/release"
 else
-  (cd "${VIBE_DIR}" && cargo build --release --target "${TARGET_TRIPLE}" --bin server --bin mcp_task_server --bin review)
+  (cd "${VIBE_DIR}" && cargo build --release --target "${TARGET_TRIPLE}" --bin server --bin "${MCP_BIN_TARGET}" --bin review)
   TARGET_DIR="${VIBE_DIR}/target/${TARGET_TRIPLE}/release"
 fi
 
 if [ ! -f "${TARGET_DIR}/server" ]; then
   echo "Expected binary not found at ${TARGET_DIR}/server"
+  exit 1
+fi
+if [ ! -f "${TARGET_DIR}/${MCP_BIN_TARGET}" ]; then
+  echo "Expected binary not found at ${TARGET_DIR}/${MCP_BIN_TARGET}"
+  exit 1
+fi
+if [ ! -f "${TARGET_DIR}/review" ]; then
+  echo "Expected binary not found at ${TARGET_DIR}/review"
   exit 1
 fi
 
@@ -491,7 +533,7 @@ WORK_DIR="$(mktemp -d)"
 cp "${TARGET_DIR}/server" "${WORK_DIR}/vibe-kanban"
 zip -j "${DIST_DIR}/vibe-kanban.zip" "${WORK_DIR}/vibe-kanban" >/dev/null
 
-cp "${TARGET_DIR}/mcp_task_server" "${WORK_DIR}/vibe-kanban-mcp"
+cp "${TARGET_DIR}/${MCP_BIN_TARGET}" "${WORK_DIR}/vibe-kanban-mcp"
 zip -j "${DIST_DIR}/vibe-kanban-mcp.zip" "${WORK_DIR}/vibe-kanban-mcp" >/dev/null
 
 cp "${TARGET_DIR}/review" "${WORK_DIR}/vibe-kanban-review"
