@@ -50,4 +50,5 @@ helm upgrade --install "${RELEASE}" ./helm/vibe-kanban-cloud \
   --namespace "${NAMESPACE}" \
   --create-namespace \
   -f "${VALUES_FILE}" \
-  --set "image.tag=${IMAGE_TAG}"
+  --set "image.tag=${IMAGE_TAG}" \
+  --set "relay.image.tag=${IMAGE_TAG}"

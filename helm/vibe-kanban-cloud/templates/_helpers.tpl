@@ -65,3 +65,10 @@ ElectricSQL fullname
 {{- define "vibe-kanban-cloud.electric.fullname" -}}
 {{- printf "%s-electric" (include "vibe-kanban-cloud.fullname" .) | trunc 63 | trimSuffix "-" }}
 {{- end }}
+
+{{/*
+Relay fullname
+*/}}
+{{- define "vibe-kanban-cloud.relay.fullname" -}}
+{{- printf "%s-relay" (include "vibe-kanban-cloud.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}

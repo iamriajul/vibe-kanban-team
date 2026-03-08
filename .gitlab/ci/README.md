@@ -6,7 +6,7 @@ This directory contains the GitLab CI/CD pipeline configurations for the Vibe Ka
 
 This repository uses different tag prefixes for different release types:
 
-- **`remote-vX.Y.Z`** or **`remote-X.Y.Z`**: Remote server Docker image releases
+- **`remote-vX.Y.Z`** or **`remote-X.Y.Z`**: Remote + relay Docker image releases
   - Examples: `remote-v0.1.2`, `remote-0.1.3`, `remote-v0.1.9-20260210214134`
   - Supports suffixes: `-rc.1`, `-alpha.2`, `-20260210214134`, etc.
   - Triggers: Docker image build, Helm chart packaging
@@ -25,14 +25,16 @@ This repository uses different tag prefixes for different release types:
 
 ### 1. Image Build (`image-build.yml`)
 
-Builds and publishes Docker images for the Vibe Kanban Remote Server.
+Builds and publishes Docker images for the Vibe Kanban Remote Server and Relay Server.
 
 **Triggers:**
 - On release tags starting with `remote-` (e.g., `remote-v0.1.2`)
 
 **Outputs:**
-- Docker image tagged with version (e.g., `0.1.2` from `remote-v0.1.2`)
-- Docker image tagged with `latest`
+- Remote image tagged with version (e.g., `0.1.2` from `remote-v0.1.2`)
+- Remote image tagged with `latest`
+- Relay image tagged with version
+- Relay image tagged with `latest`
 - Helm chart packaged and published to GitLab registry
 
 ### 2. NPM Publish (`npm-publish.yml`)
@@ -82,6 +84,7 @@ These variables are required for the `publish-npm` and `publish-npm-release` job
 | `FEATURES` | Build features for Docker image | (empty) |
 | `POSTHOG_API_KEY` | PostHog API key for analytics | (optional) |
 | `POSTHOG_API_ENDPOINT` | PostHog endpoint URL | (optional) |
+| `VITE_RELAY_API_BASE_URL` | Relay API base URL baked into remote frontend build | (optional) |
 
 ## Setting Up NPM Token
 
@@ -125,9 +128,9 @@ build → release → notify
 
 ## Creating Releases
 
-### Remote Server Release
+### Remote/Relay Release
 
-To release a new version of the remote server Docker image:
+To release a new version of the remote/relay Docker images:
 
 ```bash
 # Standard release
@@ -144,7 +147,7 @@ git push origin remote-v0.2.0-rc.1
 ```
 
 This will:
-1. Build a Docker image tagged as `0.1.2` (or `0.1.9-20260210214134`, etc.)
+1. Build remote and relay Docker images tagged as `0.1.2` (or `0.1.9-20260210214134`, etc.)
 2. Push to GitLab container registry
 3. Package and publish Helm chart with the same version
 

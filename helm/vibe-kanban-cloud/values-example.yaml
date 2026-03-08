@@ -30,6 +30,59 @@ ingress:
       hosts:
         - vibe-kanban.example.com
 
+# Relay tunnel (optional)
+# NOTE: Tunnel users need relay ingress + wildcard TLS.
+# NOTE: Build your remote image with VITE_RELAY_API_BASE_URL set to this relay URL.
+relay:
+  enabled: false
+
+  image:
+    repository: registry.example.com/community-infra/vibe-kanban-cloud/vibe-kanban-relay
+    tag: ""  # Defaults to chart appVersion; set to a version to pin
+    pullPolicy: Always
+
+  service:
+    type: ClusterIP
+    port: 8082
+
+  ingress:
+    enabled: true
+    className: "nginx"
+    annotations:
+      cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    hosts:
+      - host: relay.vibe-kanban.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+      - host: "*.relay.vibe-kanban.example.com"
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: relay-vibe-kanban-tls
+        hosts:
+          - relay.vibe-kanban.example.com
+          - "*.relay.vibe-kanban.example.com"
+
+  env:
+    - name: SERVER_DATABASE_URL
+      valueFrom:
+        secretKeyRef:
+          name: vibe-kanban-db
+          key: url
+    - name: VIBEKANBAN_REMOTE_JWT_SECRET
+      valueFrom:
+        secretKeyRef:
+          name: vibe-kanban-secrets
+          key: jwt-secret
+
+  extraEnv:
+    - name: RUST_LOG
+      value: "info"
+    - name: RELAY_LISTEN_ADDR
+      value: "0.0.0.0:8082"
+
 # Resource limits
 resources:
   limits:
