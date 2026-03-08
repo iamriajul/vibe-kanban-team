@@ -4,7 +4,7 @@ IFS=$'\n\t'
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VIBE_DIR="${ROOT_DIR}/vibe-kanban"
-SERIES_FILE="${ROOT_DIR}/patches/series"
+SERIES_FILE="${ROOT_DIR}/patches/frontend/series"
 
 # Optional local credentials file (intentionally gitignored).
 # If present, it should export NPM_TOKEN/R2_* and other required env vars.
@@ -46,7 +46,7 @@ cleanup() {
       done < <(grep -v '^[[:space:]]*$' "${SERIES_FILE}" | grep -v '^[[:space:]]*#')
 
       for ((idx=${#PATCH_LIST[@]}-1; idx>=0; idx--)); do
-        PATCH_PATH="${ROOT_DIR}/patches/${PATCH_LIST[$idx]}"
+        PATCH_PATH="${ROOT_DIR}/patches/frontend/${PATCH_LIST[$idx]}"
         if [ -f "${PATCH_PATH}" ]; then
           git -C "${VIBE_DIR}" apply -R "${PATCH_PATH}" >/dev/null 2>&1 || true
         fi
@@ -358,7 +358,7 @@ echo "Using binary tag: ${BINARY_TAG}"
 echo "Using npm dist-tag: ${NPM_TAG}"
 
 echo "Applying downstream patches..."
-"${ROOT_DIR}/scripts/apply-patches.sh"
+"${ROOT_DIR}/scripts/apply-patches.sh" vibe-kanban
 PATCHES_APPLIED=1
 
 TMP_DIR="$(mktemp -d)"
