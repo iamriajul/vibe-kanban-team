@@ -1,2 +1,3 @@
 # Frontend/NPM-specific patches (applied to vibe-kanban/ submodule only)
-0005-fix-restore-old-vibe-kanban-experience.patch
+0001-feat-support-browser-scoped-auth-sessions-and-per-us.patch
+0002-feat-require-workspace-auth-and-add-admin-scoped-creator-visibility.patch
