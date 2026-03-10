@@ -1,16 +1,21 @@
-From 7ae5a2890b112dfeff7429711e2a0bde66a093c7 Mon Sep 17 00:00:00 2001
+From b4848aa6cdb1adfbd22b288bcf490dc6a0aad23f Mon Sep 17 00:00:00 2001
 From: Riajul Islam <kmriajulislami@gmail.com>
-Date: Tue, 10 Mar 2026 08:24:05 +0000
-Subject: [PATCH] feat: add dedicated code-server editor type
+Date: Tue, 10 Mar 2026 10:09:48 +0000
+Subject: [PATCH] feat: add unified code-server onboarding and editor flow
 
 ---
  .../src/services/config/editor/mod.rs         | 159 +++++++++++++++++-
+ .../features/onboarding/ui/LandingPage.tsx    |  38 ++++-
  .../src/i18n/locales/en/settings.json         |   5 +-
+ packages/web-core/src/shared/actions/index.ts |   9 +-
  .../src/shared/components/IdeIcon.tsx         |   6 +-
  .../settings/GeneralSettingsSection.tsx       |  22 ++-
+ .../src/shared/hooks/useOpenInEditor.ts       |   4 +
+ .../web-core/src/shared/lib/editorWarnings.ts |  20 +++
  packages/web-core/src/shared/lib/ideName.ts   |   2 +
  shared/types.ts                               |   2 +-
- 6 files changed, 187 insertions(+), 9 deletions(-)
+ 10 files changed, 248 insertions(+), 19 deletions(-)
+ create mode 100644 packages/web-core/src/shared/lib/editorWarnings.ts
 
 diff --git a/crates/services/src/services/config/editor/mod.rs b/crates/services/src/services/config/editor/mod.rs
 index 3589f953f..e54b10fb6 100644
@@ -228,6 +233,91 @@ index 3589f953f..e54b10fb6 100644
 +        assert_eq!(folder, repo_path.join("src").to_string_lossy());
 +    }
 +}
+diff --git a/packages/web-core/src/features/onboarding/ui/LandingPage.tsx b/packages/web-core/src/features/onboarding/ui/LandingPage.tsx
+index 7df49896b..35c81a0eb 100644
+--- a/packages/web-core/src/features/onboarding/ui/LandingPage.tsx
++++ b/packages/web-core/src/features/onboarding/ui/LandingPage.tsx
+@@ -252,9 +252,18 @@ export function LandingPage() {
+     void playSound(value);
+   };
+ 
+-  const isCustomEditorValid =
+-    editorType !== EditorType.CUSTOM || customCommand.trim() !== '';
+-  const canContinue = !saving && isCustomEditorValid;
++  const trimmedEditorCommand = customCommand.trim();
++  const isCustomEditor = editorType === EditorType.CUSTOM;
++  const isCodeServerEditor = editorType === EditorType.CODE_SERVER;
++  const hasEditorCommand = trimmedEditorCommand !== '';
++  const hasValidCodeServerUrl =
++    hasEditorCommand && /^https?:\/\//i.test(trimmedEditorCommand);
++
++  const isEditorCommandValid =
++    (!isCustomEditor && !isCodeServerEditor) ||
++    (isCustomEditor && hasEditorCommand) ||
++    (isCodeServerEditor && hasValidCodeServerUrl);
++  const canContinue = !saving && isEditorCommandValid;
+ 
+   const handleContinue = async () => {
+     if (!config || !canContinue) return;
+@@ -262,7 +271,7 @@ export function LandingPage() {
+     const editorConfig: EditorConfig = {
+       editor_type: editorType,
+       custom_command:
+-        editorType === EditorType.CUSTOM ? customCommand.trim() : null,
++        isCustomEditor || isCodeServerEditor ? trimmedEditorCommand : null,
+       remote_ssh_host: null,
+       remote_ssh_user: null,
+       auto_install_extension: true,
+@@ -274,7 +283,8 @@ export function LandingPage() {
+       selected_agent: selectedAgent,
+       editor_type: editorType,
+       custom_editor_command_set:
+-        editorType === EditorType.CUSTOM && customCommand.trim() !== '',
++        (isCustomEditor || isCodeServerEditor) && hasEditorCommand,
++      code_server_url_set: isCodeServerEditor && hasEditorCommand,
+       sound_enabled: soundEnabled,
+       sound_file: soundEnabled ? soundFile : null,
+     });
+@@ -461,25 +471,35 @@ export function LandingPage() {
+               })}
+             </div>
+ 
+-            {editorType === EditorType.CUSTOM && (
++            {(isCustomEditor || isCodeServerEditor) && (
+               <div className="space-y-half">
+                 <label className="text-sm font-medium text-normal">
+-                  Custom Command
++                  {isCodeServerEditor ? 'Code Server URL' : 'Custom Command'}
+                 </label>
+                 <input
+                   type="text"
+                   value={customCommand}
+                   onChange={(e) => setCustomCommand(e.target.value)}
+-                  placeholder="e.g. code --wait"
++                  placeholder={
++                    isCodeServerEditor
++                      ? 'https://code-server.example.com'
++                      : 'e.g. code --wait'
++                  }
+                   className={cn(
+                     'w-full bg-panel border rounded-sm px-base py-half text-sm text-high',
+                     'placeholder:text-low placeholder:opacity-80 focus:outline-none',
+                     'focus:ring-1 focus:ring-brand',
+-                    customCommand.trim() === ''
++                    !hasEditorCommand ||
++                      (isCodeServerEditor && !hasValidCodeServerUrl)
+                       ? 'border-warning/60'
+                       : 'border-border'
+                   )}
+                 />
++                {isCodeServerEditor && !hasValidCodeServerUrl && (
++                  <p className="text-xs text-warning">
++                    Enter a valid URL starting with http:// or https://
++                  </p>
++                )}
+               </div>
+             )}
+           </section>
 diff --git a/packages/web-core/src/i18n/locales/en/settings.json b/packages/web-core/src/i18n/locales/en/settings.json
 index fd921b1fb..1fe8e5cd6 100644
 --- a/packages/web-core/src/i18n/locales/en/settings.json
@@ -251,6 +341,40 @@ index fd921b1fb..1fe8e5cd6 100644
          },
          "availability": {
            "checking": "Checking availability...",
+diff --git a/packages/web-core/src/shared/actions/index.ts b/packages/web-core/src/shared/actions/index.ts
+index 61e698e68..9095fb273 100644
+--- a/packages/web-core/src/shared/actions/index.ts
++++ b/packages/web-core/src/shared/actions/index.ts
+@@ -66,6 +66,7 @@ import { RenameWorkspaceDialog } from '@vibe/ui/components/RenameWorkspaceDialog
+ import { ProjectsGuideDialog } from '@vibe/ui/components/ProjectsGuideDialog';
+ import { CreatePRDialog } from '@/shared/dialogs/command-bar/CreatePRDialog';
+ import { getIdeName } from '@/shared/lib/ideName';
++import { alertIfCodeServerNotConfigured } from '@/shared/lib/editorWarnings';
+ import { EditorSelectionDialog } from '@/shared/dialogs/command-bar/EditorSelectionDialog';
+ import { StartReviewDialog } from '@/shared/dialogs/command-bar/StartReviewDialog';
+ import posthog from 'posthog-js';
+@@ -770,7 +771,10 @@ export const Actions = {
+         if (response.url) {
+           window.open(response.url, '_blank');
+         }
+-      } catch {
++      } catch (err) {
++        if (alertIfCodeServerNotConfigured(err)) {
++          return;
++        }
+         // Show editor selection dialog on failure
+         EditorSelectionDialog.show({
+           selectedAttemptId: ctx.currentWorkspaceId,
+@@ -1140,6 +1144,9 @@ export const Actions = {
+           window.open(response.url, '_blank');
+         }
+       } catch (err) {
++        if (alertIfCodeServerNotConfigured(err)) {
++          return;
++        }
+         console.error('Failed to open repo in editor:', err);
+         throw new Error('Failed to open repository in IDE');
+       }
 diff --git a/packages/web-core/src/shared/components/IdeIcon.tsx b/packages/web-core/src/shared/components/IdeIcon.tsx
 index 5cfeb0dc3..167b6390c 100644
 --- a/packages/web-core/src/shared/components/IdeIcon.tsx
@@ -316,6 +440,54 @@ index f172f1c39..753f9bfd1 100644
            <SettingsCheckbox
              id="auto-install-extension"
              label={t('settings.general.editor.autoInstallExtension.label')}
+diff --git a/packages/web-core/src/shared/hooks/useOpenInEditor.ts b/packages/web-core/src/shared/hooks/useOpenInEditor.ts
+index 21af4233f..619717005 100644
+--- a/packages/web-core/src/shared/hooks/useOpenInEditor.ts
++++ b/packages/web-core/src/shared/hooks/useOpenInEditor.ts
+@@ -1,6 +1,7 @@
+ import { useCallback } from 'react';
+ import { workspacesApi } from '@/shared/lib/api';
+ import { EditorSelectionDialog } from '@/shared/dialogs/command-bar/EditorSelectionDialog';
++import { alertIfCodeServerNotConfigured } from '@/shared/lib/editorWarnings';
+ import type { EditorType } from 'shared/types';
+ 
+ type OpenEditorOptions = {
+@@ -29,6 +30,9 @@ export function useOpenInEditor(
+           window.open(response.url, '_blank');
+         }
+       } catch (err) {
++        if (alertIfCodeServerNotConfigured(err)) {
++          return;
++        }
+         console.error('Failed to open editor:', err);
+         if (!editorType) {
+           if (onShowEditorDialog) {
+diff --git a/packages/web-core/src/shared/lib/editorWarnings.ts b/packages/web-core/src/shared/lib/editorWarnings.ts
+new file mode 100644
+index 000000000..cf44f42c7
+--- /dev/null
++++ b/packages/web-core/src/shared/lib/editorWarnings.ts
+@@ -0,0 +1,20 @@
++const MISSING_CODE_SERVER_URL_ERROR = 'Code Server URL is required';
++
++export function alertIfCodeServerNotConfigured(error: unknown): boolean {
++  const message =
++    error instanceof Error
++      ? error.message
++      : typeof error === 'string'
++        ? error
++        : '';
++
++  if (!message.includes(MISSING_CODE_SERVER_URL_ERROR)) {
++    return false;
++  }
++
++  // eslint-disable-next-line no-alert
++  window.alert(
++    'Code Server URL is not configured. Please set it in Settings > General > Editor.'
++  );
++  return true;
++}
 diff --git a/packages/web-core/src/shared/lib/ideName.ts b/packages/web-core/src/shared/lib/ideName.ts
 index 8c634a5af..9f49b72de 100644
 --- a/packages/web-core/src/shared/lib/ideName.ts
