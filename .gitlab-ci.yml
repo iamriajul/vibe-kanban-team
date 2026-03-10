@@ -8,6 +8,7 @@ stages:
 
 variables:
   IMAGE_NAME: $CI_REGISTRY_IMAGE/vibe-kanban-remote
+  RELAY_IMAGE_NAME: $CI_REGISTRY_IMAGE/vibe-kanban-relay
   IMAGE_TAG: $CI_COMMIT_SHA
 
 # Default settings

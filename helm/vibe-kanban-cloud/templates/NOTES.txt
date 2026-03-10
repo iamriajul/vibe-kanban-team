@@ -22,8 +22,20 @@ Vibe Kanban Cloud has been deployed!
    echo "Visit http://localhost:8081"
 {{- end }}
 
+{{- if and .Values.relay.enabled .Values.relay.ingress.enabled }}
+Relay endpoints:
+{{- range $host := .Values.relay.ingress.hosts }}
+  {{- range .paths }}
+ - https://{{ $host.host }}{{ .path }}
+  {{- end }}
+{{- end }}
+{{- end }}
+
 2. Components deployed:
    - Vibe Kanban Remote Server: {{ include "vibe-kanban-cloud.fullname" . }}
+{{- if .Values.relay.enabled }}
+   - Relay Server: {{ include "vibe-kanban-cloud.relay.fullname" . }}
+{{- end }}
 {{- if .Values.electric.enabled }}
    - ElectricSQL: {{ include "vibe-kanban-cloud.electric.fullname" . }}
 {{- end }}

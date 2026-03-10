@@ -6,10 +6,10 @@ This document describes the tag-based release workflow for Vibe Kanban Cloud.
 
 CI/CD pipelines are **triggered exclusively by Git tags**. There are two distinct release workflows:
 
-1. **Remote Server Deployment** - Docker images and Helm charts
+1. **Remote + Relay Deployment** - Docker images and Helm charts
 2. **NPM Package Release** - npm CLI package
 
-## Remote Server Releases
+## Remote + Relay Releases
 
 **Tag Format:** `remote-v{VERSION}` or `remote-{VERSION}`
 
@@ -19,9 +19,10 @@ CI/CD pipelines are **triggered exclusively by Git tags**. There are two distinc
 - `remote-v0.1.9-20260210214134` (with timestamp)
 
 **What Happens:**
-1. Docker image is built and pushed to GitLab Registry as `$IMAGE_NAME:{VERSION}`
-2. Helm chart is packaged and published to GitLab Helm registry
-3. Discord notification is sent (if configured)
+1. Remote Docker image is built and pushed as `$IMAGE_NAME:{VERSION}`
+2. Relay Docker image is built and pushed as `$RELAY_IMAGE_NAME:{VERSION}`
+3. Helm chart is packaged and published to GitLab Helm registry
+4. Discord notification is sent (if configured)
 
 **How to Release:**
 ```bash
@@ -35,6 +36,7 @@ After the pipeline completes, deploy manually to MicroK8s:
 ```bash
 helm upgrade --install vibe-kanban ./helm/vibe-kanban-cloud \
   --set image.tag=0.2.0 \
+  --set relay.image.tag=0.2.0 \
   -f values-production.yaml
 ```
 
@@ -61,7 +63,7 @@ git push origin v0.2.0
 
 ## Tag Naming Convention
 
-- **Remote Server:** `remote-v*` or `remote-*`
+- **Remote + Relay:** `remote-v*` or `remote-*`
 - **NPM Package:** `v*` or `*` (but NOT `remote-*`)
 
 The prefixes ensure clear separation between release types and prevent accidental dual-triggering.
@@ -82,7 +84,7 @@ The prefixes ensure clear separation between release types and prevent accidenta
 ### Pipeline Not Triggering
 
 Check that your tag matches the expected format:
-- Remote server: Must start with `remote-`
+- Remote + relay: Must start with `remote-`
 - NPM package: Must NOT start with `remote-`
 - Both: Must follow semver pattern `X.Y.Z` with optional suffix
 

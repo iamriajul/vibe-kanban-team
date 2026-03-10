@@ -164,6 +164,85 @@ extraEnv:
     value: "0.0.0.0:8081"
 
 # =============================================================================
+# Relay Tunnel Configuration (Optional)
+# =============================================================================
+
+relay:
+  enabled: false
+  replicaCount: 1
+
+  image:
+    repository: registry.example.com/community-infra/vibe-kanban-cloud/vibe-kanban-relay
+    pullPolicy: IfNotPresent
+    tag: ""  # Defaults to chart appVersion
+
+  service:
+    type: ClusterIP
+    port: 8082
+
+  ingress:
+    enabled: false
+    className: "nginx"
+    annotations: {}
+    hosts:
+      - host: relay.vibe-kanban.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+      - host: "*.relay.vibe-kanban.example.com"
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
+
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 10
+    periodSeconds: 30
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+  # REQUIRED for relay:
+  # - SERVER_DATABASE_URL (same database as remote server)
+  # - VIBEKANBAN_REMOTE_JWT_SECRET (same JWT secret as remote server)
+  env:
+    - name: SERVER_DATABASE_URL
+      valueFrom:
+        secretKeyRef:
+          name: ""  # Your database secret name
+          key: url
+    - name: VIBEKANBAN_REMOTE_JWT_SECRET
+      valueFrom:
+        secretKeyRef:
+          name: ""  # Your secrets name
+          key: jwt-secret
+
+  extraEnv:
+    - name: RUST_LOG
+      value: "info"
+    - name: RELAY_LISTEN_ADDR
+      value: "0.0.0.0:8082"
+
+# =============================================================================
 # ElectricSQL Configuration
 # =============================================================================
 

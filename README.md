@@ -6,7 +6,7 @@ Helm chart and CI/CD pipeline for deploying [Vibe Kanban](https://github.com/Blo
 
 This repository provides a production-ready deployment solution for Vibe Kanban Cloud with:
 
-- **Helm Chart**: Deploys Vibe Kanban server and ElectricSQL
+- **Helm Chart**: Deploys Vibe Kanban remote server, optional relay server, and ElectricSQL
 - **GitLab CI/CD**: Automated image build pipeline
 - **Environment-Agnostic Images**: Build once, deploy anywhere
 - **External Database**: Bring your own PostgreSQL (CloudNativePG, RDS, etc.)
@@ -244,6 +244,16 @@ electric:
 | `GITHUB_OAUTH_CLIENT_SECRET` | GitHub OAuth client secret |
 
 If you're using the CNPG manifests, set `ELECTRIC_ROLE_PASSWORD` to the same value as `CHANGEME_ELECTRIC_PASSWORD` in `k8s/cnpg/02-initdb-secret.yaml`.
+
+### Optional: Relay/Tunnel Deployment
+
+To support tunnel/relay features, enable the `relay` section in values and configure:
+
+- `relay.enabled: true`
+- `relay.env` with `SERVER_DATABASE_URL` and `VIBEKANBAN_REMOTE_JWT_SECRET` (same DB/JWT as remote)
+- `relay.ingress` with both relay base host and wildcard host (for example `relay.example.com` and `*.relay.example.com`)
+
+`scripts/deploy.sh` now sets both `image.tag` and `relay.image.tag` to the requested release tag.
 
 ### Database Requirements
 
