@@ -1,46 +1,43 @@
-From 6abd0a04a5278f7897c23bb9efeb863142d9f9cb Mon Sep 17 00:00:00 2001
+From 8c78e586b6f14ab1f68a34c171af8769e5fa8cbf Mon Sep 17 00:00:00 2001
 From: Riajul Islam <kmriajulislami@gmail.com>
 Date: Sun, 8 Mar 2026 15:47:36 +0000
-Subject: [PATCH] feat: require workspace auth and add admin-scoped creator
+Subject: [PATCH 2/2] feat: require workspace auth and add admin-scoped creator
  visibility
 
 ---
- crates/server/src/routes/task_attempts.rs     |  30 ++-
+ crates/server/src/routes/workspaces/mod.rs    |  31 ++-
  .../src/app/providers/ConfigProvider.tsx      |   4 +
  .../src/pages/workspaces/WorkspacesLayout.tsx |  34 ++-
  .../workspaces/WorkspacesSidebarContainer.tsx | 234 +++++++++++++++++-
  .../src/shared/hooks/useUserSystem.ts         |   2 +
  .../src/shared/hooks/useWorkspaces.ts         |  28 ++-
  .../shared/providers/WorkspaceProvider.tsx    |  29 ++-
- 7 files changed, 334 insertions(+), 27 deletions(-)
+ 7 files changed, 337 insertions(+), 25 deletions(-)
 
-diff --git a/crates/server/src/routes/task_attempts.rs b/crates/server/src/routes/task_attempts.rs
-index 5eef3cbb2..68c5a963b 100644
---- a/crates/server/src/routes/task_attempts.rs
-+++ b/crates/server/src/routes/task_attempts.rs
-@@ -11,13 +11,14 @@ use std::{
- };
+diff --git a/crates/server/src/routes/workspaces/mod.rs b/crates/server/src/routes/workspaces/mod.rs
+index 14c692dac..e925a2e86 100644
+--- a/crates/server/src/routes/workspaces/mod.rs
++++ b/crates/server/src/routes/workspaces/mod.rs
+@@ -13,13 +13,34 @@ pub mod repos;
+ pub mod streams;
+ pub mod workspace_summary;
  
- use anyhow;
--use api_types::{CreateWorkspaceRequest, PullRequestStatus, UpsertPullRequestRequest};
-+use api_types::{CreateWorkspaceRequest, LoginStatus, PullRequestStatus, UpsertPullRequestRequest};
++use api_types::LoginStatus;
  use axum::{
-     Extension, Json, Router,
-+    body::Body,
-     extract::{Path as AxumPath, Query, State, ws::Message},
--    http::StatusCode,
+     Router,
 -    middleware::from_fn_with_state,
--    response::{IntoResponse, Json as ResponseJson},
-+    http::{Request, StatusCode},
++    body::Body,
++    extract::State,
++    http::Request,
 +    middleware::{Next, from_fn_with_state},
-+    response::{IntoResponse, Json as ResponseJson, Response},
-     routing::{get, post, put},
++    response::Response,
+     routing::{get, post},
  };
- use db::models::{
-@@ -136,6 +137,21 @@ pub struct AddWorkspaceRepoResponse {
-     pub repo: RepoWithTargetBranch,
- }
++use deployment::Deployment;
  
+-use crate::{DeploymentImpl, middleware::load_workspace_middleware};
++use crate::{DeploymentImpl, error::ApiError, middleware::load_workspace_middleware};
++
 +async fn require_workspace_auth_if_shared(
 +    State(deployment): State<DeploymentImpl>,
 +    request: Request<Body>,
@@ -55,22 +52,21 @@ index 5eef3cbb2..68c5a963b 100644
 +        LoginStatus::LoggedOut => Err(ApiError::Unauthorized),
 +    }
 +}
-+
- pub async fn get_task_attempts(
-     State(deployment): State<DeploymentImpl>,
- ) -> Result<ResponseJson<ApiResponse<Vec<Workspace>>>, ApiError> {
-@@ -2089,7 +2105,11 @@ pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
-         .route("/stream/ws", get(stream_workspaces_ws))
-         .route("/summary", post(workspace_summary::get_workspace_summaries))
-         .nest("/{id}", task_attempt_id_router)
--        .nest("/{id}/images", images::router(deployment));
-+        .nest("/{id}/images", images::router(deployment))
+ 
+ pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
+     let workspace_id_router = Router::new()
+@@ -55,7 +76,11 @@ pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
+         )
+         .nest("/{id}", workspace_id_router)
+         .nest("/{id}/images", images::router(deployment))
+-        .nest("/{id}/links", links::router(deployment));
++        .nest("/{id}/links", links::router(deployment))
 +        .layer(from_fn_with_state(
 +            deployment.clone(),
 +            require_workspace_auth_if_shared,
 +        ));
  
-     Router::new().nest("/task-attempts", task_attempts_router)
+     Router::new().nest("/workspaces", workspaces_router)
  }
 diff --git a/packages/local-web/src/app/providers/ConfigProvider.tsx b/packages/local-web/src/app/providers/ConfigProvider.tsx
 index b7fa89419..501f2d366 100644
@@ -109,7 +105,7 @@ index b7fa89419..501f2d366 100644
        saveConfig,
        updateAndSaveConfig,
 diff --git a/packages/web-core/src/pages/workspaces/WorkspacesLayout.tsx b/packages/web-core/src/pages/workspaces/WorkspacesLayout.tsx
-index e88e3ff53..125dd5303 100644
+index 9d6a0e943..6fdf62e02 100644
 --- a/packages/web-core/src/pages/workspaces/WorkspacesLayout.tsx
 +++ b/packages/web-core/src/pages/workspaces/WorkspacesLayout.tsx
 @@ -21,6 +21,8 @@ import { CreateChatBoxContainer } from '@/shared/components/CreateChatBoxContain
@@ -540,7 +536,7 @@ index acf50cb32..483b92a02 100644
    setProfiles: (profiles: Record<string, ExecutorProfile> | null) => void;
    setCapabilities: (caps: Record<string, BaseAgentCapability[]> | null) => void;
 diff --git a/packages/web-core/src/shared/hooks/useWorkspaces.ts b/packages/web-core/src/shared/hooks/useWorkspaces.ts
-index 60c64dde4..5ee668c9c 100644
+index 8ccf8dd8a..aa5933927 100644
 --- a/packages/web-core/src/shared/hooks/useWorkspaces.ts
 +++ b/packages/web-core/src/shared/hooks/useWorkspaces.ts
 @@ -45,6 +45,10 @@ export interface UseWorkspacesResult {
@@ -566,7 +562,7 @@ index 60c64dde4..5ee668c9c 100644
 +
    // Two separate WebSocket connections: one for active, one for archived
    // No limit param - we fetch all and slice on frontend so backfill works when archiving
-   const activeEndpoint = '/api/task-attempts/stream/ws?archived=false';
+   const activeEndpoint = '/api/workspaces/streams/ws?archived=false';
 @@ -137,7 +145,11 @@ export function useWorkspaces(): UseWorkspacesResult {
      isConnected: activeIsConnected,
      isInitialized: activeIsInitialized,
@@ -625,7 +621,7 @@ index 60c64dde4..5ee668c9c 100644
    return {
      workspaces,
 diff --git a/packages/web-core/src/shared/providers/WorkspaceProvider.tsx b/packages/web-core/src/shared/providers/WorkspaceProvider.tsx
-index db8f448df..5b36c1551 100644
+index 59a7279a7..a0b2b9195 100644
 --- a/packages/web-core/src/shared/providers/WorkspaceProvider.tsx
 +++ b/packages/web-core/src/shared/providers/WorkspaceProvider.tsx
 @@ -13,6 +13,8 @@ import { useDiffViewStore } from '@/shared/stores/useDiffViewStore';
@@ -658,7 +654,7 @@ index db8f448df..5b36c1551 100644
 +  } = useWorkspaces({ enabled: workspaceDataEnabled });
  
    // Fetch real workspace data for the selected workspace
-   const { data: workspace, isLoading: isLoadingWorkspace } = useAttempt(
+   const { data: workspace, isLoading: isLoadingWorkspace } = useWorkspaceRecord(
      workspaceId,
 -    { enabled: !!workspaceId && !isCreateMode }
 +    { enabled: workspaceDataEnabled && !!workspaceId && !isCreateMode }
@@ -675,7 +671,7 @@ index db8f448df..5b36c1551 100644
 +  });
  
    // Fetch repos for the current workspace
-   const { repos, isLoading: isReposLoading } = useAttemptRepo(workspaceId, {
+   const { repos, isLoading: isReposLoading } = useWorkspaceRepo(workspaceId, {
 -    enabled: !isCreateMode,
 +    enabled: workspaceDataEnabled && !isCreateMode,
    });
@@ -705,7 +701,7 @@ index db8f448df..5b36c1551 100644
 -    if (!workspaceId || isCreateMode) return;
 +    if (!workspaceDataEnabled || !workspaceId || isCreateMode) return;
  
-     attemptsApi
+     workspacesApi
        .markSeen(workspaceId)
 @@ -125,7 +138,7 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
        .catch((error) => {

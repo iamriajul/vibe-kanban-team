@@ -1,13 +1,13 @@
-From 816ca56a71792f01e2e4ff9cbee9afb5694c64a1 Mon Sep 17 00:00:00 2001
+From 8d8458aa788c8009ebdc0b0656eb2e9de3921e4e Mon Sep 17 00:00:00 2001
 From: Riajul Islam <kmriajulislami@gmail.com>
 Date: Sun, 8 Mar 2026 13:30:01 +0000
-Subject: [PATCH] feat: support browser-scoped auth sessions and per-user git
- identity
+Subject: [PATCH 1/2] feat: support browser-scoped auth sessions and per-user
+ git identity
 
 ---
  crates/git/src/cli.rs                         |  30 ++++
  crates/git/src/lib.rs                         |  23 +++
- crates/local-deployment/src/container.rs      | 142 ++++++++++++++--
+ crates/local-deployment/src/container.rs      | 143 +++++++++++++++--
  crates/local-deployment/src/lib.rs            |  79 +++++++--
  crates/local-deployment/src/pty.rs            |   7 +
  crates/server/src/middleware/auth_session.rs  |  86 ++++++++++
@@ -18,7 +18,7 @@ Subject: [PATCH] feat: support browser-scoped auth sessions and per-user git
  crates/services/src/services/auth.rs          | 151 ++++++++++++++++--
  .../src/services/oauth_credentials.rs         |   4 +
  crates/services/src/services/remote_client.rs |  24 ++-
- 13 files changed, 519 insertions(+), 52 deletions(-)
+ 13 files changed, 520 insertions(+), 52 deletions(-)
  create mode 100644 crates/server/src/middleware/auth_session.rs
 
 diff --git a/crates/git/src/cli.rs b/crates/git/src/cli.rs
@@ -97,7 +97,7 @@ index c27599162..ccab38ddd 100644
      pub fn get_diffs(
          &self,
 diff --git a/crates/local-deployment/src/container.rs b/crates/local-deployment/src/container.rs
-index 3b8292b8b..e3b4f71a5 100644
+index 2a29d13c0..0cbf4df92 100644
 --- a/crates/local-deployment/src/container.rs
 +++ b/crates/local-deployment/src/container.rs
 @@ -42,6 +42,7 @@ use serde_json::json;
@@ -302,7 +302,7 @@ index 3b8292b8b..e3b4f71a5 100644
                                  tracing::error!("Failed to start queued follow-up: {}", e);
                                  // Fall back to finalization if follow-up fails
                                  container.finalize_task(&ctx).await;
-@@ -710,7 +818,7 @@ impl LocalContainerService {
+@@ -755,7 +863,7 @@ impl LocalContainerService {
                  if matches!(
                      &ctx.execution_process.run_reason,
                      ExecutionProcessRunReason::CodingAgent
@@ -311,7 +311,7 @@ index 3b8292b8b..e3b4f71a5 100644
                  {
                      let stats = diff_stream::compute_diff_stats(
                          &container.db.pool,
-@@ -724,7 +832,6 @@ impl LocalContainerService {
+@@ -769,7 +877,6 @@ impl LocalContainerService {
                              .ok()
                              .flatten()
                              .and_then(|ws| ws.workspace.name);
@@ -319,7 +319,7 @@ index 3b8292b8b..e3b4f71a5 100644
                      let workspace_id = ctx.workspace.id;
                      let archived = ctx.workspace.archived;
                      tokio::spawn(async move {
-@@ -755,6 +862,7 @@ impl LocalContainerService {
+@@ -800,6 +907,7 @@ impl LocalContainerService {
  
              // Cleanup child handle
              child_store.write().await.remove(&exec_id);
@@ -327,10 +327,11 @@ index 3b8292b8b..e3b4f71a5 100644
          })
      }
  
-@@ -1308,6 +1416,16 @@ impl ContainerService for LocalContainerService {
+@@ -1352,6 +1460,17 @@ impl ContainerService for LocalContainerService {
+         // Always inject workspace/session context
          env.insert("VK_WORKSPACE_ID", workspace.id.to_string());
          env.insert("VK_WORKSPACE_BRANCH", &workspace.branch);
-         env.insert("VK_SESSION_ID", execution_process.session_id.to_string());
++        env.insert("VK_SESSION_ID", execution_process.session_id.to_string());
 +        let auth_session_id = self.auth_context.current_session_id();
 +        if let Some((name, email)) = self
 +            .git_identity_for_auth_session(auth_session_id.clone())
@@ -344,7 +345,7 @@ index 3b8292b8b..e3b4f71a5 100644
  
          // Create the child and stream, add to execution tracker with timeout
          let mut spawned = tokio::time::timeout(
-@@ -1333,6 +1451,9 @@ impl ContainerService for LocalContainerService {
+@@ -1377,6 +1496,9 @@ impl ContainerService for LocalContainerService {
                  .await;
          }
  
@@ -354,7 +355,7 @@ index 3b8292b8b..e3b4f71a5 100644
          // Spawn unified exit monitor: watches OS exit and optional executor signal
          let hn = self.spawn_exit_monitor(&execution_process.id, spawned.exit_signal);
          self.add_exit_monitor_handle(execution_process.id, hn).await;
-@@ -1512,7 +1633,8 @@ impl ContainerService for LocalContainerService {
+@@ -1556,7 +1678,8 @@ impl ContainerService for LocalContainerService {
              return Ok(false);
          }
  
@@ -641,7 +642,7 @@ index be7e462f2..33adac6a0 100644
  pub use origin::*;
  pub use relay_request_signature::*;
 diff --git a/crates/server/src/routes/mod.rs b/crates/server/src/routes/mod.rs
-index 93c9e8aa7..f02f55f05 100644
+index 20ff8d742..af5458b0a 100644
 --- a/crates/server/src/routes/mod.rs
 +++ b/crates/server/src/routes/mod.rs
 @@ -66,6 +66,10 @@ pub fn router(deployment: DeploymentImpl) -> IntoMakeService<Router> {
