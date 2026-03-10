@@ -1,0 +1,25 @@
+From 4601d956bbe74139055efc0ab8a5ef6c1a112058 Mon Sep 17 00:00:00 2001
+From: Riajul Islam <kmriajulislami@gmail.com>
+Date: Tue, 10 Mar 2026 10:34:48 +0000
+Subject: [PATCH] fix(relay): install perl and make for vendored openssl build
+
+---
+ crates/relay-tunnel/Dockerfile | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/crates/relay-tunnel/Dockerfile b/crates/relay-tunnel/Dockerfile
+index 0c7e1e445..806eaec8b 100644
+--- a/crates/relay-tunnel/Dockerfile
++++ b/crates/relay-tunnel/Dockerfile
+@@ -3,7 +3,7 @@
+ FROM rust:1.93-slim-bookworm AS builder
+ 
+ RUN apt-get update \
+-  && apt-get install -y --no-install-recommends pkg-config libssl-dev ca-certificates \
++  && apt-get install -y --no-install-recommends pkg-config libssl-dev ca-certificates perl make \
+   && rm -rf /var/lib/apt/lists/*
+ 
+ WORKDIR /app
+-- 
+2.50.1
+
