@@ -1,0 +1,358 @@
+From 7d99b6ffbd65cc5b70f8cbbcfc29111368fae2c5 Mon Sep 17 00:00:00 2001
+From: Riajul Islam <kmriajulislami@gmail.com>
+Date: Tue, 10 Mar 2026 08:11:42 +0000
+Subject: [PATCH] feat: add dedicated code server editor type
+
+---
+ .../src/services/config/editor/mod.rs         | 108 ++++++++++++------
+ .../src/i18n/locales/en/settings.json         |  11 +-
+ .../src/shared/components/IdeIcon.tsx         |   6 +-
+ .../settings/GeneralSettingsSection.tsx       |  22 +++-
+ packages/web-core/src/shared/lib/ideName.ts   |   2 +
+ shared/types.ts                               |   2 +-
+ 6 files changed, 102 insertions(+), 49 deletions(-)
+
+diff --git a/crates/services/src/services/config/editor/mod.rs b/crates/services/src/services/config/editor/mod.rs
+index be5ec6601..e54b10fb6 100644
+--- a/crates/services/src/services/config/editor/mod.rs
++++ b/crates/services/src/services/config/editor/mod.rs
+@@ -58,6 +58,7 @@ pub enum EditorType {
+     Zed,
+     Xcode,
+     GoogleAntigravity,
++    CodeServer,
+     Custom,
+ }
+ 
+@@ -101,6 +102,7 @@ impl EditorConfig {
+             EditorType::Zed => "zed",
+             EditorType::Xcode => "xed",
+             EditorType::GoogleAntigravity => "antigravity",
++            EditorType::CodeServer => "code-server",
+             EditorType::Custom => {
+                 // Custom editor - use user-provided command or fallback to VSCode
+                 self.custom_command.as_deref().unwrap_or("code")
+@@ -138,8 +140,8 @@ impl EditorConfig {
+     /// Check if the editor is available on the system.
+     /// Uses the same command resolution logic as spawn_local().
+     pub async fn check_availability(&self) -> bool {
+-        if self.is_url_based_custom_editor() {
+-            return true;
++        if matches!(self.editor_type, EditorType::CodeServer) {
++            return self.code_server_url_base().is_ok();
+         }
+         self.resolve_command().await.is_ok()
+     }
+@@ -148,7 +150,10 @@ impl EditorConfig {
+         self.auto_install_extension
+             && matches!(
+                 self.editor_type,
+-                EditorType::VsCode | EditorType::VsCodeInsiders | EditorType::Cursor
++                EditorType::VsCode
++                    | EditorType::VsCodeInsiders
++                    | EditorType::Cursor
++                    | EditorType::CodeServer
+             )
+     }
+ 
+@@ -168,7 +173,12 @@ impl EditorConfig {
+         if let Some(url) = self.remote_url(path) {
+             return Ok(Some(url));
+         }
+-        if let Some(url) = self.custom_url(path) {
++
++        if matches!(self.editor_type, EditorType::CodeServer) {
++            if self.should_auto_install_extension() {
++                self.try_install_extension().await;
++            }
++            let url = self.code_server_url(path)?;
+             return Ok(Some(url));
+         }
+         if self.should_auto_install_extension() {
+@@ -178,26 +188,46 @@ impl EditorConfig {
+         Ok(None)
+     }
+ 
+-    fn is_url_based_custom_editor(&self) -> bool {
+-        self.custom_editor_url_base().is_some()
+-    }
++    fn code_server_url_base(&self) -> Result<Url, EditorOpenError> {
++        if !matches!(self.editor_type, EditorType::CodeServer) {
++            return Err(EditorOpenError::InvalidCommand {
++                details: "Code Server URL is only valid for CODE_SERVER editor type".to_string(),
++                editor_type: self.editor_type.clone(),
++            });
++        }
+ 
+-    fn custom_editor_url_base(&self) -> Option<Url> {
+-        if !matches!(self.editor_type, EditorType::Custom) {
+-            return None;
++        let command = self
++            .custom_command
++            .as_deref()
++            .map(str::trim)
++            .ok_or_else(|| EditorOpenError::InvalidCommand {
++                details: "Code Server URL is required".to_string(),
++                editor_type: self.editor_type.clone(),
++            })?;
++
++        if command.is_empty() {
++            return Err(EditorOpenError::InvalidCommand {
++                details: "Code Server URL is required".to_string(),
++                editor_type: self.editor_type.clone(),
++            });
+         }
+ 
+-        let command = self.custom_command.as_deref()?.trim();
+-        let url = Url::parse(command).ok()?;
++        let url = Url::parse(command).map_err(|e| EditorOpenError::InvalidCommand {
++            details: format!("Invalid Code Server URL: {e}"),
++            editor_type: self.editor_type.clone(),
++        })?;
+ 
+         match url.scheme() {
+-            "http" | "https" => Some(url),
+-            _ => None,
++            "http" | "https" => Ok(url),
++            _ => Err(EditorOpenError::InvalidCommand {
++                details: "Code Server URL must start with http:// or https://".to_string(),
++                editor_type: self.editor_type.clone(),
++            }),
+         }
+     }
+ 
+-    fn custom_url(&self, path: &Path) -> Option<String> {
+-        let mut url = self.custom_editor_url_base()?;
++    fn code_server_url(&self, path: &Path) -> Result<String, EditorOpenError> {
++        let mut url = self.code_server_url_base()?;
+         let folder_path = if path.is_file() {
+             path.parent().unwrap_or(path)
+         } else {
+@@ -206,7 +236,7 @@ impl EditorConfig {
+ 
+         url.query_pairs_mut()
+             .append_pair("folder", &folder_path.to_string_lossy());
+-        Some(url.to_string())
++        Ok(url.to_string())
+     }
+ 
+     fn remote_url(&self, path: &Path) -> Option<String> {
+@@ -274,49 +304,51 @@ mod tests {
+     use tempfile::tempdir;
+     use url::Url;
+ 
+-    use super::{EditorConfig, EditorType};
++    use super::{EditorConfig, EditorOpenError, EditorType};
+ 
+     #[test]
+-    fn custom_http_command_is_treated_as_url_editor() {
++    fn code_server_url_requires_http_or_https_scheme() {
+         let config = EditorConfig::new(
+-            EditorType::Custom,
+-            Some("https://code-server.example.com/".to_string()),
++            EditorType::CodeServer,
++            Some("code-server://workspace".to_string()),
+             None,
+             None,
+             false,
+         );
+ 
+-        assert!(config.is_url_based_custom_editor());
++        let result = config.code_server_url_base();
++        assert!(matches!(
++            result,
++            Err(EditorOpenError::InvalidCommand { .. })
++        ));
+     }
+ 
+     #[test]
+-    fn custom_non_url_command_is_not_treated_as_url_editor() {
+-        let config = EditorConfig::new(
+-            EditorType::Custom,
+-            Some("code --reuse-window".to_string()),
+-            None,
+-            None,
+-            false,
+-        );
+-
+-        assert!(!config.is_url_based_custom_editor());
++    fn code_server_url_is_required() {
++        let config = EditorConfig::new(EditorType::CodeServer, None, None, None, false);
++
++        let result = config.code_server_url_base();
++        assert!(matches!(
++            result,
++            Err(EditorOpenError::InvalidCommand { .. })
++        ));
+     }
+ 
+     #[test]
+-    fn custom_url_for_directory_sets_folder_query() {
++    fn code_server_url_for_directory_sets_folder_query() {
+         let dir = tempdir().expect("tempdir");
+         let repo_path = dir.path().join("repo");
+         fs::create_dir_all(&repo_path).expect("create repo dir");
+ 
+         let config = EditorConfig::new(
+-            EditorType::Custom,
++            EditorType::CodeServer,
+             Some("https://code-server.example.com/".to_string()),
+             None,
+             None,
+             false,
+         );
+ 
+-        let url = config.custom_url(&repo_path).expect("custom url");
++        let url = config.code_server_url(&repo_path).expect("code server url");
+         let parsed = Url::parse(&url).expect("valid url");
+         let folder = parsed
+             .query_pairs()
+@@ -327,7 +359,7 @@ mod tests {
+     }
+ 
+     #[test]
+-    fn custom_url_for_file_uses_parent_directory() {
++    fn code_server_url_for_file_uses_parent_directory() {
+         let dir = tempdir().expect("tempdir");
+         let repo_path = dir.path().join("repo");
+         fs::create_dir_all(&repo_path).expect("create repo dir");
+@@ -336,14 +368,14 @@ mod tests {
+         fs::write(&file_path, "fn main() {}\n").expect("write file");
+ 
+         let config = EditorConfig::new(
+-            EditorType::Custom,
++            EditorType::CodeServer,
+             Some("https://code-server.example.com/?theme=dark".to_string()),
+             None,
+             None,
+             false,
+         );
+ 
+-        let url = config.custom_url(&file_path).expect("custom url");
++        let url = config.code_server_url(&file_path).expect("code server url");
+         let parsed = Url::parse(&url).expect("valid url");
+         let folder = parsed
+             .query_pairs()
+diff --git a/packages/web-core/src/i18n/locales/en/settings.json b/packages/web-core/src/i18n/locales/en/settings.json
+index 946ecba99..1fe8e5cd6 100644
+--- a/packages/web-core/src/i18n/locales/en/settings.json
++++ b/packages/web-core/src/i18n/locales/en/settings.json
+@@ -75,9 +75,12 @@
+           "helper": "Choose your preferred code editor interface."
+         },
+         "customCommand": {
+-          "label": "Custom Editor Command or URL",
+-          "placeholder": "e.g., code, subl, vim, https://code-server.example.com",
+-          "helper": "Enter a command to launch a local editor, or an HTTP(S) URL for browser-based editors like code-server. In URL mode, Vibe Kanban opens a new tab and appends the workspace path as the folder query."
++          "label": "Custom Editor Command",
++          "placeholder": "e.g., code, subl, vim",
++          "helper": "Enter the command to launch your custom editor. This will be used to open files."
++        },
++        "codeServerUrl": {
++          "placeholder": "https://code-server.example.com"
+         },
+         "remoteSsh": {
+           "host": {
+@@ -93,7 +96,7 @@
+         },
+         "autoInstallExtension": {
+           "label": "Auto-install VS Code Extension",
+-          "helper": "Automatically install the Vibe Kanban extension when opening a project in VS Code or Cursor. This runs in the background and has no effect if the extension is already installed."
++          "helper": "Automatically install the Vibe Kanban extension when opening a project in VS Code, Cursor, or Code Server. This runs in the background and has no effect if the extension is already installed."
+         },
+         "availability": {
+           "checking": "Checking availability...",
+diff --git a/packages/web-core/src/shared/components/IdeIcon.tsx b/packages/web-core/src/shared/components/IdeIcon.tsx
+index 5cfeb0dc3..167b6390c 100644
+--- a/packages/web-core/src/shared/components/IdeIcon.tsx
++++ b/packages/web-core/src/shared/components/IdeIcon.tsx
+@@ -16,7 +16,11 @@ export function IdeIcon({ editorType, className = 'h-4 w-4' }: IdeIconProps) {
+   const ideName = getIdeName(editorType);
+   let ideIconPath = '';
+ 
+-  if (!editorType || editorType === EditorType.CUSTOM) {
++  if (
++    !editorType ||
++    editorType === EditorType.CUSTOM ||
++    editorType === EditorType.CODE_SERVER
++  ) {
+     // Generic fallback for other IDEs or no IDE configured
+     return <Code2 className={className} />;
+   }
+diff --git a/packages/web-core/src/shared/dialogs/settings/settings/GeneralSettingsSection.tsx b/packages/web-core/src/shared/dialogs/settings/settings/GeneralSettingsSection.tsx
+index f172f1c39..753f9bfd1 100644
+--- a/packages/web-core/src/shared/dialogs/settings/settings/GeneralSettingsSection.tsx
++++ b/packages/web-core/src/shared/dialogs/settings/settings/GeneralSettingsSection.tsx
+@@ -335,10 +335,19 @@ export function GeneralSettingsSection() {
+           />
+         </SettingsField>
+ 
+-        {draft?.editor.editor_type === EditorType.CUSTOM && (
++        {(draft?.editor.editor_type === EditorType.CUSTOM ||
++          draft?.editor.editor_type === EditorType.CODE_SERVER) && (
+           <SettingsField
+-            label={t('settings.general.editor.customCommand.label')}
+-            description={t('settings.general.editor.customCommand.helper')}
++            label={
++              draft?.editor.editor_type === EditorType.CODE_SERVER
++                ? 'Code Server URL'
++                : t('settings.general.editor.customCommand.label')
++            }
++            description={
++              draft?.editor.editor_type === EditorType.CODE_SERVER
++                ? 'Required. Browser URL to your code-server instance. Vibe Kanban will open this URL in a new tab and append the workspace folder path.'
++                : t('settings.general.editor.customCommand.helper')
++            }
+           >
+             <SettingsInput
+               value={draft?.editor.custom_command || ''}
+@@ -351,7 +360,9 @@ export function GeneralSettingsSection() {
+                 })
+               }
+               placeholder={t(
+-                'settings.general.editor.customCommand.placeholder'
++                draft?.editor.editor_type === EditorType.CODE_SERVER
++                  ? 'settings.general.editor.codeServerUrl.placeholder'
++                  : 'settings.general.editor.customCommand.placeholder'
+               )}
+             />
+           </SettingsField>
+@@ -409,7 +420,8 @@ export function GeneralSettingsSection() {
+ 
+         {(draft?.editor.editor_type === EditorType.VS_CODE ||
+           draft?.editor.editor_type === EditorType.VS_CODE_INSIDERS ||
+-          draft?.editor.editor_type === EditorType.CURSOR) && (
++          draft?.editor.editor_type === EditorType.CURSOR ||
++          draft?.editor.editor_type === EditorType.CODE_SERVER) && (
+           <SettingsCheckbox
+             id="auto-install-extension"
+             label={t('settings.general.editor.autoInstallExtension.label')}
+diff --git a/packages/web-core/src/shared/lib/ideName.ts b/packages/web-core/src/shared/lib/ideName.ts
+index 8c634a5af..9f49b72de 100644
+--- a/packages/web-core/src/shared/lib/ideName.ts
++++ b/packages/web-core/src/shared/lib/ideName.ts
+@@ -18,6 +18,8 @@ export function getIdeName(editorType: EditorType | undefined | null): string {
+       return 'Zed';
+     case EditorType.XCODE:
+       return 'Xcode';
++    case EditorType.CODE_SERVER:
++      return 'Code Server';
+     case EditorType.CUSTOM:
+       return i18n.t('common:editorNames.custom');
+     case EditorType.GOOGLE_ANTIGRAVITY:
+diff --git a/shared/types.ts b/shared/types.ts
+index 69b3ab54a..8e8e22978 100644
+--- a/shared/types.ts
++++ b/shared/types.ts
+@@ -484,7 +484,7 @@ export enum ThemeMode { LIGHT = "LIGHT", DARK = "DARK", SYSTEM = "SYSTEM" }
+ 
+ export type EditorConfig = { editor_type: EditorType, custom_command: string | null, remote_ssh_host: string | null, remote_ssh_user: string | null, auto_install_extension: boolean, };
+ 
+-export enum EditorType { VS_CODE = "VS_CODE", VS_CODE_INSIDERS = "VS_CODE_INSIDERS", CURSOR = "CURSOR", WINDSURF = "WINDSURF", INTELLI_J = "INTELLI_J", ZED = "ZED", XCODE = "XCODE", GOOGLE_ANTIGRAVITY = "GOOGLE_ANTIGRAVITY", CUSTOM = "CUSTOM" }
++export enum EditorType { VS_CODE = "VS_CODE", VS_CODE_INSIDERS = "VS_CODE_INSIDERS", CURSOR = "CURSOR", WINDSURF = "WINDSURF", INTELLI_J = "INTELLI_J", ZED = "ZED", XCODE = "XCODE", GOOGLE_ANTIGRAVITY = "GOOGLE_ANTIGRAVITY", CODE_SERVER = "CODE_SERVER", CUSTOM = "CUSTOM" }
+ 
+ export type EditorOpenError = { "type": "executable_not_found", executable: string, editor_type: EditorType, } | { "type": "invalid_command", details: string, editor_type: EditorType, } | { "type": "launch_failed", executable: string, details: string, editor_type: EditorType, };
+ 
+-- 
+2.50.1
+
