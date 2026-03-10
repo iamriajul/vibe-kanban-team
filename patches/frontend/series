@@ -3,3 +3,4 @@
 0002-feat-require-workspace-auth-and-add-admin-scoped-creator-visibility.patch
 0003-feat-add-dedicated-code-server-editor-type.patch
 0004-fix-alert-when-code-server-url-is-not-configured.patch
+0005-feat-make-code-server-onboarding-seamless.patch
