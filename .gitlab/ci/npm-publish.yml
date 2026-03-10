@@ -72,6 +72,8 @@ publish-npm-release:
     # Run the publish script with explicit version
     - ./scripts/publish-npm.sh
   variables:
+    # Prevent Vite/TypeScript release builds from hitting default Node heap limits in CI.
+    NODE_OPTIONS: "--max-old-space-size=6144"
     SKIP_SYSTEM_DEPS: "1"
     LIBSQLITE3_SYS_USE_PKG_CONFIG: "1"
   tags:
