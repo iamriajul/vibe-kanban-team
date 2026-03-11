@@ -195,6 +195,17 @@ relay:
             pathType: Prefix
     tls: []
 
+  # Also expose relay API/proxy paths under the main remote ingress host.
+  # This keeps the remote frontend image reusable across environments because
+  # it can fall back to the remote API base URL at runtime.
+  proxyUnderRemoteIngress:
+    enabled: true
+    paths:
+      - path: /v1/relay
+        pathType: Prefix
+      - path: /relay/h
+        pathType: Prefix
+
   resources:
     limits:
       cpu: 500m

@@ -32,7 +32,8 @@ ingress:
 
 # Relay tunnel (optional)
 # NOTE: Tunnel users need relay ingress + wildcard TLS.
-# NOTE: Build your remote image with VITE_RELAY_API_BASE_URL set to this relay URL.
+# NOTE: relay.proxyUnderRemoteIngress keeps remote image reusable without
+#       requiring VITE_RELAY_API_BASE_URL at build time.
 relay:
   enabled: false
 
@@ -64,6 +65,16 @@ relay:
         hosts:
           - relay.vibe-kanban.example.com
           - "*.relay.vibe-kanban.example.com"
+
+  # Proxy relay paths under the main remote ingress host so the frontend can
+  # use remote API base URL at runtime.
+  proxyUnderRemoteIngress:
+    enabled: true
+    paths:
+      - path: /v1/relay
+        pathType: Prefix
+      - path: /relay/h
+        pathType: Prefix
 
   env:
     - name: SERVER_DATABASE_URL

@@ -84,7 +84,7 @@ These variables are required for the `publish-npm` and `publish-npm-release` job
 | `FEATURES` | Build features for Docker image | (empty) |
 | `POSTHOG_API_KEY` | PostHog API key for analytics | (optional) |
 | `POSTHOG_API_ENDPOINT` | PostHog endpoint URL | (optional) |
-| `VITE_RELAY_API_BASE_URL` | Relay API base URL baked into remote frontend build | (optional) |
+| `VITE_RELAY_API_BASE_URL` | Relay API base URL baked into remote frontend build (only needed if relay paths are not proxied under the remote API host) | (optional) |
 
 ## Setting Up NPM Token
 

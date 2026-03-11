@@ -1,6 +1,9 @@
 {{- if .Values.ingress.enabled -}}
 {{- $fullName := include "vibe-kanban-cloud.fullname" . -}}
 {{- $svcPort := .Values.service.port -}}
+{{- $relayName := include "vibe-kanban-cloud.relay.fullname" . -}}
+{{- $relaySvcPort := .Values.relay.service.port -}}
+{{- $proxyRelayViaRemote := and .Values.relay.enabled .Values.relay.proxyUnderRemoteIngress.enabled -}}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -30,6 +33,17 @@ spec:
     - host: {{ .host | quote }}
       http:
         paths:
+          {{- if $proxyRelayViaRemote }}
+          {{- range $.Values.relay.proxyUnderRemoteIngress.paths }}
+          - path: {{ .path }}
+            pathType: {{ .pathType }}
+            backend:
+              service:
+                name: {{ $relayName }}
+                port:
+                  number: {{ $relaySvcPort }}
+          {{- end }}
+          {{- end }}
           {{- range .paths }}
           - path: {{ .path }}
             pathType: {{ .pathType }}

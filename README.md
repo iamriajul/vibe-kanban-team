@@ -315,6 +315,7 @@ To support tunnel/relay features, enable the `relay` section in values and confi
 - `relay.env` with `SERVER_DATABASE_URL` and `VIBEKANBAN_REMOTE_JWT_SECRET` (same DB/JWT as remote)
 - `relay.ingress` with both relay base host and wildcard host (for example `relay.example.com` and `*.relay.example.com`)
 - use a DNS-01 capable ClusterIssuer for wildcard relay hosts (for example `cert-manager-global` above)
+- keep `relay.proxyUnderRemoteIngress.enabled: true` so relay endpoints are available under the main remote API host (`/v1/relay` and `/relay/h`) for reusable frontend images
 
 `scripts/deploy.sh` now sets both `image.tag` and `relay.image.tag` to the requested release tag.
 
