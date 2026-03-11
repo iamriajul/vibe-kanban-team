@@ -47,6 +47,68 @@ This repository provides a production-ready deployment solution for Vibe Kanban 
 - Helm 3.x
 - PostgreSQL 14+ with `wal_level=logical` (CloudNativePG recommended)
 - kubectl configured to access your cluster
+- cert-manager installed via the upstream Helm chart (do not use the MicroK8s cert-manager addon)
+
+## cert-manager Installation (Helm, Recommended)
+
+TLS in this chart relies on cert-manager. Install cert-manager using the upstream Helm chart so you stay on a supported release line.
+
+For MicroK8s users, enable core addons without cert-manager:
+
+```bash
+microk8s enable dns ingress hostpath-storage community cloudnative-pg
+# Intentionally skip: microk8s enable cert-manager
+```
+
+Install cert-manager:
+
+```bash
+CERT_MANAGER_CHART_VERSION="1.19.4" # update to latest supported patch release
+
+helm repo add jetstack https://charts.jetstack.io
+helm repo update
+
+kubectl create namespace cert-manager --dry-run=client -o yaml | kubectl apply -f -
+
+helm upgrade --install cert-manager jetstack/cert-manager \
+  --namespace cert-manager \
+  --version "${CERT_MANAGER_CHART_VERSION}" \
+  --set crds.enabled=true
+
+kubectl -n cert-manager rollout status deploy/cert-manager --timeout=180s
+kubectl -n cert-manager rollout status deploy/cert-manager-webhook --timeout=180s
+kubectl -n cert-manager rollout status deploy/cert-manager-cainjector --timeout=180s
+```
+
+Create a ClusterIssuer (Cloudflare DNS-01 example, supports wildcard relay hosts):
+
+```bash
+kubectl -n cert-manager create secret generic cloudflare-dns-api-token \
+  --from-literal=API_TOKEN='<cloudflare-api-token>'
+
+kubectl apply -f - <<'EOF'
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: cert-manager-global
+spec:
+  acme:
+    email: you@example.com
+    server: https://acme-v02.api.letsencrypt.org/directory
+    privateKeySecretRef:
+      name: cert-manager-global-account-key
+    solvers:
+      - dns01:
+          cloudflare:
+            apiTokenSecretRef:
+              name: cloudflare-dns-api-token
+              key: API_TOKEN
+EOF
+```
+
+Cloudflare token minimum permissions:
+- `Zone:Read`
+- `DNS:Edit`
 
 ## CNPG (Optional)
 
@@ -252,6 +314,7 @@ To support tunnel/relay features, enable the `relay` section in values and confi
 - `relay.enabled: true`
 - `relay.env` with `SERVER_DATABASE_URL` and `VIBEKANBAN_REMOTE_JWT_SECRET` (same DB/JWT as remote)
 - `relay.ingress` with both relay base host and wildcard host (for example `relay.example.com` and `*.relay.example.com`)
+- use a DNS-01 capable ClusterIssuer for wildcard relay hosts (for example `cert-manager-global` above)
 
 `scripts/deploy.sh` now sets both `image.tag` and `relay.image.tag` to the requested release tag.
 
