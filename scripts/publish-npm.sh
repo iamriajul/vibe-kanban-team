@@ -4,7 +4,7 @@ IFS=$'\n\t'
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VIBE_DIR="${ROOT_DIR}/vibe-kanban"
-SERIES_FILE="${ROOT_DIR}/patches/series"
+SERIES_FILE="${ROOT_DIR}/patches/frontend/series"
 
 # Optional local credentials file (intentionally gitignored).
 # If present, it should export NPM_TOKEN/R2_* and other required env vars.
@@ -46,7 +46,7 @@ cleanup() {
       done < <(grep -v '^[[:space:]]*$' "${SERIES_FILE}" | grep -v '^[[:space:]]*#')
 
       for ((idx=${#PATCH_LIST[@]}-1; idx>=0; idx--)); do
-        PATCH_PATH="${ROOT_DIR}/patches/${PATCH_LIST[$idx]}"
+        PATCH_PATH="${ROOT_DIR}/patches/frontend/${PATCH_LIST[$idx]}"
         if [ -f "${PATCH_PATH}" ]; then
           git -C "${VIBE_DIR}" apply -R "${PATCH_PATH}" >/dev/null 2>&1 || true
         fi
@@ -358,7 +358,7 @@ echo "Using binary tag: ${BINARY_TAG}"
 echo "Using npm dist-tag: ${NPM_TAG}"
 
 echo "Applying downstream patches..."
-"${ROOT_DIR}/scripts/apply-patches.sh"
+"${ROOT_DIR}/scripts/apply-patches.sh" vibe-kanban
 PATCHES_APPLIED=1
 
 TMP_DIR="$(mktemp -d)"
@@ -394,7 +394,13 @@ echo "Installing dependencies..."
 (cd "${VIBE_DIR}" && pnpm install)
 
 echo "Building frontend..."
-(cd "${VIBE_DIR}/frontend" && pnpm run build)
+if [ -d "${VIBE_DIR}/packages/local-web" ]; then
+  (cd "${VIBE_DIR}" && pnpm --filter @vibe/local-web run build)
+elif [ -d "${VIBE_DIR}/frontend" ]; then
+  (cd "${VIBE_DIR}/frontend" && pnpm run build)
+else
+  die "Frontend source directory not found. Expected '${VIBE_DIR}/packages/local-web' or '${VIBE_DIR}/frontend'."
+fi
 
 HOST_TRIPLE="$(rustc -vV | awk '/host/ {print $2}')"
 
@@ -444,17 +450,53 @@ if [ "${TARGET_TRIPLE}" != "${HOST_TRIPLE}" ]; then
   rustup target add "${TARGET_TRIPLE}"
 fi
 
+echo "Resolving MCP binary target..."
+MCP_BIN_TARGET="$(
+  cd "${VIBE_DIR}" && cargo metadata --no-deps --format-version 1 | ${NODE_CMD} -e '
+    let data = "";
+    process.stdin.on("data", chunk => data += chunk);
+    process.stdin.on("end", () => {
+      const metadata = JSON.parse(data);
+      const binTargets = new Set();
+      for (const pkg of metadata.packages || []) {
+        for (const target of pkg.targets || []) {
+          if ((target.kind || []).includes("bin")) {
+            binTargets.add(target.name);
+          }
+        }
+      }
+      if (binTargets.has("vibe-kanban-mcp")) {
+        process.stdout.write("vibe-kanban-mcp");
+      } else if (binTargets.has("mcp_task_server")) {
+        process.stdout.write("mcp_task_server");
+      }
+    });
+  '
+)"
+if [ -z "${MCP_BIN_TARGET}" ]; then
+  die "Unable to detect MCP binary target. Expected 'vibe-kanban-mcp' or 'mcp_task_server'."
+fi
+echo "Using MCP binary target: ${MCP_BIN_TARGET}"
+
 echo "Building backend binaries for ${TARGET_TRIPLE}..."
 if [ "${TARGET_TRIPLE}" = "${HOST_TRIPLE}" ]; then
-  (cd "${VIBE_DIR}" && cargo build --release --bin server --bin mcp_task_server --bin review)
+  (cd "${VIBE_DIR}" && cargo build --release --bin server --bin "${MCP_BIN_TARGET}" --bin review)
   TARGET_DIR="${VIBE_DIR}/target/release"
 else
-  (cd "${VIBE_DIR}" && cargo build --release --target "${TARGET_TRIPLE}" --bin server --bin mcp_task_server --bin review)
+  (cd "${VIBE_DIR}" && cargo build --release --target "${TARGET_TRIPLE}" --bin server --bin "${MCP_BIN_TARGET}" --bin review)
   TARGET_DIR="${VIBE_DIR}/target/${TARGET_TRIPLE}/release"
 fi
 
 if [ ! -f "${TARGET_DIR}/server" ]; then
   echo "Expected binary not found at ${TARGET_DIR}/server"
+  exit 1
+fi
+if [ ! -f "${TARGET_DIR}/${MCP_BIN_TARGET}" ]; then
+  echo "Expected binary not found at ${TARGET_DIR}/${MCP_BIN_TARGET}"
+  exit 1
+fi
+if [ ! -f "${TARGET_DIR}/review" ]; then
+  echo "Expected binary not found at ${TARGET_DIR}/review"
   exit 1
 fi
 
@@ -491,7 +533,7 @@ WORK_DIR="$(mktemp -d)"
 cp "${TARGET_DIR}/server" "${WORK_DIR}/vibe-kanban"
 zip -j "${DIST_DIR}/vibe-kanban.zip" "${WORK_DIR}/vibe-kanban" >/dev/null
 
-cp "${TARGET_DIR}/mcp_task_server" "${WORK_DIR}/vibe-kanban-mcp"
+cp "${TARGET_DIR}/${MCP_BIN_TARGET}" "${WORK_DIR}/vibe-kanban-mcp"
 zip -j "${DIST_DIR}/vibe-kanban-mcp.zip" "${WORK_DIR}/vibe-kanban-mcp" >/dev/null
 
 cp "${TARGET_DIR}/review" "${WORK_DIR}/vibe-kanban-review"
@@ -600,11 +642,11 @@ NPMRC_BAK="${TMP_DIR}/.npmrc"
 umask 077
 printf "//registry.npmjs.org/:_authToken=%s\n" "${NPM_TOKEN}" > "${NPMRC_BAK}"
 
-if (cd "${VIBE_DIR}/npx-cli" && npm view "@iamriajul/vibe-kanban-fork@${VERSION}" version >/dev/null 2>&1); then
+if (cd "${VIBE_DIR}/npx-cli" && npm --userconfig "${NPMRC_BAK}" view "@iamriajul/vibe-kanban-fork@${VERSION}" version >/dev/null 2>&1); then
   echo "npm version ${VERSION} already exists; skipping publish."
 else
   echo "Publishing to npm with dist-tag: ${NPM_TAG}"
-  (cd "${VIBE_DIR}/npx-cli" && NPM_CONFIG_USERCONFIG="${NPMRC_BAK}" npm publish --ignore-scripts --access public --tag "${NPM_TAG}")
+  (cd "${VIBE_DIR}/npx-cli" && npm --userconfig "${NPMRC_BAK}" publish --ignore-scripts --access public --tag "${NPM_TAG}")
 fi
 
 echo "Publish complete."

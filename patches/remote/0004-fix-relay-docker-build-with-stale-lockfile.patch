@@ -1,0 +1,28 @@
+From 0f4c27d7650f56b99b46e85c1ac831f68e41c970 Mon Sep 17 00:00:00 2001
+From: Codex <codex@openai.com>
+Date: Wed, 11 Mar 2026 09:07:00 +0000
+Subject: [PATCH] fix(relay): build without locked crate-local lockfile
+
+The upstream relay-tunnel crate is built as its own workspace from
+`crates/relay-tunnel/Cargo.toml`. At the `remote-v0.1.21` upstream commit,
+that crate-local lockfile needs regeneration, so `cargo build --locked`
+fails in CI and blocks the relay image release.
+
+Allow Cargo to refresh that nested lockfile during the image build.
+---
+ crates/relay-tunnel/Dockerfile | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/crates/relay-tunnel/Dockerfile b/crates/relay-tunnel/Dockerfile
+index cf665e3ad..87dce8f08 100644
+--- a/crates/relay-tunnel/Dockerfile
++++ b/crates/relay-tunnel/Dockerfile
+@@ -15,5 +15,5 @@ RUN mkdir -p /app/bin
+ RUN --mount=type=cache,target=/usr/local/cargo/registry \
+     --mount=type=cache,target=/usr/local/cargo/git \
+     --mount=type=cache,target=/app/target \
+-    cargo build --locked --release --manifest-path crates/relay-tunnel/Cargo.toml --features server \
++    cargo build --release --manifest-path crates/relay-tunnel/Cargo.toml --features server \
+  && cp crates/relay-tunnel/target/release/relay-server /app/bin/relay-server
+-- 
+2.50.1

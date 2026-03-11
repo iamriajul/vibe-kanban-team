@@ -59,8 +59,6 @@ publish-npm-release:
       export LIBCLANG_PATH="$(dirname "${LIBCLANG_SO}")"
     # Initialize vibe-kanban submodule only (for NPM package builds)
     - git submodule update --init vibe-kanban
-    # Apply frontend patches
-    - ./scripts/apply-patches.sh vibe-kanban
   script:
     # Extract version from tag (remove 'v' prefix if present)
     - |
@@ -73,7 +71,15 @@ publish-npm-release:
       export NPM_VERSION="${RELEASE_VERSION}"
     # Run the publish script with explicit version
     - ./scripts/publish-npm.sh
+  after_script:
+    - echo "PUBLISH_NPM_STATUS=${CI_JOB_STATUS}" > publish_status.env
+  artifacts:
+    when: always
+    reports:
+      dotenv: publish_status.env
   variables:
+    # Prevent Vite/TypeScript release builds from hitting default Node heap limits in CI.
+    NODE_OPTIONS: "--max-old-space-size=6144"
     SKIP_SYSTEM_DEPS: "1"
     LIBSQLITE3_SYS_USE_PKG_CONFIG: "1"
   tags:
@@ -93,6 +99,7 @@ notify-discord-npm-release:
     - when: never
   needs:
     - job: publish-npm-release
+      artifacts: true
       optional: true
   before_script:
     - apk add --no-cache curl jq
@@ -107,8 +114,9 @@ notify-discord-npm-release:
       # Extract version from tag (remove 'v' prefix if present)
       RELEASE_VERSION="${CI_COMMIT_TAG#v}"
 
-      # Determine publish status
-      if [ "$CI_JOB_STATUS" == "success" ]; then
+      # Determine publish status from publish-npm-release job
+      PUBLISH_STATUS="${PUBLISH_NPM_STATUS:-unknown}"
+      if [ "$PUBLISH_STATUS" = "success" ]; then
         STATUS="Success"
         COLOR="5763719"
       else
