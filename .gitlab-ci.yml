@@ -19,3 +19,4 @@ default:
 include:
   - local: '/.gitlab/ci/image-build.yml'
   - local: '/.gitlab/ci/npm-publish.yml'
+  - local: '/.gitlab/ci/scheduled-release.yml'
