@@ -77,8 +77,9 @@ LOCAL_TAGS=$(git tag -l | grep -E "$TAG_REGEX" | sort -V)
 echo "Local tags found: $(echo "$LOCAL_TAGS" | grep -c . || echo 0)"
 
 # ── Find new tags ────────────────────────────────────────────────────────────
+# Use grep -Fxvf instead of comm to avoid sort-order issues
 if [ -n "$LOCAL_TAGS" ]; then
-  NEW_TAGS=$(comm -23 <(echo "$UPSTREAM_TAGS") <(echo "$LOCAL_TAGS"))
+  NEW_TAGS=$(grep -Fxvf <(echo "$LOCAL_TAGS") <(echo "$UPSTREAM_TAGS") | sort -V) || true
 else
   NEW_TAGS="$UPSTREAM_TAGS"
 fi
