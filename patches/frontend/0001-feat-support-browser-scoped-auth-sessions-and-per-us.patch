@@ -1,4 +1,4 @@
-From 8d8458aa788c8009ebdc0b0656eb2e9de3921e4e Mon Sep 17 00:00:00 2001
+From e7073fc33dd4e604a1f31783dc3f2caedc3891ea Mon Sep 17 00:00:00 2001
 From: Riajul Islam <kmriajulislami@gmail.com>
 Date: Sun, 8 Mar 2026 13:30:01 +0000
 Subject: [PATCH 1/2] feat: support browser-scoped auth sessions and per-user

@@ -1,4 +1,4 @@
-From 8c78e586b6f14ab1f68a34c171af8769e5fa8cbf Mon Sep 17 00:00:00 2001
+From e7073fc33dd4e604a1f31783dc3f2caedc3891ea Mon Sep 17 00:00:00 2001
 From: Riajul Islam <kmriajulislami@gmail.com>
 Date: Sun, 8 Mar 2026 15:47:36 +0000
 Subject: [PATCH 2/2] feat: require workspace auth and add admin-scoped creator

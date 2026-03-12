@@ -1,4 +1,4 @@
-From b4848aa6cdb1adfbd22b288bcf490dc6a0aad23f Mon Sep 17 00:00:00 2001
+From e7073fc33dd4e604a1f31783dc3f2caedc3891ea Mon Sep 17 00:00:00 2001
 From: Riajul Islam <kmriajulislami@gmail.com>
 Date: Tue, 10 Mar 2026 10:09:48 +0000
 Subject: [PATCH] feat: add unified code-server onboarding and editor flow
