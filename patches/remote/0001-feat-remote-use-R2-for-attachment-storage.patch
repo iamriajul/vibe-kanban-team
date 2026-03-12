@@ -1,20 +1,20 @@
-From 5308c9bd5b6b10093420c7c8a276697c6c69342e Mon Sep 17 00:00:00 2001
+From c16377557a85baf02126cc9284973a600564738a Mon Sep 17 00:00:00 2001
 From: Riajul Islam <kmriajulislami@gmail.com>
-Date: Tue, 24 Feb 2026 15:51:58 +0600
+Date: Thu, 12 Mar 2026 15:45:57 +0000
 Subject: [PATCH] feat(remote): use R2 for attachment storage
 
 ---
  crates/remote/src/app.rs                 |   8 +-
  crates/remote/src/attachments/cleanup.rs |  28 ++---
  crates/remote/src/r2.rs                  | 132 +++++++++++++++++++++++
- crates/remote/src/routes/attachments.rs  |  92 +++++++++-------
- 4 files changed, 201 insertions(+), 59 deletions(-)
+ crates/remote/src/routes/attachments.rs  |  97 +++++++++--------
+ 4 files changed, 200 insertions(+), 65 deletions(-)
 
 diff --git a/crates/remote/src/app.rs b/crates/remote/src/app.rs
-index 8647c2390..c41e85fcc 100644
+index 60bc19e3b..d13fbfa5a 100644
 --- a/crates/remote/src/app.rs
 +++ b/crates/remote/src/app.rs
-@@ -113,7 +113,7 @@ impl Server {
+@@ -116,7 +116,7 @@ impl Server {
              tracing::info!("R2 storage service initialized");
          } else {
              tracing::warn!(
@@ -23,7 +23,7 @@ index 8647c2390..c41e85fcc 100644
              );
          }
  
-@@ -122,7 +122,7 @@ impl Server {
+@@ -125,7 +125,7 @@ impl Server {
              tracing::info!("Azure Blob storage service initialized");
          } else {
              tracing::info!(
@@ -32,7 +32,7 @@ index 8647c2390..c41e85fcc 100644
              );
          }
  
-@@ -174,8 +174,8 @@ impl Server {
+@@ -177,8 +177,8 @@ impl Server {
              }
          };
  
@@ -44,22 +44,23 @@ index 8647c2390..c41e85fcc 100644
  
          let state = AppState::new(
 diff --git a/crates/remote/src/attachments/cleanup.rs b/crates/remote/src/attachments/cleanup.rs
-index 86b88838b..6c56f7261 100644
+index 090ccf43e..fc8ce7985 100644
 --- a/crates/remote/src/attachments/cleanup.rs
 +++ b/crates/remote/src/attachments/cleanup.rs
-@@ -5,10 +5,10 @@ use tokio::task::JoinHandle;
+@@ -5,11 +5,11 @@ use tokio::task::JoinHandle;
  use tracing::{info, instrument, warn};
  
  use crate::{
 -    azure_blob::AzureBlobService,
-     db::attachments::AttachmentRepository,
-     db::blobs::BlobRepository,
-     db::pending_uploads::PendingUploadRepository,
+     db::{
+         attachments::AttachmentRepository, blobs::BlobRepository,
+         pending_uploads::PendingUploadRepository,
+     },
 +    r2::R2Service,
  };
  
  const EXPIRED_BATCH_SIZE: i64 = 100;
-@@ -16,7 +16,7 @@ const DEFAULT_INTERVAL: Duration = Duration::from_secs(3600);
+@@ -17,7 +17,7 @@ const DEFAULT_INTERVAL: Duration = Duration::from_secs(3600);
  
  /// Spawns a background task that periodically cleans up orphan attachments and
  /// expired pending uploads. Call once during server startup.
@@ -68,7 +69,7 @@ index 86b88838b..6c56f7261 100644
      let interval = std::env::var("ATTACHMENT_CLEANUP_INTERVAL_SECS")
          .ok()
          .and_then(|v| v.parse::<u64>().ok())
-@@ -35,18 +35,18 @@ pub fn spawn_cleanup_task(pool: PgPool, azure: AzureBlobService) -> JoinHandle<(
+@@ -36,18 +36,18 @@ pub fn spawn_cleanup_task(pool: PgPool, azure: AzureBlobService) -> JoinHandle<(
  
          loop {
              ticker.tick().await;
@@ -91,7 +92,7 @@ index 86b88838b..6c56f7261 100644
      );
  
      match expired {
-@@ -62,7 +62,7 @@ async fn run_sweep(pool: &PgPool, azure: &AzureBlobService) {
+@@ -63,7 +63,7 @@ async fn run_sweep(pool: &PgPool, azure: &AzureBlobService) {
  
  async fn cleanup_expired_attachments(
      pool: &PgPool,
@@ -100,7 +101,7 @@ index 86b88838b..6c56f7261 100644
  ) -> anyhow::Result<u32> {
      let expired = AttachmentRepository::find_expired(pool, EXPIRED_BATCH_SIZE).await?;
      let mut deleted_count: u32 = 0;
-@@ -79,12 +79,12 @@ async fn cleanup_expired_attachments(
+@@ -80,12 +80,12 @@ async fn cleanup_expired_attachments(
          match AttachmentRepository::count_by_blob_id(pool, blob_id).await {
              Ok(0) => {
                  if let Ok(Some(blob)) = BlobRepository::delete(pool, blob_id).await {
@@ -117,7 +118,7 @@ index 86b88838b..6c56f7261 100644
                          }
                      }
                  }
-@@ -103,14 +103,14 @@ async fn cleanup_expired_attachments(
+@@ -104,14 +104,14 @@ async fn cleanup_expired_attachments(
  
  async fn cleanup_expired_pending_uploads(
      pool: &PgPool,
@@ -293,25 +294,24 @@ index d40e6674a..135f6bd36 100644
      ///
      /// Returns the folder path (e.g., "reviews/{review_id}") to store in the database.
 diff --git a/crates/remote/src/routes/attachments.rs b/crates/remote/src/routes/attachments.rs
-index d65c6faec..d215a5562 100644
+index 6aca7a05d..ff5cf0129 100644
 --- a/crates/remote/src/routes/attachments.rs
 +++ b/crates/remote/src/routes/attachments.rs
-@@ -16,12 +16,12 @@ use api_types::{AttachmentUrlResponse, AttachmentWithBlob, AttachmentWithUrl, Li
- 
- use crate::{
+@@ -21,12 +21,12 @@ use crate::{
      AppState,
-+    attachments::thumbnail::ThumbnailService,
+     attachments::thumbnail::ThumbnailService,
      auth::RequestContext,
 -    azure_blob::AzureBlobError,
-     db::attachments::{AttachmentError, AttachmentRepository},
-     db::blobs::{BlobError, BlobRepository},
-     db::pending_uploads::{PendingUploadError, PendingUploadRepository},
--    attachments::thumbnail::ThumbnailService,
+     db::{
+         attachments::{AttachmentError, AttachmentRepository},
+         blobs::{BlobError, BlobRepository},
+         pending_uploads::{PendingUploadError, PendingUploadRepository},
+     },
 +    r2::R2Error,
  };
  
  pub fn router() -> Router<AppState> {
-@@ -90,10 +90,10 @@ pub struct CommitAttachmentsResponse {
+@@ -105,10 +105,10 @@ pub struct CommitAttachmentsResponse {
  
  #[derive(Debug, thiserror::Error)]
  pub enum RouteError {
@@ -325,10 +325,10 @@ index d65c6faec..d215a5562 100644
      #[error("attachment error: {0}")]
      Attachment(#[from] AttachmentError),
      #[error("blob error: {0}")]
-@@ -118,8 +118,8 @@ impl IntoResponse for RouteError {
-     fn into_response(self) -> Response {
-         let (status, message) = match &self {
-             RouteError::NotConfigured => (StatusCode::SERVICE_UNAVAILABLE, "Attachment storage not available"),
+@@ -136,8 +136,8 @@ impl IntoResponse for RouteError {
+                 StatusCode::SERVICE_UNAVAILABLE,
+                 "Attachment storage not available",
+             ),
 -            RouteError::AzureBlob(e) => {
 -                tracing::error!(error = %e, "Azure Blob error");
 +            RouteError::R2(e) => {
@@ -336,10 +336,10 @@ index d65c6faec..d215a5562 100644
                  (StatusCode::INTERNAL_SERVER_ERROR, "Storage error")
              }
              RouteError::Attachment(e) => {
-@@ -167,8 +167,8 @@ async fn init_upload(
-     }
- 
-     if let Some(existing) = BlobRepository::find_by_hash(state.pool(), payload.project_id, &payload.hash).await? {
+@@ -192,8 +192,8 @@ async fn init_upload(
+     if let Some(existing) =
+         BlobRepository::find_by_hash(state.pool(), payload.project_id, &payload.hash).await?
+     {
 -        let azure = state.azure_blob().ok_or(RouteError::NotConfigured)?;
 -        let read_url = azure.create_read_url(&existing.blob_path)?;
 +        let r2 = state.r2().ok_or(RouteError::NotConfigured)?;
@@ -347,29 +347,34 @@ index d65c6faec..d215a5562 100644
  
          return Ok(Json(InitUploadResponse {
              upload_url: read_url,
-@@ -179,10 +179,10 @@ async fn init_upload(
+@@ -204,7 +204,7 @@ async fn init_upload(
          }));
      }
  
 -    let azure = state.azure_blob().ok_or(RouteError::NotConfigured)?;
 +    let r2 = state.r2().ok_or(RouteError::NotConfigured)?;
      let sanitized_filename = sanitize_filename(&payload.filename);
-     let blob_path = format!("attachments/{}/{}_{}", payload.project_id, Uuid::new_v4(), sanitized_filename);
+     let blob_path = format!(
+         "attachments/{}/{}_{}",
+@@ -212,7 +212,7 @@ async fn init_upload(
+         Uuid::new_v4(),
+         sanitized_filename
+     );
 -    let upload = azure.create_upload_url(&blob_path)?;
 +    let upload = r2.create_upload_url(&blob_path, None).await?;
  
      let pending = PendingUploadRepository::create(
          state.pool(),
-@@ -223,7 +223,7 @@ async fn confirm_upload(
+@@ -253,7 +253,7 @@ async fn confirm_upload(
              .map_err(|_| RouteError::AccessDenied)?;
      }
  
 -    let azure = state.azure_blob().ok_or(RouteError::NotConfigured)?;
 +    let r2 = state.r2().ok_or(RouteError::NotConfigured)?;
  
-     let blob = if let Some(existing) = BlobRepository::find_by_hash(state.pool(), payload.project_id, &payload.hash).await? {
-         existing
-@@ -234,13 +234,13 @@ async fn confirm_upload(
+     let blob = if let Some(existing) =
+         BlobRepository::find_by_hash(state.pool(), payload.project_id, &payload.hash).await?
+@@ -266,13 +266,13 @@ async fn confirm_upload(
  
          let blob_path = &pending.blob_path;
  
@@ -383,19 +388,20 @@ index d65c6faec..d215a5562 100644
  
 -        let blob_data = azure.download_blob(blob_path).await?;
 +        let blob_data = r2.download_blob(blob_path).await?;
-         let thumbnail_result = ThumbnailService::generate(&blob_data, payload.content_type.as_deref())
-             .map_err(|e| RouteError::ThumbnailError(e.to_string()))?;
- 
-@@ -249,7 +249,7 @@ async fn confirm_upload(
+         let thumbnail_result =
+             ThumbnailService::generate(&blob_data, payload.content_type.as_deref())
+                 .map_err(|e| RouteError::ThumbnailError(e.to_string()))?;
+@@ -282,8 +282,7 @@ async fn confirm_upload(
          let (thumbnail_blob_path, width, height) = match thumbnail_result {
              Some(thumb) => {
                  let thumb_path = format!("thumbnails/{}", blob_path);
--                azure.upload_blob(&thumb_path, thumb.bytes, thumb.mime_type).await?;
-+                r2.upload_blob(&thumb_path, thumb.bytes, thumb.mime_type).await?;
-                 (Some(thumb_path), Some(thumb.original_width as i32), Some(thumb.original_height as i32))
-             }
-             None => (None, None, None),
-@@ -334,15 +334,20 @@ async fn list_issue_attachments(
+-                azure
+-                    .upload_blob(&thumb_path, thumb.bytes, thumb.mime_type)
++                r2.upload_blob(&thumb_path, thumb.bytes, thumb.mime_type)
+                     .await?;
+                 (
+                     Some(thumb_path),
+@@ -377,18 +376,20 @@ async fn list_issue_attachments(
          .await
          .map_err(|_| RouteError::AccessDenied)?;
  
@@ -405,7 +411,10 @@ index d65c6faec..d215a5562 100644
 -        .into_iter()
 -        .map(|a| {
 -            let file_url = azure.and_then(|az| az.create_read_url(&a.blob_path).ok());
--            AttachmentWithUrl { attachment: a, file_url }
+-            AttachmentWithUrl {
+-                attachment: a,
+-                file_url,
+-            }
 -        })
 -        .collect();
 +    let r2 = state.r2();
@@ -425,7 +434,7 @@ index d65c6faec..d215a5562 100644
      Ok(Json(ListAttachmentsResponse { attachments }))
  }
  
-@@ -356,15 +361,20 @@ async fn list_comment_attachments(
+@@ -402,18 +403,20 @@ async fn list_comment_attachments(
          .await
          .map_err(|_| RouteError::AccessDenied)?;
  
@@ -435,7 +444,10 @@ index d65c6faec..d215a5562 100644
 -        .into_iter()
 -        .map(|a| {
 -            let file_url = azure.and_then(|az| az.create_read_url(&a.blob_path).ok());
--            AttachmentWithUrl { attachment: a, file_url }
+-            AttachmentWithUrl {
+-                attachment: a,
+-                file_url,
+-            }
 -        })
 -        .collect();
 +    let r2 = state.r2();
@@ -455,7 +467,7 @@ index d65c6faec..d215a5562 100644
      Ok(Json(ListAttachmentsResponse { attachments }))
  }
  
-@@ -380,8 +390,8 @@ async fn get_attachment_file(
+@@ -429,8 +432,8 @@ async fn get_attachment_file(
  
      ensure_attachment_access(&state, ctx.user.id, &attachment).await?;
  
@@ -466,10 +478,10 @@ index d65c6faec..d215a5562 100644
      Ok(Json(AttachmentUrlResponse { url }))
  }
  
-@@ -398,8 +408,8 @@ async fn get_attachment_thumbnail(
-     ensure_attachment_access(&state, ctx.user.id, &attachment).await?;
- 
-     let thumbnail_path = attachment.thumbnail_blob_path.ok_or(RouteError::NoThumbnail)?;
+@@ -449,8 +452,8 @@ async fn get_attachment_thumbnail(
+     let thumbnail_path = attachment
+         .thumbnail_blob_path
+         .ok_or(RouteError::NoThumbnail)?;
 -    let azure = state.azure_blob().ok_or(RouteError::NotConfigured)?;
 -    let url = azure.create_read_url(&thumbnail_path)?;
 +    let r2 = state.r2().ok_or(RouteError::NotConfigured)?;
@@ -477,7 +489,7 @@ index d65c6faec..d215a5562 100644
      Ok(Json(AttachmentUrlResponse { url }))
  }
  
-@@ -421,12 +431,12 @@ async fn delete_attachment(
+@@ -472,12 +475,12 @@ async fn delete_attachment(
      let remaining = AttachmentRepository::count_by_blob_id(state.pool(), blob_id).await?;
      if remaining == 0 {
          if let Some(blob) = BlobRepository::delete(state.pool(), blob_id).await? {
@@ -494,5 +506,5 @@ index d65c6faec..d215a5562 100644
                  }
              }
 -- 
-2.50.1 (Apple Git-155)
+2.50.1
 
