@@ -1,17 +1,17 @@
-From ec79e176b552fe2d89653919ab3991f8b084e894 Mon Sep 17 00:00:00 2001
+From a5317c4a9cde438532a2a90c751a012f9bef313d Mon Sep 17 00:00:00 2001
 From: Riajul Islam <kmriajulislami@gmail.com>
-Date: Sat, 28 Feb 2026 06:55:07 +0000
+Date: Thu, 12 Mar 2026 15:52:01 +0000
 Subject: [PATCH] fix(remote): add attachment upload relay for legacy clients
 
 ---
  crates/remote/Cargo.toml                |  2 +-
- crates/remote/src/r2.rs                 | 33 +++++++----
- crates/remote/src/routes/attachments.rs | 73 +++++++++++++++++++++----
+ crates/remote/src/r2.rs                 | 33 ++++++++----
+ crates/remote/src/routes/attachments.rs | 67 +++++++++++++++++++++----
  crates/remote/src/routes/mod.rs         |  1 +
- 4 files changed, 88 insertions(+), 21 deletions(-)
+ 4 files changed, 83 insertions(+), 20 deletions(-)
 
 diff --git a/crates/remote/Cargo.toml b/crates/remote/Cargo.toml
-index ae2bd371c..2cd5bb9dc 100644
+index 1fb7126a6..ef7d93173 100644
 --- a/crates/remote/Cargo.toml
 +++ b/crates/remote/Cargo.toml
 @@ -56,7 +56,7 @@ urlencoding = "2.1"
@@ -133,10 +133,11 @@ index 135f6bd36..659abf58e 100644
          Ok(folder_path)
      }
 diff --git a/crates/remote/src/routes/attachments.rs b/crates/remote/src/routes/attachments.rs
-index d215a5562..219d7d4c2 100644
+index ff5cf0129..425789227 100644
 --- a/crates/remote/src/routes/attachments.rs
 +++ b/crates/remote/src/routes/attachments.rs
-@@ -1,9 +1,10 @@
+@@ -3,10 +3,11 @@ use api_types::{
+ };
  use axum::{
      Json, Router,
 +    body::Bytes,
@@ -149,8 +150,8 @@ index d215a5562..219d7d4c2 100644
  };
  use chrono::{DateTime, Utc};
  use serde::{Deserialize, Serialize};
-@@ -37,6 +38,10 @@ pub fn router() -> Router<AppState> {
-         .route("/comments/{comment_id}/attachments/commit", post(commit_comment_attachments))
+@@ -54,6 +55,10 @@ pub fn router() -> Router<AppState> {
+         )
  }
  
 +pub fn public_router() -> Router<AppState> {
@@ -160,14 +161,19 @@ index d215a5562..219d7d4c2 100644
  #[derive(Debug, Serialize, Deserialize, TS)]
  #[ts(export)]
  pub struct InitUploadRequest {
-@@ -179,29 +184,70 @@ async fn init_upload(
+@@ -204,7 +209,7 @@ async fn init_upload(
          }));
      }
  
 -    let r2 = state.r2().ok_or(RouteError::NotConfigured)?;
 +    state.r2().ok_or(RouteError::NotConfigured)?;
      let sanitized_filename = sanitize_filename(&payload.filename);
-     let blob_path = format!("attachments/{}/{}_{}", payload.project_id, Uuid::new_v4(), sanitized_filename);
+     let blob_path = format!(
+         "attachments/{}/{}_{}",
+@@ -212,26 +217,67 @@ async fn init_upload(
+         Uuid::new_v4(),
+         sanitized_filename
+     );
 -    let upload = r2.create_upload_url(&blob_path, None).await?;
 +
 +    let expires_at = Utc::now() + chrono::Duration::minutes(5);
@@ -237,7 +243,7 @@ index d215a5562..219d7d4c2 100644
  #[instrument(name = "attachments.confirm_upload", skip(state, ctx, payload), fields(project_id = %payload.project_id, user_id = %ctx.user.id))]
  async fn confirm_upload(
      State(state): State<AppState>,
-@@ -232,8 +278,11 @@ async fn confirm_upload(
+@@ -264,8 +310,11 @@ async fn confirm_upload(
              .await?
              .ok_or(RouteError::UploadNotFound)?;
  
@@ -250,24 +256,11 @@ index d215a5562..219d7d4c2 100644
          let props = r2.get_blob_properties(blob_path).await?;
          if props.content_length > MAX_FILE_SIZE {
              let _ = r2.delete_blob(blob_path).await;
-@@ -250,7 +299,11 @@ async fn confirm_upload(
-             Some(thumb) => {
-                 let thumb_path = format!("thumbnails/{}", blob_path);
-                 r2.upload_blob(&thumb_path, thumb.bytes, thumb.mime_type).await?;
--                (Some(thumb_path), Some(thumb.original_width as i32), Some(thumb.original_height as i32))
-+                (
-+                    Some(thumb_path),
-+                    Some(thumb.original_width as i32),
-+                    Some(thumb.original_height as i32),
-+                )
-             }
-             None => (None, None, None),
-         };
 diff --git a/crates/remote/src/routes/mod.rs b/crates/remote/src/routes/mod.rs
-index d217db789..a1263fd2d 100644
+index 2414cda62..fd88c10dd 100644
 --- a/crates/remote/src/routes/mod.rs
 +++ b/crates/remote/src/routes/mod.rs
-@@ -107,6 +107,7 @@ pub fn router(state: AppState) -> Router {
+@@ -101,6 +101,7 @@ pub fn router(state: AppState) -> Router {
          .merge(oauth::public_router())
          .merge(organization_members::public_router())
          .merge(tokens::public_router())
