@@ -2,5 +2,3 @@
 0001-feat-remote-use-R2-for-attachment-storage.patch
 0002-update-loops-template-ids.patch
 0003-fix-remote-add-attachment-upload-relay-for-legacy-cl.patch
-0004-fix-relay-docker-build-with-stale-lockfile.patch
-0005-fix-relay-install-perl-and-make-for-vendored-openssl.patch
