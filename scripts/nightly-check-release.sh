@@ -76,10 +76,14 @@ LOCAL_TAGS=$(git tag -l | grep -E "$TAG_REGEX" | sort -V)
 
 echo "Local tags found: $(echo "$LOCAL_TAGS" | grep -c . || echo 0)"
 
-# ── Find new tags ────────────────────────────────────────────────────────────
-# Use grep -Fxvf instead of comm to avoid sort-order issues
+# ── Find new tags (only those newer than our latest local tag) ────────────────
 if [ -n "$LOCAL_TAGS" ]; then
-  NEW_TAGS=$(grep -Fxvf <(echo "$LOCAL_TAGS") <(echo "$UPSTREAM_TAGS") | sort -V) || true
+  LATEST_LOCAL=$(echo "$LOCAL_TAGS" | tail -1)  # already sort -V'd
+  echo "Latest local tag: $LATEST_LOCAL"
+  # Insert our latest tag into upstream list, sort, take everything after it
+  NEW_TAGS=$(printf '%s\n' "$LATEST_LOCAL" $UPSTREAM_TAGS \
+    | sort -V -u \
+    | awk -v latest="$LATEST_LOCAL" 'found {print} $0 == latest {found=1}') || true
 else
   NEW_TAGS="$UPSTREAM_TAGS"
 fi
