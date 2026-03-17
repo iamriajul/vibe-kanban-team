@@ -1,7 +1,7 @@
-From e7073fc33dd4e604a1f31783dc3f2caedc3891ea Mon Sep 17 00:00:00 2001
-From: Riajul Islam <kmriajulislami@gmail.com>
-Date: Sun, 8 Mar 2026 13:30:01 +0000
-Subject: [PATCH 1/2] feat: support browser-scoped auth sessions and per-user
+From 61e7db4b3d14eea8883ea3c8bcfc98a163dd2807 Mon Sep 17 00:00:00 2001
+From: Riajul Islam <opensource@example.com>
+Date: Tue, 17 Mar 2026 05:00:28 +0000
+Subject: [PATCH 1/4] feat: support browser-scoped auth sessions and per-user
  git identity
 
 ---
@@ -22,7 +22,7 @@ Subject: [PATCH 1/2] feat: support browser-scoped auth sessions and per-user
  create mode 100644 crates/server/src/middleware/auth_session.rs
 
 diff --git a/crates/git/src/cli.rs b/crates/git/src/cli.rs
-index d34a1fd2b..6b7e9c9e5 100644
+index 02ab9c2c8..e93beb009 100644
 --- a/crates/git/src/cli.rs
 +++ b/crates/git/src/cli.rs
 @@ -342,6 +342,36 @@ impl GitCli {
@@ -97,7 +97,7 @@ index c27599162..ccab38ddd 100644
      pub fn get_diffs(
          &self,
 diff --git a/crates/local-deployment/src/container.rs b/crates/local-deployment/src/container.rs
-index 2a29d13c0..0cbf4df92 100644
+index 3ff9a392d..d23ef3dcc 100644
 --- a/crates/local-deployment/src/container.rs
 +++ b/crates/local-deployment/src/container.rs
 @@ -42,6 +42,7 @@ use serde_json::json;
@@ -256,7 +256,7 @@ index 2a29d13c0..0cbf4df92 100644
                  Ok(true) => {
                      any_committed = true;
                      tracing::info!("Committed changes in repo '{}'", repo.name);
-@@ -592,7 +677,20 @@ impl LocalContainerService {
+@@ -594,7 +679,20 @@ impl LocalContainerService {
  
                      if should_start_next {
                          // If the process exited successfully, start the next action
@@ -278,7 +278,7 @@ index 2a29d13c0..0cbf4df92 100644
                              tracing::error!("Failed to start next action after completion: {}", e);
                          }
                      } else {
-@@ -646,10 +744,20 @@ impl LocalContainerService {
+@@ -649,10 +747,20 @@ impl LocalContainerService {
                              }
  
                              // Execute the queued follow-up
@@ -302,7 +302,7 @@ index 2a29d13c0..0cbf4df92 100644
                                  tracing::error!("Failed to start queued follow-up: {}", e);
                                  // Fall back to finalization if follow-up fails
                                  container.finalize_task(&ctx).await;
-@@ -755,7 +863,7 @@ impl LocalContainerService {
+@@ -758,7 +866,7 @@ impl LocalContainerService {
                  if matches!(
                      &ctx.execution_process.run_reason,
                      ExecutionProcessRunReason::CodingAgent
@@ -311,7 +311,7 @@ index 2a29d13c0..0cbf4df92 100644
                  {
                      let stats = diff_stream::compute_diff_stats(
                          &container.db.pool,
-@@ -769,7 +877,6 @@ impl LocalContainerService {
+@@ -772,7 +880,6 @@ impl LocalContainerService {
                              .ok()
                              .flatten()
                              .and_then(|ws| ws.workspace.name);
@@ -319,7 +319,7 @@ index 2a29d13c0..0cbf4df92 100644
                      let workspace_id = ctx.workspace.id;
                      let archived = ctx.workspace.archived;
                      tokio::spawn(async move {
-@@ -800,6 +907,7 @@ impl LocalContainerService {
+@@ -803,6 +910,7 @@ impl LocalContainerService {
  
              // Cleanup child handle
              child_store.write().await.remove(&exec_id);
@@ -327,7 +327,7 @@ index 2a29d13c0..0cbf4df92 100644
          })
      }
  
-@@ -1352,6 +1460,17 @@ impl ContainerService for LocalContainerService {
+@@ -1355,6 +1463,17 @@ impl ContainerService for LocalContainerService {
          // Always inject workspace/session context
          env.insert("VK_WORKSPACE_ID", workspace.id.to_string());
          env.insert("VK_WORKSPACE_BRANCH", &workspace.branch);
@@ -345,7 +345,7 @@ index 2a29d13c0..0cbf4df92 100644
  
          // Create the child and stream, add to execution tracker with timeout
          let mut spawned = tokio::time::timeout(
-@@ -1377,6 +1496,9 @@ impl ContainerService for LocalContainerService {
+@@ -1380,6 +1499,9 @@ impl ContainerService for LocalContainerService {
                  .await;
          }
  
@@ -355,7 +355,7 @@ index 2a29d13c0..0cbf4df92 100644
          // Spawn unified exit monitor: watches OS exit and optional executor signal
          let hn = self.spawn_exit_monitor(&execution_process.id, spawned.exit_signal);
          self.add_exit_monitor_handle(execution_process.id, hn).await;
-@@ -1556,7 +1678,8 @@ impl ContainerService for LocalContainerService {
+@@ -1559,7 +1681,8 @@ impl ContainerService for LocalContainerService {
              return Ok(false);
          }
  
@@ -657,10 +657,10 @@ index 20ff8d742..af5458b0a 100644
              middleware::validate_origin,
          ))
 diff --git a/crates/server/src/routes/oauth.rs b/crates/server/src/routes/oauth.rs
-index 3e9b1771e..ec1014615 100644
+index 0516e7c23..0bc9a5914 100644
 --- a/crates/server/src/routes/oauth.rs
 +++ b/crates/server/src/routes/oauth.rs
-@@ -226,10 +226,7 @@ async fn handoff_complete(
+@@ -273,10 +273,7 @@ async fn handoff_complete(
      }
  
      // Start relay if enabled
@@ -670,8 +670,8 @@ index 3e9b1771e..ec1014615 100644
 -    });
 +    tunnel::spawn_relay(&deployment).await;
  
-     Ok(close_window_response(format!(
-         "Signed in with {provider}. You can return to the app."
+     let is_desktop = query.source.as_deref() == Some("desktop");
+     Ok(close_window_response(
 diff --git a/crates/server/src/routes/terminal.rs b/crates/server/src/routes/terminal.rs
 index 0c007808a..1c96d02a3 100644
 --- a/crates/server/src/routes/terminal.rs

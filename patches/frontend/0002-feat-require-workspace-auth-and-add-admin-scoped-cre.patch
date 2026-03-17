@@ -1,7 +1,7 @@
-From e7073fc33dd4e604a1f31783dc3f2caedc3891ea Mon Sep 17 00:00:00 2001
-From: Riajul Islam <kmriajulislami@gmail.com>
-Date: Sun, 8 Mar 2026 15:47:36 +0000
-Subject: [PATCH 2/2] feat: require workspace auth and add admin-scoped creator
+From 9a29ed69d196ef4d6e8915bbae27152260d6b752 Mon Sep 17 00:00:00 2001
+From: Riajul Islam <opensource@example.com>
+Date: Tue, 17 Mar 2026 05:00:38 +0000
+Subject: [PATCH 2/4] feat: require workspace auth and add admin-scoped creator
  visibility
 
 ---
@@ -105,10 +105,10 @@ index b7fa89419..501f2d366 100644
        saveConfig,
        updateAndSaveConfig,
 diff --git a/packages/web-core/src/pages/workspaces/WorkspacesLayout.tsx b/packages/web-core/src/pages/workspaces/WorkspacesLayout.tsx
-index 9d6a0e943..6fdf62e02 100644
+index e726ccb9e..61d3b4e2b 100644
 --- a/packages/web-core/src/pages/workspaces/WorkspacesLayout.tsx
 +++ b/packages/web-core/src/pages/workspaces/WorkspacesLayout.tsx
-@@ -21,6 +21,8 @@ import { CreateChatBoxContainer } from '@/shared/components/CreateChatBoxContain
+@@ -33,6 +33,8 @@ import { CreateChatBoxContainer } from '@/shared/components/CreateChatBoxContain
  import { PreviewBrowserContainer } from './PreviewBrowserContainer';
  import { WorkspacesGuideDialog } from '@/shared/dialogs/shared/WorkspacesGuideDialog';
  import { useUserSystem } from '@/shared/hooks/useUserSystem';
@@ -117,7 +117,7 @@ index 9d6a0e943..6fdf62e02 100644
  
  import {
    PERSIST_KEYS,
-@@ -55,6 +57,7 @@ export function WorkspacesLayout() {
+@@ -108,6 +110,7 @@ export function WorkspacesLayout() {
    const isMobile = useIsMobile();
    const [mobileTab] = useMobileActiveTab();
    const mainContainerRef = useRef<WorkspacesMainContainerHandle>(null);
@@ -125,7 +125,7 @@ index 9d6a0e943..6fdf62e02 100644
  
    const handleScrollToBottom = useCallback(() => {
      mainContainerRef.current?.scrollToBottom();
-@@ -79,15 +82,18 @@ export function WorkspacesLayout() {
+@@ -132,15 +135,18 @@ export function WorkspacesLayout() {
  
    const {
      config,
@@ -146,7 +146,7 @@ index 9d6a0e943..6fdf62e02 100644
  
      const seenFeatures = config.showcases?.seen_features ?? [];
      if (seenFeatures.includes(WORKSPACES_GUIDE_ID)) return;
-@@ -98,7 +104,13 @@ export function WorkspacesLayout() {
+@@ -151,7 +157,13 @@ export function WorkspacesLayout() {
        showcases: { seen_features: [...seenFeatures, WORKSPACES_GUIDE_ID] },
      });
      WorkspacesGuideDialog.show().finally(() => WorkspacesGuideDialog.hide());
@@ -161,7 +161,7 @@ index 9d6a0e943..6fdf62e02 100644
  
    // Ensure left panels visible when right main panel hidden
    useEffect(() => {
-@@ -131,6 +143,22 @@ export function WorkspacesLayout() {
+@@ -184,6 +196,22 @@ export function WorkspacesLayout() {
        setRightMainPanelSize(layout['right-main']);
    };
  

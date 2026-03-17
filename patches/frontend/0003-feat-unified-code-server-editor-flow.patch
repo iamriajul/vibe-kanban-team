@@ -1,7 +1,7 @@
-From e7073fc33dd4e604a1f31783dc3f2caedc3891ea Mon Sep 17 00:00:00 2001
-From: Riajul Islam <kmriajulislami@gmail.com>
-Date: Tue, 10 Mar 2026 10:09:48 +0000
-Subject: [PATCH] feat: add unified code-server onboarding and editor flow
+From e84ce605aa40616ac9285e08bffd10ae0da39ca4 Mon Sep 17 00:00:00 2001
+From: Riajul Islam <opensource@example.com>
+Date: Tue, 17 Mar 2026 05:04:11 +0000
+Subject: [PATCH 3/4] feat: unified code-server editor flow
 
 ---
  .../src/services/config/editor/mod.rs         | 159 +++++++++++++++++-
@@ -18,7 +18,7 @@ Subject: [PATCH] feat: add unified code-server onboarding and editor flow
  create mode 100644 packages/web-core/src/shared/lib/editorWarnings.ts
 
 diff --git a/crates/services/src/services/config/editor/mod.rs b/crates/services/src/services/config/editor/mod.rs
-index 3589f953f..e54b10fb6 100644
+index 6f5c3a708..f9eb2ba9d 100644
 --- a/crates/services/src/services/config/editor/mod.rs
 +++ b/crates/services/src/services/config/editor/mod.rs
 @@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
@@ -67,7 +67,7 @@ index 3589f953f..e54b10fb6 100644
              )
      }
  
-@@ -164,6 +173,14 @@ impl EditorConfig {
+@@ -165,6 +174,14 @@ impl EditorConfig {
          if let Some(url) = self.remote_url(path) {
              return Ok(Some(url));
          }
@@ -82,7 +82,7 @@ index 3589f953f..e54b10fb6 100644
          if self.should_auto_install_extension() {
              self.try_install_extension().await;
          }
-@@ -171,6 +188,57 @@ impl EditorConfig {
+@@ -172,6 +189,57 @@ impl EditorConfig {
          Ok(None)
      }
  
@@ -140,7 +140,7 @@ index 3589f953f..e54b10fb6 100644
      fn remote_url(&self, path: &Path) -> Option<String> {
          let remote_host = self.remote_ssh_host.as_ref()?;
          let user_part = self
-@@ -228,3 +296,92 @@ impl EditorConfig {
+@@ -232,3 +300,92 @@ impl EditorConfig {
          }
      }
  }
@@ -234,11 +234,11 @@ index 3589f953f..e54b10fb6 100644
 +    }
 +}
 diff --git a/packages/web-core/src/features/onboarding/ui/LandingPage.tsx b/packages/web-core/src/features/onboarding/ui/LandingPage.tsx
-index 7df49896b..35c81a0eb 100644
+index 4967f7436..8ba32dc84 100644
 --- a/packages/web-core/src/features/onboarding/ui/LandingPage.tsx
 +++ b/packages/web-core/src/features/onboarding/ui/LandingPage.tsx
-@@ -252,9 +252,18 @@ export function LandingPage() {
-     void playSound(value);
+@@ -251,9 +251,18 @@ export function LandingPage() {
+     void previewSound(value);
    };
  
 -  const isCustomEditorValid =
@@ -259,7 +259,7 @@ index 7df49896b..35c81a0eb 100644
  
    const handleContinue = async () => {
      if (!config || !canContinue) return;
-@@ -262,7 +271,7 @@ export function LandingPage() {
+@@ -261,7 +270,7 @@ export function LandingPage() {
      const editorConfig: EditorConfig = {
        editor_type: editorType,
        custom_command:
@@ -268,7 +268,7 @@ index 7df49896b..35c81a0eb 100644
        remote_ssh_host: null,
        remote_ssh_user: null,
        auto_install_extension: true,
-@@ -274,7 +283,8 @@ export function LandingPage() {
+@@ -273,7 +282,8 @@ export function LandingPage() {
        selected_agent: selectedAgent,
        editor_type: editorType,
        custom_editor_command_set:
@@ -278,46 +278,46 @@ index 7df49896b..35c81a0eb 100644
        sound_enabled: soundEnabled,
        sound_file: soundEnabled ? soundFile : null,
      });
-@@ -461,25 +471,35 @@ export function LandingPage() {
-               })}
-             </div>
- 
--            {editorType === EditorType.CUSTOM && (
-+            {(isCustomEditor || isCodeServerEditor) && (
-               <div className="space-y-half">
-                 <label className="text-sm font-medium text-normal">
--                  Custom Command
-+                  {isCodeServerEditor ? 'Code Server URL' : 'Custom Command'}
-                 </label>
-                 <input
-                   type="text"
-                   value={customCommand}
-                   onChange={(e) => setCustomCommand(e.target.value)}
--                  placeholder="e.g. code --wait"
-+                  placeholder={
-+                    isCodeServerEditor
-+                      ? 'https://code-server.example.com'
-+                      : 'e.g. code --wait'
-+                  }
-                   className={cn(
-                     'w-full bg-panel border rounded-sm px-base py-half text-sm text-high',
-                     'placeholder:text-low placeholder:opacity-80 focus:outline-none',
-                     'focus:ring-1 focus:ring-brand',
--                    customCommand.trim() === ''
-+                    !hasEditorCommand ||
-+                      (isCodeServerEditor && !hasValidCodeServerUrl)
-                       ? 'border-warning/60'
-                       : 'border-border'
-                   )}
-                 />
-+                {isCodeServerEditor && !hasValidCodeServerUrl && (
-+                  <p className="text-xs text-warning">
-+                    Enter a valid URL starting with http:// or https://
-+                  </p>
-+                )}
+@@ -446,25 +456,35 @@ export function LandingPage() {
+                 })}
                </div>
-             )}
-           </section>
+ 
+-              {editorType === EditorType.CUSTOM && (
++              {(isCustomEditor || isCodeServerEditor) && (
+                 <div className="space-y-half">
+                   <label className="text-sm font-medium text-normal">
+-                    Custom Command
++                    {isCodeServerEditor ? 'Code Server URL' : 'Custom Command'}
+                   </label>
+                   <input
+                     type="text"
+                     value={customCommand}
+                     onChange={(e) => setCustomCommand(e.target.value)}
+-                    placeholder="e.g. code --wait"
++                    placeholder={
++                      isCodeServerEditor
++                        ? 'https://code-server.example.com'
++                        : 'e.g. code --wait'
++                    }
+                     className={cn(
+                       'w-full bg-panel border rounded-sm px-base py-half text-sm text-high',
+                       'placeholder:text-low placeholder:opacity-80 focus:outline-none',
+                       'focus:ring-1 focus:ring-brand',
+-                      customCommand.trim() === ''
++                      !hasEditorCommand ||
++                        (isCodeServerEditor && !hasValidCodeServerUrl)
+                         ? 'border-warning/60'
+                         : 'border-border'
+                     )}
+                   />
++                  {isCodeServerEditor && !hasValidCodeServerUrl && (
++                    <p className="text-xs text-warning">
++                      Enter a valid URL starting with http:// or https://
++                    </p>
++                  )}
+                 </div>
+               )}
+             </section>
 diff --git a/packages/web-core/src/i18n/locales/en/settings.json b/packages/web-core/src/i18n/locales/en/settings.json
 index fd921b1fb..1fe8e5cd6 100644
 --- a/packages/web-core/src/i18n/locales/en/settings.json
@@ -342,7 +342,7 @@ index fd921b1fb..1fe8e5cd6 100644
          "availability": {
            "checking": "Checking availability...",
 diff --git a/packages/web-core/src/shared/actions/index.ts b/packages/web-core/src/shared/actions/index.ts
-index 61e698e68..9095fb273 100644
+index c5d3dd98b..536f2d1f5 100644
 --- a/packages/web-core/src/shared/actions/index.ts
 +++ b/packages/web-core/src/shared/actions/index.ts
 @@ -66,6 +66,7 @@ import { RenameWorkspaceDialog } from '@vibe/ui/components/RenameWorkspaceDialog
@@ -353,7 +353,7 @@ index 61e698e68..9095fb273 100644
  import { EditorSelectionDialog } from '@/shared/dialogs/command-bar/EditorSelectionDialog';
  import { StartReviewDialog } from '@/shared/dialogs/command-bar/StartReviewDialog';
  import posthog from 'posthog-js';
-@@ -770,7 +771,10 @@ export const Actions = {
+@@ -753,7 +754,10 @@ export const Actions = {
          if (response.url) {
            window.open(response.url, '_blank');
          }
@@ -365,7 +365,7 @@ index 61e698e68..9095fb273 100644
          // Show editor selection dialog on failure
          EditorSelectionDialog.show({
            selectedAttemptId: ctx.currentWorkspaceId,
-@@ -1140,6 +1144,9 @@ export const Actions = {
+@@ -1123,6 +1127,9 @@ export const Actions = {
            window.open(response.url, '_blank');
          }
        } catch (err) {
@@ -393,10 +393,10 @@ index 5cfeb0dc3..167b6390c 100644
      return <Code2 className={className} />;
    }
 diff --git a/packages/web-core/src/shared/dialogs/settings/settings/GeneralSettingsSection.tsx b/packages/web-core/src/shared/dialogs/settings/settings/GeneralSettingsSection.tsx
-index f172f1c39..753f9bfd1 100644
+index 3c5fb6ab6..5fcaef770 100644
 --- a/packages/web-core/src/shared/dialogs/settings/settings/GeneralSettingsSection.tsx
 +++ b/packages/web-core/src/shared/dialogs/settings/settings/GeneralSettingsSection.tsx
-@@ -335,10 +335,19 @@ export function GeneralSettingsSection() {
+@@ -334,10 +334,19 @@ export function GeneralSettingsSection() {
            />
          </SettingsField>
  
@@ -419,7 +419,7 @@ index f172f1c39..753f9bfd1 100644
            >
              <SettingsInput
                value={draft?.editor.custom_command || ''}
-@@ -351,7 +360,9 @@ export function GeneralSettingsSection() {
+@@ -350,7 +359,9 @@ export function GeneralSettingsSection() {
                  })
                }
                placeholder={t(
@@ -430,7 +430,7 @@ index f172f1c39..753f9bfd1 100644
                )}
              />
            </SettingsField>
-@@ -409,7 +420,8 @@ export function GeneralSettingsSection() {
+@@ -408,7 +419,8 @@ export function GeneralSettingsSection() {
  
          {(draft?.editor.editor_type === EditorType.VS_CODE ||
            draft?.editor.editor_type === EditorType.VS_CODE_INSIDERS ||
@@ -502,10 +502,10 @@ index 8c634a5af..9f49b72de 100644
        return i18n.t('common:editorNames.custom');
      case EditorType.GOOGLE_ANTIGRAVITY:
 diff --git a/shared/types.ts b/shared/types.ts
-index 69b3ab54a..8e8e22978 100644
+index 48ea09e57..88ce288a3 100644
 --- a/shared/types.ts
 +++ b/shared/types.ts
-@@ -484,7 +484,7 @@ export enum ThemeMode { LIGHT = "LIGHT", DARK = "DARK", SYSTEM = "SYSTEM" }
+@@ -476,7 +476,7 @@ export enum ThemeMode { LIGHT = "LIGHT", DARK = "DARK", SYSTEM = "SYSTEM" }
  
  export type EditorConfig = { editor_type: EditorType, custom_command: string | null, remote_ssh_host: string | null, remote_ssh_user: string | null, auto_install_extension: boolean, };
  
