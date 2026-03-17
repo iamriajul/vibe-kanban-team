@@ -16,7 +16,7 @@ fi
 
 PATCHES_APPLIED=0
 TMP_DIR=""
-DOWNLOAD_JS_BAK=""
+DOWNLOAD_SRC_BAK=""
 PKG_JSON_BAK=""
 README_BAK=""
 NPMRC_BAK=""
@@ -24,8 +24,8 @@ NPMRC_BAK=""
 cleanup() {
   set +e
 
-  if [ -n "${DOWNLOAD_JS_BAK}" ] && [ -f "${DOWNLOAD_JS_BAK}" ]; then
-    cp "${DOWNLOAD_JS_BAK}" "${VIBE_DIR}/npx-cli/bin/download.js"
+  if [ -n "${DOWNLOAD_SRC_BAK}" ] && [ -f "${DOWNLOAD_SRC_BAK}" ]; then
+    cp "${DOWNLOAD_SRC_BAK}" "${VIBE_DIR}/npx-cli/src/download.ts"
   fi
   if [ -n "${PKG_JSON_BAK}" ] && [ -f "${PKG_JSON_BAK}" ]; then
     cp "${PKG_JSON_BAK}" "${VIBE_DIR}/npx-cli/package.json"
@@ -362,11 +362,11 @@ echo "Applying downstream patches..."
 PATCHES_APPLIED=1
 
 TMP_DIR="$(mktemp -d)"
-DOWNLOAD_JS_BAK="${TMP_DIR}/download.js.bak"
+DOWNLOAD_SRC_BAK="${TMP_DIR}/download.ts.bak"
 PKG_JSON_BAK="${TMP_DIR}/package.json.bak"
 README_BAK="${TMP_DIR}/README.md.bak"
 
-cp "${VIBE_DIR}/npx-cli/bin/download.js" "${DOWNLOAD_JS_BAK}"
+cp "${VIBE_DIR}/npx-cli/src/download.ts" "${DOWNLOAD_SRC_BAK}"
 cp "${VIBE_DIR}/npx-cli/package.json" "${PKG_JSON_BAK}"
 cp "${VIBE_DIR}/npx-cli/README.md" "${README_BAK}"
 
@@ -624,15 +624,18 @@ else
   log "Skipping binaries/manifest.json update because NPM_TAG=${NPM_TAG} (not 'latest')."
 fi
 
-echo "Injecting R2 URL and tag into download.js..."
+echo "Injecting R2 URL and tag into download.ts..."
 ${NODE_CMD} -e "
   const fs = require('fs');
-  const path = '${VIBE_DIR}/npx-cli/bin/download.js';
+  const path = '${VIBE_DIR}/npx-cli/src/download.ts';
   let data = fs.readFileSync(path, 'utf8');
   data = data.replace(/__R2_PUBLIC_URL__/g, '${R2_PUBLIC_URL}');
   data = data.replace(/__BINARY_TAG__/g, '${BINARY_TAG}');
   fs.writeFileSync(path, data);
 "
+
+echo "Building npx-cli..."
+(cd "${VIBE_DIR}/npx-cli" && npm install && npm run build)
 
 echo "Removing local dist artifacts before npm publish..."
 rm -rf "${VIBE_DIR}/npx-cli/dist"
