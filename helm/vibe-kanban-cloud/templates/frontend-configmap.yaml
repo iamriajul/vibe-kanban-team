@@ -142,6 +142,34 @@ data:
        - **Other**: bind `0.0.0.0`, add proxy domain to host allowlist if needed
     SKILLEOF
     done
+    # AI agent skill — glab (GitLab CLI for merge requests)
+    for SKILL_DIR in \
+      /home/coder/.claude/skills/glab \
+      /home/coder/.agents/skills/glab; do
+      mkdir -p "$SKILL_DIR"
+      cat > "$SKILL_DIR/SKILL.md" << 'SKILLEOF'
+    ---
+    name: glab
+    description: >
+      Use when the user asks to create a merge request, submit their work,
+      or manage GitLab MRs. Uses glab CLI with squash and author signature.
+    ---
+    # GitLab Merge Requests via glab CLI
+
+    The glab CLI is authenticated as a shared service account. Every MR description
+    **must** end with an author signature line to identify the real author:
+
+        Authored by: $GIT_COMMITTER_NAME <$GIT_COMMITTER_EMAIL>
+
+    Use `glab mr create --push --squash-before-merge --remove-source-branch` to
+    create MRs. Follow Conventional Commits for titles. Include a Summary and
+    Test Plan section in the description.
+
+    Do **not** merge automatically. Only merge if the user explicitly asks.
+    When merging: `glab mr merge <id> --squash --remove-source-branch --yes`
+    (use `--auto-merge` if pipelines are pending).
+    SKILLEOF
+    done
     chown -R coder:coder /home/coder/.claude /home/coder/.agents
     {{- end }}
 
