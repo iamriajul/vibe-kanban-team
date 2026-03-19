@@ -156,10 +156,11 @@ data:
     ---
     # GitLab Merge Requests via glab CLI
 
-    The glab CLI is authenticated as a shared service account. Every MR description
-    **must** end with an author signature line to identify the real author:
-
-        Authored by: $GIT_COMMITTER_NAME <$GIT_COMMITTER_EMAIL>
+    The glab CLI is authenticated as a shared service account. Every MR **must**:
+    - Assign to the real author: `--assignee $GIT_COMMITTER_EMAIL`
+    - End the description with an author signature and model identification:
+      `Authored by: $GIT_COMMITTER_NAME <$GIT_COMMITTER_EMAIL>`
+      e.g. `🤖 Generated with Claude Code Opus 4.6 (1M context) with high effort`
 
     Use `glab mr create --push --squash-before-merge --remove-source-branch` to
     create MRs. Follow Conventional Commits for titles. Include a Summary and
