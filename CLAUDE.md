@@ -22,12 +22,12 @@ It is not the upstream application source of truth.
   - `patches/frontend/`: NPM package-specific patches
   - `patches/remote/`: remote server-specific patches
 - `.gitlab-ci.yml` and `.gitlab/ci/`: build/release pipeline behavior.
-- `vibe-kanban/` submodule pointer (NPM package, frozen at v0.1.14)
+- `vibe-kanban/` submodule pointer (NPM package)
 - `vibe-kanban-remote/` submodule pointer (remote server, tracks latest upstream)
 
 ## Submodule Architecture (Critical)
 
-- `vibe-kanban/` = the **full application**: local backend (`crates/server/`, `crates/db/` with SQLite), frontend (`packages/web-core/`), AND `crates/remote/` (the remote/cloud server code). Frozen at v0.1.14 for preferred UX. Built as NPM package.
+- `vibe-kanban/` = the **full application**: local backend (`crates/server/`, `crates/db/` with SQLite), frontend (`packages/web-core/`), AND `crates/remote/` (the remote/cloud server code). Built as NPM package.
 - `vibe-kanban-remote/` = exists **for managing `vibe-kanban/crates/remote/` ref separately**, so the remote server can be deployed independently. Tracks latest upstream. Built as Docker image for K8s deployment.
 
 **Key distinction**: `vibe-kanban-remote/` is NOT the "local backend". It is a separate deployment ref for the remote/cloud server. The local backend (SQLite, workspace creation, `crates/server/`, `crates/db/`) lives in `vibe-kanban/`.
