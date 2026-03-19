@@ -140,6 +140,10 @@ Exception: [publish-credentials.bashrc](scripts/publish-credentials.bashrc) — 
 
 **Gitignore** (do not modify): `values-production.yaml`, `*-secrets.yaml`, `*-secret.yaml`, `.env*`
 
+## Patch Deployment
+
+Push branch → `glab mr create --squash-before-merge --remove-source-branch --no-editor --yes` → `glab mr merge <id> --squash --remove-source-branch --yes` → fetch main and tags → create new tag by incrementing the timestamp of the latest `v<version>-<YYYYMMDDHHmmss>` tag by 1 → push the tag.
+
 ## Commit Conventions
 
 Conventional Commits (`fix:`, `feat:`, `docs:`, `ci:`, `chore:`). Describe deployment impact. Include verification results in PR descriptions.
