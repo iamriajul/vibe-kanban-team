@@ -1,28 +1,35 @@
-From b727df49be936866f723560296a5e21b82f37af6 Mon Sep 17 00:00:00 2001
+From 9f94305ae12fd8e53b7bbfd0355bae103c07d6dc Mon Sep 17 00:00:00 2001
 From: Riajul Islam <opensource@example.com>
-Date: Thu, 19 Mar 2026 00:08:00 +0000
-Subject: [PATCH] feat: store owner_user_id in local workspace SQLite table
+Date: Thu, 19 Mar 2026 03:03:41 +0000
+Subject: [PATCH] feat: fix standalone workspace ownership for multi-user
+ creator filter
 
+Store owner_user_id in local SQLite at workspace creation time and use
+it for the creator filter instead of per-workspace remote API lookups.
+
+Backend:
 - Add owner_user_id column to workspaces table via migration
-- Set owner_user_id from logged-in user's profile at creation time
-- Include owner_user_id in all Workspace queries and WorkspaceWithStatus
-- Add ownerUserId to SidebarWorkspace frontend type
-- Update shared/types.ts Workspace and WorkspaceWithStatus types
-- Regenerate sqlx query cache for updated queries
+- Set owner_user_id from auth context during workspace creation
+- Include owner_user_id in all workspace queries and stream data
+
+Frontend:
+- Build ownerByLocalId map from local stream data (ownerUserId field)
+- Fall back to remote workspace data for pre-migration workspaces
+- Remove complex per-workspace remote API lookup mechanism
 ---
- ...538cb04c1a36d8f6e78f962fce21f403bcc1.json} | 14 +++++++---
- ...111ffc613dae90b1c3d5179ce7ba90efd446.json} | 12 ++++++--
- ...23e7fb85b67c5aa8e9166c42d6a82d31cfed.json} | 14 +++++++---
- ...db8c36601c838306c6dddbd52265e1bd7946.json} | 14 +++++++---
- ...9a3093c96787bc4926876d73d1c0d8da072d.json} | 10 +++++--
- ...bdde8170de2aa67e648faa3eb319c8ab216a.json} | 12 ++++++--
- ...682ede8465302e4f67ff72be99303315a4c2.json} | 12 ++++++--
- ...000000_add_owner_user_id_to_workspaces.sql |  2 ++
- crates/db/src/models/workspace.rs             | 28 +++++++++++++------
- crates/server/src/routes/workspaces/create.rs | 10 +++++++
- .../src/shared/hooks/useWorkspaces.ts         |  2 ++
- shared/types.ts                               |  4 +--
- 12 files changed, 101 insertions(+), 33 deletions(-)
+ ...538cb04c1a36d8f6e78f962fce21f403bcc1.json} |  14 +-
+ ...111ffc613dae90b1c3d5179ce7ba90efd446.json} |  12 +-
+ ...23e7fb85b67c5aa8e9166c42d6a82d31cfed.json} |  14 +-
+ ...db8c36601c838306c6dddbd52265e1bd7946.json} |  14 +-
+ ...9a3093c96787bc4926876d73d1c0d8da072d.json} |  10 +-
+ ...bdde8170de2aa67e648faa3eb319c8ab216a.json} |  12 +-
+ ...682ede8465302e4f67ff72be99303315a4c2.json} |  12 +-
+ ...000000_add_owner_user_id_to_workspaces.sql |   2 +
+ crates/db/src/models/workspace.rs             |  28 ++--
+ crates/server/src/routes/workspaces/create.rs |  10 ++
+ .../workspaces/WorkspacesSidebarContainer.tsx | 126 ++----------------
+ .../src/shared/hooks/useWorkspaces.ts         |   2 +
+ 12 files changed, 110 insertions(+), 146 deletions(-)
  rename crates/db/.sqlx/{query-7410e8128e63af1c3127e833accee637e65f7efcd9111ecb891587294042129c.json => query-1da339ff150cd6af3a8a90f1a553538cb04c1a36d8f6e78f962fce21f403bcc1.json} (67%)
  rename crates/db/.sqlx/{query-766fa107de23b7e6c579223b083d916e252d422e2908c27f6718fcbd851de2c1.json => query-304c825605da8f74b3f0134534aa111ffc613dae90b1c3d5179ce7ba90efd446.json} (86%)
  rename crates/db/.sqlx/{query-592656b17a5f78d117365909e47afba7d3df545ac1078c307c6b968e75c8e2ba.json => query-5aeb6c1ab748cddf3114d9c882e723e7fb85b67c5aa8e9166c42d6a82d31cfed.json} (62%)
@@ -479,8 +486,161 @@ index 93a062911..8d71b196d 100644
          },
          workspace_id,
      )
+diff --git a/packages/web-core/src/pages/workspaces/WorkspacesSidebarContainer.tsx b/packages/web-core/src/pages/workspaces/WorkspacesSidebarContainer.tsx
+index 8cdea73e0..0700097a6 100644
+--- a/packages/web-core/src/pages/workspaces/WorkspacesSidebarContainer.tsx
++++ b/packages/web-core/src/pages/workspaces/WorkspacesSidebarContainer.tsx
+@@ -7,11 +7,9 @@ import { useAllOrganizationProjects } from '@/shared/hooks/useAllOrganizationPro
+ import { useUserOrganizations } from '@/shared/hooks/useUserOrganizations';
+ import { useOrganizationSelection } from '@/shared/hooks/useOrganizationSelection';
+ import { useAuth } from '@/shared/hooks/auth/useAuth';
+-import { makeLocalApiRequest } from '@/shared/lib/localApiTransport';
+ import {
+   MemberRole as MemberRoleEnum,
+   ScratchType,
+-  type ApiResponse,
+   type DraftWorkspaceData,
+ } from 'shared/types';
+ import type { Project } from 'shared/remote-types';
+@@ -353,125 +351,23 @@ export function WorkspacesSidebarContainer({
+     return map;
+   }, [remoteWorkspaces]);
+ 
+-  // Map local workspace ID -> creator (remote owner user ID) when available
+-  const remoteOwnerByLocalId = useMemo(() => {
++  // Build owner map from local workspace stream data (owner_user_id stored in local SQLite).
++  // Falls back to remote workspace data for workspaces created before this field existed.
++  const ownerByLocalId = useMemo(() => {
+     const map = new Map<string, string>();
+-    for (const rw of remoteWorkspaces) {
+-      if (rw.local_workspace_id) {
+-        map.set(rw.local_workspace_id, rw.owner_user_id);
++    for (const ws of [...activeWorkspaces, ...archivedWorkspaces]) {
++      if (ws.ownerUserId) {
++        map.set(ws.id, ws.ownerUserId);
+       }
+     }
+-    return map;
+-  }, [remoteWorkspaces]);
+-
+-  const [resolvedOwnerByLocalId, setResolvedOwnerByLocalId] = useState<
+-    Record<string, string>
+-  >({});
+-  const [ownerLookupAttemptedIds, setOwnerLookupAttemptedIds] = useState<
+-    Record<string, true>
+-  >({});
+-
+-  const allWorkspaceIds = useMemo(
+-    () =>
+-      Array.from(
+-        new Set([...activeWorkspaces, ...archivedWorkspaces].map((ws) => ws.id))
+-      ),
+-    [activeWorkspaces, archivedWorkspaces]
+-  );
+-
+-  useEffect(() => {
+-    if (!currentUserId || allWorkspaceIds.length === 0) {
+-      return;
+-    }
+-
+-    const idsToResolve = allWorkspaceIds.filter(
+-      (workspaceId) =>
+-        !remoteOwnerByLocalId.has(workspaceId) &&
+-        !resolvedOwnerByLocalId[workspaceId] &&
+-        !ownerLookupAttemptedIds[workspaceId]
+-    );
+-
+-    if (idsToResolve.length === 0) {
+-      return;
+-    }
+-
+-    setOwnerLookupAttemptedIds((prev) => ({
+-      ...prev,
+-      ...Object.fromEntries(idsToResolve.map((id) => [id, true as const])),
+-    }));
+-
+-    let cancelled = false;
+-
+-    void (async () => {
+-      const ownerEntries = await Promise.all(
+-        idsToResolve.map(async (workspaceId) => {
+-          try {
+-            const response = await makeLocalApiRequest(
+-              `/api/remote/workspaces/by-local-id/${workspaceId}`
+-            );
+-            if (!response.ok) {
+-              return null;
+-            }
+-
+-            const payload = (await response.json()) as ApiResponse<{
+-              owner_user_id?: string | null;
+-            }>;
+-
+-            const ownerUserId = payload.data?.owner_user_id ?? null;
+-            if (!ownerUserId) {
+-              return null;
+-            }
+-
+-            return { workspaceId, ownerUserId };
+-          } catch {
+-            return null;
+-          }
+-        })
+-      );
+-
+-      if (cancelled) {
+-        return;
+-      }
+-
+-      const resolvedEntries = ownerEntries.filter(
+-        (entry): entry is { workspaceId: string; ownerUserId: string } =>
+-          entry !== null
+-      );
+-
+-      if (resolvedEntries.length === 0) {
+-        return;
+-      }
+-
+-      setResolvedOwnerByLocalId((prev) => ({
+-        ...prev,
+-        ...Object.fromEntries(
+-          resolvedEntries.map((entry) => [entry.workspaceId, entry.ownerUserId])
+-        ),
+-      }));
+-    })();
+-
+-    return () => {
+-      cancelled = true;
+-    };
+-  }, [
+-    allWorkspaceIds,
+-    currentUserId,
+-    ownerLookupAttemptedIds,
+-    remoteOwnerByLocalId,
+-    resolvedOwnerByLocalId,
+-  ]);
+-
+-  const ownerByLocalId = useMemo(() => {
+-    const map = new Map(remoteOwnerByLocalId);
+-    for (const [workspaceId, ownerUserId] of Object.entries(
+-      resolvedOwnerByLocalId
+-    )) {
+-      if (!map.has(workspaceId)) {
+-        map.set(workspaceId, ownerUserId);
++    // Remote data as fallback for older workspaces without local owner_user_id
++    for (const rw of remoteWorkspaces) {
++      if (rw.local_workspace_id && !map.has(rw.local_workspace_id)) {
++        map.set(rw.local_workspace_id, rw.owner_user_id);
+       }
+     }
+     return map;
+-  }, [remoteOwnerByLocalId, resolvedOwnerByLocalId]);
++  }, [activeWorkspaces, archivedWorkspaces, remoteWorkspaces]);
+ 
+   const creatorFilterOptions = useMemo(() => {
+     const ownerIds = new Set(ownerByLocalId.values());
 diff --git a/packages/web-core/src/shared/hooks/useWorkspaces.ts b/packages/web-core/src/shared/hooks/useWorkspaces.ts
-index 8ccf8dd8a..a9ecbbc47 100644
+index aa5933927..c694bb403 100644
 --- a/packages/web-core/src/shared/hooks/useWorkspaces.ts
 +++ b/packages/web-core/src/shared/hooks/useWorkspaces.ts
 @@ -32,6 +32,7 @@ export interface SidebarWorkspace {
@@ -491,29 +651,13 @@ index 8ccf8dd8a..a9ecbbc47 100644
  }
  
  // Keep the old export name for backwards compatibility
-@@ -80,6 +81,7 @@ function toSidebarWorkspace(
+@@ -84,6 +85,7 @@ function toSidebarWorkspace(
      prNumber:
        summary?.pr_number != null ? Number(summary.pr_number) : undefined,
      prUrl: summary?.pr_url ?? undefined,
 +    ownerUserId: ws.owner_user_id,
    };
  }
- 
-diff --git a/shared/types.ts b/shared/types.ts
-index 48ea09e57..80cf5e341 100644
---- a/shared/types.ts
-+++ b/shared/types.ts
-@@ -144,9 +144,9 @@ export type Image = { id: string, file_path: string, original_name: string, mime
- 
- export type CreateImage = { file_path: string, original_name: string, mime_type: string | null, size_bytes: bigint, hash: string, };
- 
--export type Workspace = { id: string, task_id: string | null, container_ref: string | null, branch: string, setup_completed_at: string | null, created_at: string, updated_at: string, archived: boolean, pinned: boolean, name: string | null, worktree_deleted: boolean, };
-+export type Workspace = { id: string, task_id: string | null, container_ref: string | null, branch: string, setup_completed_at: string | null, created_at: string, updated_at: string, archived: boolean, pinned: boolean, name: string | null, worktree_deleted: boolean, owner_user_id: string | null, };
- 
--export type WorkspaceWithStatus = { is_running: boolean, is_errored: boolean, id: string, task_id: string | null, container_ref: string | null, branch: string, setup_completed_at: string | null, created_at: string, updated_at: string, archived: boolean, pinned: boolean, name: string | null, worktree_deleted: boolean, };
-+export type WorkspaceWithStatus = { is_running: boolean, is_errored: boolean, id: string, task_id: string | null, container_ref: string | null, branch: string, setup_completed_at: string | null, created_at: string, updated_at: string, archived: boolean, pinned: boolean, name: string | null, worktree_deleted: boolean, owner_user_id: string | null, };
- 
- export type Session = { id: string, workspace_id: string, executor: string | null, agent_working_dir: string | null, created_at: string, updated_at: string, };
  
 -- 
 2.50.1

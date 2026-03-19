@@ -2,4 +2,3 @@
 0001-feat-remote-use-R2-for-attachment-storage.patch
 0002-update-loops-template-ids.patch
 0003-fix-remote-add-attachment-upload-relay-for-legacy-cl.patch
-0006-feat-store-owner_user_id-in-local-workspace-SQLite-t.patch
