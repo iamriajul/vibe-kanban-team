@@ -31,13 +31,57 @@ Downstream deployment and integration layer for Vibe Kanban. Owns Helm chart, K8
 1. Deployment/integration first. Prefer `helm/`, `k8s/`, `scripts/`, CI, `patches/`.
 2. Submodule edits only as intermediate steps to generate patches.
 3. Never leave durable changes only in submodule working tree.
-4. See [ARCHITECTURE.md](./ARCHITECTURE.md) for dual submodule rationale.
+4. **Every change must pass verification before committing** — see Development Workflow.
+5. See [ARCHITECTURE.md](./ARCHITECTURE.md) for dual submodule rationale.
 
-## Patch Workflow
+## Development Workflow
 
-**Frontend/NPM**: edit `vibe-kanban/` → commit → `git -C vibe-kanban format-patch -1 -o ../patches/frontend/` → update `series` → validate with `scripts/apply-patches.sh vibe-kanban`.
+Closed loop: **Edit → Verify → Commit**. Never commit unverified changes.
+
+### Prerequisites
+
+```bash
+helm version || (curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash)
+which cargo || (curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && . "$HOME/.cargo/env")
+sudo apt-get install -y libssl-dev libsqlite3-dev libclang-dev pkg-config 2>/dev/null
+```
+
+### Patch Creation
+
+**Frontend/NPM**: edit `vibe-kanban/` → commit → `git -C vibe-kanban format-patch -1 -o ../patches/frontend/` → update `series` → verify.
 
 **Remote**: same flow with `vibe-kanban-remote/` and `patches/remote/`.
+
+### Verify (mandatory before every commit)
+
+**Helm chart or values changes** — template all environments:
+```bash
+for f in k8s/values-production-*.yaml; do
+  [[ "$f" == *-secrets* ]] && continue
+  echo "--- $f ---"
+  secrets="${f%.yaml}-secrets.yaml"
+  args=(-f "$f"); [[ -f "$secrets" ]] && args+=(-f "$secrets")
+  helm template test helm/vibe-kanban-cloud/ "${args[@]}" > /dev/null
+done
+```
+
+**Patch changes** — apply, then compile-check:
+```bash
+git submodule update --init <submodule>
+scripts/apply-patches.sh vibe-kanban          # frontend patches
+scripts/apply-patches.sh vibe-kanban-remote   # remote patches
+(cd vibe-kanban && cargo check)              # frontend — full workspace
+(cd vibe-kanban-remote && cargo check)       # remote — remote + relay crates
+```
+
+**Shell script changes** — `bash -n scripts/<modified-script>.sh`
+
+### Deploy (reference — not part of verification loop)
+
+```bash
+helm upgrade --install vibe-kanban ./helm/vibe-kanban-cloud/ \
+  -n vibe-kanban-cloud -f k8s/values-production-office.yaml
+```
 
 ## Helm Chart Components
 
@@ -95,21 +139,6 @@ Helm-managed secrets (`resource-policy: keep`): `vibe-kanban-claude-code` (uses 
 Exception: [publish-credentials.bashrc](scripts/publish-credentials.bashrc) — inline credentials, documented.
 
 **Gitignore** (do not modify): `values-production.yaml`, `*-secrets.yaml`, `*-secret.yaml`, `.env*`
-
-## Commands
-
-```bash
-# Patches
-scripts/apply-patches.sh vibe-kanban          # frontend
-scripts/apply-patches.sh vibe-kanban-remote   # remote
-
-# Deploy (office example)
-helm upgrade --install vibe-kanban ./helm/vibe-kanban-cloud/ \
-  -n vibe-kanban-cloud -f k8s/values-production-office.yaml
-
-# Validate before committing
-helm template test helm/vibe-kanban-cloud/ -f k8s/values-production-office.yaml
-```
 
 ## Commit Conventions
 
