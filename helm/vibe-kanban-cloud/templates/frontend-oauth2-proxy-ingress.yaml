@@ -1,0 +1,39 @@
+{{- if and .Values.frontend.enabled .Values.frontend.auth.enabled }}
+{{- $proxyName := printf "%s-oauth2-proxy" (include "vibe-kanban-cloud.frontend.fullname" .) -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $proxyName }}
+  labels:
+    {{- include "vibe-kanban-cloud.labels" . | nindent 4 }}
+    app.kubernetes.io/component: oauth2-proxy
+  {{- with .Values.frontend.auth.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.frontend.auth.ingress.className }}
+  ingressClassName: {{ .Values.frontend.auth.ingress.className }}
+  {{- end }}
+  {{- if .Values.frontend.auth.ingress.tls }}
+  tls:
+    {{- range .Values.frontend.auth.ingress.tls }}
+    - hosts:
+        {{- range .hosts }}
+        - {{ . | quote }}
+        {{- end }}
+      secretName: {{ .secretName }}
+    {{- end }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.frontend.auth.host | quote }}
+      http:
+        paths:
+          - path: /oauth2
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $proxyName }}
+                port:
+                  number: 4180
+{{- end }}

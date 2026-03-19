@@ -257,6 +257,215 @@ relay:
 # ElectricSQL Configuration
 # =============================================================================
 
+# =============================================================================
+# Frontend Configuration (Optional)
+# =============================================================================
+# Deploys the Vibe Kanban Frontend in a sysbox container with code-server.
+# Uses systemd as PID 1 for full dev-environment capabilities.
+# Requires: sysbox-runc RuntimeClass installed on the cluster.
+
+frontend:
+  enabled: false
+
+  image:
+    repository: iamriajul/coder-sysbox-systemd-docker-universal
+    tag: "13"
+    pullPolicy: IfNotPresent
+
+  # RuntimeClass for sysbox (enables systemd, Docker-in-Docker)
+  runtimeClassName: sysbox-runc
+
+  # Set to false for containerd 2.x on Ubuntu 24.04+ (required for sysbox user namespace isolation).
+  # Omit (null) for older setups where sysbox manages user namespaces internally.
+  hostUsers: null
+
+  # ===========================================================================
+  # WireGuard VPN enforcement (optional)
+  # ===========================================================================
+  # Forces ALL outbound traffic from the frontend pod through a WireGuard tunnel.
+  # Inbound (K8s ingress → code-server/frontend) is unaffected.
+  #
+  # When enabled, ALL values below are REQUIRED (helm will error if missing).
+  # Pass sensitive values via --set or a secrets file (not checked into git).
+  #
+  # Traffic rules:
+  #   - All outbound → wg0 (VPN tunnel)
+  #   - WireGuard handshake UDP → eth0 (to reach VPN endpoint)
+  #   - Inbound to ports 3000/8080 on eth0 → ACCEPT (ingress traffic)
+  #   - RFC1918 (10/8, 172.16/12, 192.168/16) blocked on wg0 (no LAN access via VPN)
+  #   - If VPN drops → all outbound blocked (kill switch)
+  #   - DNS forced through VPN (default: 1.1.1.1 via wg0)
+  #
+  # Example deploy:
+  #   helm upgrade --install ... -f values-production-hetzner.yaml \
+  #     --set-file frontend.vpn.privateKey=/path/to/wg-private.key \
+  #     --set frontend.vpn.peerPublicKey='Xf2a...' \
+  #     --set frontend.vpn.endpoint='vpn.community.example.com' \
+  #     --set frontend.vpn.address='10.66.66.2/32'
+  vpn:
+    enabled: false
+    secretName: "vibe-kanban-vpn"
+    # WireGuard client private key (required when enabled)
+    privateKey: ""
+    # VPN server's public key (required when enabled)
+    peerPublicKey: ""
+    # VPN server public endpoint — hostname or IP (required when enabled)
+    endpoint: ""
+    # VPN server port (default: 51820)
+    endpointPort: "51820"
+    # IP address assigned to this client by VPN server in CIDR (required when enabled)
+    address: ""
+    # WireGuard preshared key (optional)
+    presharedKey: ""
+    # DNS server to use through VPN (default: 1.1.1.1)
+    dns: ""
+
+  # code-server configuration
+  # Uses high port to avoid conflicts with dev apps (8080 is common)
+  codeServer:
+    port: 13337
+    # Proxy domain for exposing internal ports via code-server.
+    # code-server extracts the port from the hostname and proxies to localhost:<port>.
+    # Also auto-sets VSCODE_PROXY_URI for the VS Code Ports panel.
+    # Example: "{{port}}-code-server.vk.community.example.dev"
+    proxyDomain: ""
+
+  # Frontend application
+  # Uses high port to avoid conflicts with dev apps (3000 is common)
+  app:
+    port: 13500
+    # Command to start the frontend (run as coder user via systemd)
+    command: "npx --yes @iamriajul/vibe-kanban-fork"
+    # Working directory for the frontend process
+    workingDirectory: "/home/coder"
+    # Shared API base URL for the remote server
+    # The frontend uses this to connect to the backend
+    sharedApiBase: ""
+
+  service:
+    type: ClusterIP
+
+  # Frontend app ingress (e.g., vk.community.example.dev)
+  ingress:
+    enabled: false
+    className: "nginx"
+    annotations: {}
+    hosts:
+      - host: vk.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
+
+  # Code-server ingress (includes wildcard for port proxying)
+  # e.g., code-server.vk.community.example.dev and *.code-server.vk.community.example.dev
+  codeServerIngress:
+    enabled: false
+    className: "nginx"
+    annotations: {}
+    hosts:
+      - host: code-server.vk.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+      - host: "*.code-server.vk.example.com"
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
+
+  # Persistent home directory for the coder user
+  persistence:
+    enabled: true
+    storageClass: ""
+    size: 10Gi
+    accessModes:
+      - ReadWriteOnce
+
+  resources:
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+    requests:
+      cpu: 500m
+      memory: 1Gi
+
+  # Claude Code configuration
+  # The chart creates a K8s secret (vibe-kanban-claude-code) with a placeholder.
+  # Set the token here, via the secrets overlay, or edit the secret in Lens later.
+  # Restart the frontend deployment after updating for it to take effect.
+  claudeCode:
+    oauthToken: ""
+
+  # Additional environment variables for frontend container
+  env: []
+  extraEnv: []
+
+  # ===========================================================================
+  # Google OAuth2 protection for code-server ingress (optional)
+  # ===========================================================================
+  # Deploys oauth2-proxy in front of the code-server ingress.
+  # Only users with an email matching emailDomain can access code-server.
+  #
+  # Prerequisites:
+  # 1. Create a Google OAuth2 Web Application at:
+  #    https://console.cloud.google.com/apis/credentials
+  #    Authorized redirect URI: https://<auth.host>/oauth2/callback
+  #
+  # 2. Create a Kubernetes secret:
+  #    kubectl create secret generic <secretName> \
+  #      --from-literal=client-id='your-google-client-id' \
+  #      --from-literal=client-secret='your-google-client-secret' \
+  #      --from-literal=cookie-secret="$(openssl rand -base64 32 | head -c 32)"
+  auth:
+    enabled: false
+    # Restrict sign-in to this email domain
+    emailDomain: "community.example.com"
+    # Hostname for the OAuth2 proxy callback endpoint
+    host: "auth.vk.example.com"
+    # Cookie domain (must cover code-server and wildcard subdomains)
+    cookieDomain: ".vk.example.com"
+    # Name of the K8s secret with keys: client-id, client-secret, cookie-secret
+    secretName: ""
+
+    # Annotations added to protected ingresses (frontend + code-server).
+    # Set these per-environment based on the ingress controller:
+    #   nginx:   nginx.ingress.kubernetes.io/auth-url, auth-signin, auth-response-headers
+    #   traefik: traefik.ingress.kubernetes.io/router.middlewares
+    protectedIngressAnnotations: {}
+
+    # Set to true on Traefik clusters to create a Traefik Middleware CRD for forwardAuth.
+    # Set to false on nginx clusters (Traefik CRDs don't exist).
+    createTraefikMiddleware: false
+
+    image:
+      repository: quay.io/oauth2-proxy/oauth2-proxy
+      tag: "v7.7.1"
+      pullPolicy: IfNotPresent
+
+    ingress:
+      className: "nginx"
+      annotations: {}
+      tls: []
+
+    resources:
+      limits:
+        cpu: 100m
+        memory: 128Mi
+      requests:
+        cpu: 10m
+        memory: 32Mi
+
+  # Pod-level overrides
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# =============================================================================
+# ElectricSQL Configuration
+# =============================================================================
+
 electric:
   enabled: true
 

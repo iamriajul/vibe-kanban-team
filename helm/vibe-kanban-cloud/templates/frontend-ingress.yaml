@@ -1,0 +1,47 @@
+{{- if and .Values.frontend.enabled .Values.frontend.ingress.enabled -}}
+{{- $frontendName := include "vibe-kanban-cloud.frontend.fullname" . -}}
+{{- $frontendPort := .Values.frontend.app.port -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $frontendName }}
+  labels:
+    {{- include "vibe-kanban-cloud.labels" . | nindent 4 }}
+    app.kubernetes.io/component: frontend
+  annotations:
+    {{- with .Values.frontend.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    {{- if and .Values.frontend.auth.enabled .Values.frontend.auth.protectedIngressAnnotations }}
+    {{- toYaml .Values.frontend.auth.protectedIngressAnnotations | nindent 4 }}
+    {{- end }}
+spec:
+  {{- if .Values.frontend.ingress.className }}
+  ingressClassName: {{ .Values.frontend.ingress.className }}
+  {{- end }}
+  {{- if .Values.frontend.ingress.tls }}
+  tls:
+    {{- range .Values.frontend.ingress.tls }}
+    - hosts:
+        {{- range .hosts }}
+        - {{ . | quote }}
+        {{- end }}
+      secretName: {{ .secretName }}
+    {{- end }}
+  {{- end }}
+  rules:
+    {{- range .Values.frontend.ingress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path }}
+            pathType: {{ .pathType }}
+            backend:
+              service:
+                name: {{ $frontendName }}
+                port:
+                  number: {{ $frontendPort }}
+          {{- end }}
+    {{- end }}
+{{- end }}

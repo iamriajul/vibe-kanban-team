@@ -1,0 +1,19 @@
+{{- if and .Values.frontend.enabled .Values.frontend.auth.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "vibe-kanban-cloud.frontend.fullname" . }}-oauth2-proxy
+  labels:
+    {{- include "vibe-kanban-cloud.labels" . | nindent 4 }}
+    app.kubernetes.io/component: oauth2-proxy
+spec:
+  type: ClusterIP
+  ports:
+    - port: 4180
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "vibe-kanban-cloud.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: oauth2-proxy
+{{- end }}

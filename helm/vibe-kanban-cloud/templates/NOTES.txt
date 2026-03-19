@@ -31,8 +31,30 @@ Relay endpoints:
 {{- end }}
 {{- end }}
 
+{{- if .Values.frontend.enabled }}
+{{- if .Values.frontend.ingress.enabled }}
+Frontend:
+{{- range $host := .Values.frontend.ingress.hosts }}
+  {{- range .paths }}
+ - https://{{ $host.host }}{{ .path }}
+  {{- end }}
+{{- end }}
+{{- end }}
+{{- if .Values.frontend.codeServerIngress.enabled }}
+Code Server:
+{{- range $host := .Values.frontend.codeServerIngress.hosts }}
+  {{- range .paths }}
+ - https://{{ $host.host }}{{ .path }}
+  {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+
 2. Components deployed:
    - Vibe Kanban Remote Server: {{ include "vibe-kanban-cloud.fullname" . }}
+{{- if .Values.frontend.enabled }}
+   - Frontend (code-server + app): {{ include "vibe-kanban-cloud.frontend.fullname" . }}
+{{- end }}
 {{- if .Values.relay.enabled }}
    - Relay Server: {{ include "vibe-kanban-cloud.relay.fullname" . }}
 {{- end }}
