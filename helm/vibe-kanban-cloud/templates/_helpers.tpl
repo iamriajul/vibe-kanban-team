@@ -72,3 +72,10 @@ Relay fullname
 {{- define "vibe-kanban-cloud.relay.fullname" -}}
 {{- printf "%s-relay" (include "vibe-kanban-cloud.fullname" .) | trunc 63 | trimSuffix "-" }}
 {{- end }}
+
+{{/*
+Frontend fullname
+*/}}
+{{- define "vibe-kanban-cloud.frontend.fullname" -}}
+{{- printf "%s-frontend" (include "vibe-kanban-cloud.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}

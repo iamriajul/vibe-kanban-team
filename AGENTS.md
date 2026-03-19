@@ -132,6 +132,19 @@ Run from repository root unless noted.
 - Include verification commands run and results in PR description.
 
 ## Security and Secrets
-- Never commit secrets or inline credentials. (exception: [publish-credentials.bashrc](scripts/publish-credentials.bashrc))
-- Use Kubernetes secrets via `secretKeyRef`.
-- `values-production.yaml`, `*-secret.yaml`, and `.env*` are intentionally ignored; keep it that way.
+
+### Rules
+- Never commit secrets or inline credentials into values files or templates.
+- Exception: [publish-credentials.bashrc](scripts/publish-credentials.bashrc) (documented, intentional).
+
+### Pattern for Helm values
+- **Committed values files** (`k8s/values-production-*.yaml`): reference K8s secrets by name via `secretKeyRef`. Never inline secret values.
+- **Secret overlays** (`k8s/*-secrets.yaml`): contain actual secret values, passed at deploy time with `-f`. Always gitignored.
+- **Example files** (`k8s/*-secrets.yaml.example`): committed templates showing required keys with empty values. Copy to the real filename and fill in.
+- **Helm `required()`**: use in templates to fail fast when mandatory secrets are missing (e.g., VPN keys).
+
+### Gitignore (do not modify)
+- `values-production.yaml` — local-only deploy values
+- `*-secrets.yaml` — secret overlays (real credentials)
+- `*-secret.yaml` — K8s secret manifests
+- `.env*` — environment files

@@ -184,6 +184,107 @@ extraEnv:
   #   value: "https://vibe-kanban.example.com"
 
 # =============================================================================
+# Frontend Configuration (sysbox + code-server)
+# =============================================================================
+# Requires: sysbox-runc RuntimeClass and wildcard DNS/TLS for code-server proxy.
+#
+# Architecture:
+#   - systemd as PID 1 inside sysbox container
+#   - code-server on port 8080 (editor UI + port proxy)
+#   - Vibe Kanban frontend on port 3000
+#   - --proxy-domain on code-server enables port proxying:
+#     any app on localhost:<port> is accessible at
+#     https://<port>-code-server.vk.example.com
+#
+# DNS requirements:
+#   - vk.example.com            -> frontend app
+#   - code-server.vk.example.com -> code-server editor
+#   - *.code-server.vk.example.com -> code-server port proxy (wildcard)
+
+frontend:
+  enabled: false
+
+  image:
+    repository: iamriajul/coder-sysbox-systemd-docker-universal
+    tag: "13"
+    pullPolicy: IfNotPresent
+
+  runtimeClassName: sysbox-runc
+
+  codeServer:
+    port: 13337
+    proxyDomain: "{{port}}-code-server.vk.example.com"
+
+  app:
+    port: 13500
+    command: "npx --yes @iamriajul/vibe-kanban-fork"
+    workingDirectory: "/home/coder"
+
+  service:
+    type: ClusterIP
+
+  ingress:
+    enabled: true
+    className: "nginx"
+    annotations:
+      cert-manager.io/cluster-issuer: "letsencrypt-prod"
+      nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+      nginx.ingress.kubernetes.io/proxy-read-timeout: "86400"
+      nginx.ingress.kubernetes.io/proxy-send-timeout: "86400"
+    hosts:
+      - host: vk.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: vk-frontend-tls
+        hosts:
+          - vk.example.com
+
+  codeServerIngress:
+    enabled: true
+    className: "nginx"
+    annotations:
+      cert-manager.io/cluster-issuer: "letsencrypt-prod"
+      nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+      nginx.ingress.kubernetes.io/proxy-read-timeout: "86400"
+      nginx.ingress.kubernetes.io/proxy-send-timeout: "86400"
+      # WebSocket support for code-server
+      nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+      nginx.ingress.kubernetes.io/configuration-snippet: |
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    hosts:
+      - host: code-server.vk.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+      - host: "*.code-server.vk.example.com"
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: code-server-vk-tls
+        hosts:
+          - code-server.vk.example.com
+          - "*.code-server.vk.example.com"
+
+  persistence:
+    enabled: true
+    storageClass: ""
+    size: 20Gi
+    accessModes:
+      - ReadWriteOnce
+
+  resources:
+    limits:
+      cpu: 4000m
+      memory: 8Gi
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+
+# =============================================================================
 # ElectricSQL Configuration
 # =============================================================================
 
