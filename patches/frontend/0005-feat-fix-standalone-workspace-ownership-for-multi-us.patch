@@ -1,6 +1,6 @@
-From 9f94305ae12fd8e53b7bbfd0355bae103c07d6dc Mon Sep 17 00:00:00 2001
+From 9d510d730027b36cc4fb45a02fd3beb2010e1c02 Mon Sep 17 00:00:00 2001
 From: Riajul Islam <opensource@example.com>
-Date: Thu, 19 Mar 2026 03:03:41 +0000
+Date: Thu, 19 Mar 2026 04:06:42 +0000
 Subject: [PATCH] feat: fix standalone workspace ownership for multi-user
  creator filter
 
@@ -11,6 +11,7 @@ Backend:
 - Add owner_user_id column to workspaces table via migration
 - Set owner_user_id from auth context during workspace creation
 - Include owner_user_id in all workspace queries and stream data
+- Add owner_user_id default to PR workspace creation path
 
 Frontend:
 - Build ownerByLocalId map from local stream data (ownerUserId field)
@@ -27,9 +28,11 @@ Frontend:
  ...000000_add_owner_user_id_to_workspaces.sql |   2 +
  crates/db/src/models/workspace.rs             |  28 ++--
  crates/server/src/routes/workspaces/create.rs |  10 ++
+ crates/server/src/routes/workspaces/pr.rs     |   1 +
  .../workspaces/WorkspacesSidebarContainer.tsx | 126 ++----------------
  .../src/shared/hooks/useWorkspaces.ts         |   2 +
- 12 files changed, 110 insertions(+), 146 deletions(-)
+ shared/types.ts                               |   4 +-
+ 14 files changed, 113 insertions(+), 148 deletions(-)
  rename crates/db/.sqlx/{query-7410e8128e63af1c3127e833accee637e65f7efcd9111ecb891587294042129c.json => query-1da339ff150cd6af3a8a90f1a553538cb04c1a36d8f6e78f962fce21f403bcc1.json} (67%)
  rename crates/db/.sqlx/{query-766fa107de23b7e6c579223b083d916e252d422e2908c27f6718fcbd851de2c1.json => query-304c825605da8f74b3f0134534aa111ffc613dae90b1c3d5179ce7ba90efd446.json} (86%)
  rename crates/db/.sqlx/{query-592656b17a5f78d117365909e47afba7d3df545ac1078c307c6b968e75c8e2ba.json => query-5aeb6c1ab748cddf3114d9c882e723e7fb85b67c5aa8e9166c42d6a82d31cfed.json} (62%)
@@ -486,6 +489,18 @@ index 93a062911..8d71b196d 100644
          },
          workspace_id,
      )
+diff --git a/crates/server/src/routes/workspaces/pr.rs b/crates/server/src/routes/workspaces/pr.rs
+index 37a25f3f7..ddde90c1a 100644
+--- a/crates/server/src/routes/workspaces/pr.rs
++++ b/crates/server/src/routes/workspaces/pr.rs
+@@ -709,6 +709,7 @@ pub async fn create_workspace_from_pr(
+         &CreateWorkspace {
+             branch: target_branch_ref.clone(),
+             name: Some(payload.pr_title.clone()),
++            owner_user_id: None,
+         },
+         workspace_id,
+     )
 diff --git a/packages/web-core/src/pages/workspaces/WorkspacesSidebarContainer.tsx b/packages/web-core/src/pages/workspaces/WorkspacesSidebarContainer.tsx
 index 8cdea73e0..0700097a6 100644
 --- a/packages/web-core/src/pages/workspaces/WorkspacesSidebarContainer.tsx
@@ -658,6 +673,22 @@ index aa5933927..c694bb403 100644
 +    ownerUserId: ws.owner_user_id,
    };
  }
+ 
+diff --git a/shared/types.ts b/shared/types.ts
+index 88ce288a3..35732107d 100644
+--- a/shared/types.ts
++++ b/shared/types.ts
+@@ -144,9 +144,9 @@ export type Image = { id: string, file_path: string, original_name: string, mime
+ 
+ export type CreateImage = { file_path: string, original_name: string, mime_type: string | null, size_bytes: bigint, hash: string, };
+ 
+-export type Workspace = { id: string, task_id: string | null, container_ref: string | null, branch: string, setup_completed_at: string | null, created_at: string, updated_at: string, archived: boolean, pinned: boolean, name: string | null, worktree_deleted: boolean, };
++export type Workspace = { id: string, task_id: string | null, container_ref: string | null, branch: string, setup_completed_at: string | null, created_at: string, updated_at: string, archived: boolean, pinned: boolean, name: string | null, worktree_deleted: boolean, owner_user_id: string | null, };
+ 
+-export type WorkspaceWithStatus = { is_running: boolean, is_errored: boolean, id: string, task_id: string | null, container_ref: string | null, branch: string, setup_completed_at: string | null, created_at: string, updated_at: string, archived: boolean, pinned: boolean, name: string | null, worktree_deleted: boolean, };
++export type WorkspaceWithStatus = { is_running: boolean, is_errored: boolean, id: string, task_id: string | null, container_ref: string | null, branch: string, setup_completed_at: string | null, created_at: string, updated_at: string, archived: boolean, pinned: boolean, name: string | null, worktree_deleted: boolean, owner_user_id: string | null, };
+ 
+ export type Session = { id: string, workspace_id: string, executor: string | null, agent_working_dir: string | null, created_at: string, updated_at: string, };
  
 -- 
 2.50.1
