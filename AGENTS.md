@@ -1,150 +1,125 @@
 # Repository Guidelines
 
-> **Sync rule**: `CLAUDE.md` and `AGENTS.md` must always have identical content. When either file is modified, copy the updated content to the other file in the same commit.
+> **Rules for this file** (apply to both `CLAUDE.md` and `AGENTS.md`):
+> 1. **Sync**: both files must be identical. Update both in the same commit.
+> 2. **Size**: max 200 lines, target ~150. If exceeding, condense — don't split.
+> 3. **Style**: no paraphrasing, no repetitive words. Every line earns its place.
+> 4. **Currency**: when a code change alters architecture, ports, paths, env vars, secrets, or components described here — update this file in the same commit.
 
-## Purpose of This Repository
-This repository is the downstream deployment and integration layer for Vibe
-Kanban.
+## Purpose
 
-It exists to:
-- package and deploy Vibe Kanban on our infrastructure,
-- manage Kubernetes/Helm/CI behavior,
-- maintain downstream customizations as a patch stack.
+Downstream deployment and integration layer for Vibe Kanban. Owns Helm chart, K8s manifests, CI, patches. Not the upstream application source.
 
-It is not the upstream application source of truth.
+## Ownership
 
-## What This Repository Owns
-- `helm/vibe-kanban-cloud/`: Helm chart and chart defaults.
-- `k8s/`: cluster manifests and environment-specific Kubernetes resources.
-- `scripts/`: operational helpers (`apply-patches.sh`, `update-vibe-kanban.sh`, `update-vibe-kanban-remote.sh`, `deploy.sh`).
-- `patches/`: downstream patch architecture with subdirectories:
-  - `patches/common/`: patches for both submodules
-  - `patches/frontend/`: NPM package-specific patches
-  - `patches/remote/`: remote server-specific patches
-- `.gitlab-ci.yml` and `.gitlab/ci/`: build/release pipeline behavior.
-- `vibe-kanban/` submodule pointer (NPM package)
-- `vibe-kanban-remote/` submodule pointer (remote server, tracks latest upstream)
+- `helm/vibe-kanban-cloud/`: Helm chart (Remote, Relay, ElectricSQL, Frontend — all optional)
+- `k8s/`: environment-specific values (`values-production-{office,dol,hetzner,ovh}.yaml`)
+- `scripts/`: `apply-patches.sh`, `update-vibe-kanban.sh`, `update-vibe-kanban-remote.sh`, `deploy.sh`
+- `patches/{common,frontend,remote}/`: downstream patch stack
+- `.gitlab-ci.yml`, `.gitlab/ci/`: build/release pipelines
+- `vibe-kanban/` submodule (NPM package) / `vibe-kanban-remote/` submodule (Docker image)
 
-## Submodule Architecture (Critical)
+## Submodule Architecture
 
-- `vibe-kanban/` = the **full application**: local backend (`crates/server/`, `crates/db/` with SQLite), frontend (`packages/web-core/`), AND `crates/remote/` (the remote/cloud server code). Built as NPM package.
-- `vibe-kanban-remote/` = exists **for managing `vibe-kanban/crates/remote/` ref separately**, so the remote server can be deployed independently. Tracks latest upstream. Built as Docker image for K8s deployment.
+- `vibe-kanban/` = full app: local backend (`crates/server/`, `crates/db/`, SQLite), frontend (`packages/web-core/`), AND `crates/remote/`. Built as NPM package.
+- `vibe-kanban-remote/` = separate deployment ref for `crates/remote/` only. Tracks latest upstream. Built as Docker image.
 
-**Key distinction**: `vibe-kanban-remote/` is NOT the "local backend". It is a separate deployment ref for the remote/cloud server. The local backend (SQLite, workspace creation, `crates/server/`, `crates/db/`) lives in `vibe-kanban/`.
-
-### Patch targeting rules
-- Changes to local backend code (SQLite migrations, `crates/db/`, `crates/server/`, workspace creation) → `patches/frontend/` (applied to `vibe-kanban/`)
-- Changes to remote/cloud server (`crates/remote/`, PostgreSQL, Electric sync) → `patches/remote/` (applied to `vibe-kanban-remote/`)
-- Frontend UI changes (`packages/web-core/`, `shared/types.ts`) → `patches/frontend/` (applied to `vibe-kanban/`)
-
-## What This Repository Does Not Own
-- Upstream implementation policy for backend/frontend internals.
-- Upstream coding conventions beyond what is required to produce a downstream patch.
-
-If work must happen inside `vibe-kanban/` or `vibe-kanban-remote/`, use their
-respective `AGENTS.md` files for implementation guidance, then return to this
-repo workflow to persist changes as patch files in the appropriate directory.
+**Patch targeting**: local backend/UI → `patches/frontend/` (applied to `vibe-kanban/`). Remote/cloud server → `patches/remote/` (applied to `vibe-kanban-remote/`).
 
 ## Agent Operating Model
-1. Treat this repo as deployment/integration first.
-2. Prefer edits in `helm/`, `k8s/`, `scripts/`, CI config, docs, and `patches/`.
-3. Use submodule direct edits (`vibe-kanban/` or `vibe-kanban-remote/`) only as intermediate steps to generate/update patches.
-4. Never leave durable behavior changes only in submodule working tree state.
-5. Keep downstream patch stack small, explicit, and reproducible.
-6. See [ARCHITECTURE.md](./ARCHITECTURE.md) for dual submodule design rationale.
 
-## Mandatory Patch Architecture
-Downstream app behavior changes must be represented as patches organized by target:
-- `patches/common/` - patches for both submodules
-- `patches/frontend/` - patches for NPM package (`vibe-kanban/`)
-- `patches/remote/` - patches for remote server (`vibe-kanban-remote/`)
+1. Deployment/integration first. Prefer `helm/`, `k8s/`, `scripts/`, CI, `patches/`.
+2. Submodule edits only as intermediate steps to generate patches.
+3. Never leave durable changes only in submodule working tree.
+4. See [ARCHITECTURE.md](./ARCHITECTURE.md) for dual submodule rationale.
 
-CI expectation:
-- Frontend patches applied to `vibe-kanban/` before NPM publish
-- Remote patches applied to `vibe-kanban-remote/` before Docker image build
+## Patch Workflow
 
-Required workflow for app behavior changes:
+**Frontend/NPM**: edit `vibe-kanban/` → commit → `git -C vibe-kanban format-patch -1 -o ../patches/frontend/` → update `series` → validate with `scripts/apply-patches.sh vibe-kanban`.
 
-**For frontend/NPM changes:**
-1. Make code changes in `vibe-kanban/`.
-2. Commit in submodule (local temporary commit is acceptable).
-3. Export patch: `git -C vibe-kanban format-patch -1 -o ../patches/frontend/`.
-4. Add filename to `patches/frontend/series` in apply order.
-5. Validate: `scripts/apply-patches.sh vibe-kanban`.
-6. Commit patch artifacts in this repo.
+**Remote**: same flow with `vibe-kanban-remote/` and `patches/remote/`.
 
-**For remote server changes:**
-1. Make code changes in `vibe-kanban-remote/`.
-2. Commit in submodule (local temporary commit is acceptable).
-3. Export patch: `git -C vibe-kanban-remote format-patch -1 -o ../patches/remote/`.
-4. Add filename to `patches/remote/series` in apply order.
-5. Validate: `scripts/apply-patches.sh vibe-kanban-remote`.
-6. Commit patch artifacts in this repo.
+## Helm Chart Components
 
-## Common Repository Workflows
+| Component | Port | Toggle |
+|-----------|------|--------|
+| Remote Server | 8081 | always on |
+| Relay Tunnel | 8082 | `relay.enabled` |
+| ElectricSQL | 3000 (internal) | `electric.enabled` |
+| Frontend (sysbox) | 13500 (app), 13337 (code-server) | `frontend.enabled` |
 
-### 1) Deployment/config change (no app code change)
-- Edit Helm/K8s/CI/scripts/docs in this repository.
-- Validate rendered/manifests or command syntax as appropriate.
-- Commit only downstream deployment/integration files.
+### Frontend Pod
 
-### 2) Upstream version bump (frontend/NPM)
-- Update submodule: `scripts/update-vibe-kanban.sh <tag-or-commit>`.
-- Re-apply frontend patches: `scripts/apply-patches.sh vibe-kanban`.
-- Ensure `patches/frontend/series` still applies cleanly.
-- Commit updated submodule pointer plus any patch refresh.
+Sysbox container with systemd PID 1. Runs code-server + Vibe Kanban + Claude Code + Codex.
+- `runtimeClassName: sysbox-runc`, `hostUsers: false`, `runAsUser: 0`
+- `VSCODE_PROXY_URI` for port proxying; `port-url <port>` script at `/usr/local/bin/`
+- AI skill `expose-port` at `~/.claude/skills/` and `~/.agents/skills/`
+- Env propagation: container → `/etc/default/vibe-kanban-env` (systemd) + `~/.bashrc.d/` (shells)
+- Skel copied from `/etc/skel` on first boot (PVC prevents `useradd` from doing it)
 
-### 3) Upstream version bump (remote server)
-- Update submodule: `scripts/update-vibe-kanban-remote.sh <tag-or-commit>`.
-- Re-apply remote patches: `scripts/apply-patches.sh vibe-kanban-remote`.
-- Ensure `patches/remote/series` still applies cleanly.
-- Commit updated submodule pointer plus any patch refresh.
+### Auth (oauth2-proxy)
 
-### 4) Downstream app behavior change
-- Implement in appropriate submodule to generate patch artifacts.
-- Persist in `patches/frontend/` or `patches/remote/` with updated series file.
-- Verify patch application with `scripts/apply-patches.sh <submodule>`.
+Google OAuth `@community.example.com`. Per-cluster ingress annotations via `frontend.auth.protectedIngressAnnotations`:
+- nginx: `auth-url`/`auth-signin` annotations
+- Traefik: `createTraefikMiddleware: true` + `router.middlewares` annotation
 
-## Build, Test, and Deployment Commands
-Run from repository root unless noted.
+### VPN (Hetzner only)
 
-**Patch management:**
-- `scripts/apply-patches.sh vibe-kanban`: apply frontend patches
-- `scripts/apply-patches.sh vibe-kanban-remote`: apply remote server patches
+WireGuard + iptables kill switch + RFC1918 block. Sudo locked for network tools. Creds via gitignored secrets overlay. `required()` enforced — Helm errors if creds missing.
 
-**Submodule updates:**
-- `scripts/update-vibe-kanban.sh <tag>`: update NPM package submodule
-- `scripts/update-vibe-kanban-remote.sh <tag>`: update remote server submodule
+## Environments
 
-**Deployment:**
-- `scripts/deploy.sh <commit-sha>`: deploy specific image tag
-- `helm upgrade --install vibe-kanban ./helm/vibe-kanban-cloud -n vibe-kanban-cloud -f values-production.yaml`: deploy/update chart
+| File | Cluster | Namespace | Notes |
+|------|---------|-----------|-------|
+| `k8s/values-production-office.yaml` | 192.168.100.76 (MicroK8s) | vibe-kanban-cloud | Dual domains, nginx ingress |
+| `k8s/values-production-dol.yaml` | 165.101.23.66 (MicroK8s) | vibe-kanban | Traefik ingress |
+| `k8s/values-production-hetzner.yaml` | TBD | vibe-kanban | VPN enforced |
+| `k8s/values-production-ovh.yaml` | OVH | — | Existing |
 
-**Testing (run from appropriate submodule):**
-- `pnpm run lint` - from `vibe-kanban/` or `vibe-kanban-remote/`
-- `pnpm run check` - from `vibe-kanban/` or `vibe-kanban-remote/`
-- `cargo test --workspace` - from `vibe-kanban/` or `vibe-kanban-remote/`
+## TLS
 
-## Commit and PR Expectations
-- Use Conventional Commits (`fix:`, `feat:`, `docs:`, `ci:`, `chore:`).
-- Keep commits focused on one operational concern.
-- Describe deployment impact clearly (image tag, chart values, secrets, patches, submodule bumps).
-- Include verification commands run and results in PR description.
+Single `cert-manager-global` ClusterIssuer with `dnsZones` solver selectors — `community.example.com` and `community.example.dev` route to different Cloudflare tokens automatically.
 
 ## Security and Secrets
 
-### Rules
-- Never commit secrets or inline credentials into values files or templates.
-- Exception: [publish-credentials.bashrc](scripts/publish-credentials.bashrc) (documented, intentional).
+**Rule**: committed values use `secretKeyRef`. Real credentials go in gitignored overlays.
 
-### Pattern for Helm values
-- **Committed values files** (`k8s/values-production-*.yaml`): reference K8s secrets by name via `secretKeyRef`. Never inline secret values.
-- **Secret overlays** (`k8s/*-secrets.yaml`): contain actual secret values, passed at deploy time with `-f`. Always gitignored.
-- **Example files** (`k8s/*-secrets.yaml.example`): committed templates showing required keys with empty values. Copy to the real filename and fill in.
-- **Helm `required()`**: use in templates to fail fast when mandatory secrets are missing (e.g., VPN keys).
+| Pattern | Committed | Purpose |
+|---------|-----------|---------|
+| `k8s/values-production-*.yaml` | Yes | Secret refs via `secretKeyRef` |
+| `k8s/*-secrets.yaml` | No | Actual credentials, deploy with `-f` |
+| `k8s/*-secrets.yaml.example` | Yes | Template with empty values |
 
-### Gitignore (do not modify)
-- `values-production.yaml` — local-only deploy values
-- `*-secrets.yaml` — secret overlays (real credentials)
-- `*-secret.yaml` — K8s secret manifests
-- `.env*` — environment files
+Helm-managed secrets (`resource-policy: keep`): `vibe-kanban-claude-code` (uses `lookup` to preserve Lens edits), `vibe-kanban-vpn`.
+
+Exception: [publish-credentials.bashrc](scripts/publish-credentials.bashrc) — inline credentials, documented.
+
+**Gitignore** (do not modify): `values-production.yaml`, `*-secrets.yaml`, `*-secret.yaml`, `.env*`
+
+## Commands
+
+```bash
+# Patches
+scripts/apply-patches.sh vibe-kanban          # frontend
+scripts/apply-patches.sh vibe-kanban-remote   # remote
+
+# Deploy (office example)
+helm upgrade --install vibe-kanban ./helm/vibe-kanban-cloud/ \
+  -n vibe-kanban-cloud -f k8s/values-production-office.yaml
+
+# Validate before committing
+helm template test helm/vibe-kanban-cloud/ -f k8s/values-production-office.yaml
+```
+
+## Commit Conventions
+
+Conventional Commits (`fix:`, `feat:`, `docs:`, `ci:`, `chore:`). Describe deployment impact. Include verification results in PR descriptions.
+
+## Gotchas
+
+- `{{ "{{port}}" }}` to escape `{{port}}` in Helm templates (VSCODE_PROXY_URI)
+- `set -euo pipefail` + `read -r -d ''` = script death (read returns 1 on EOF)
+- ConfigMap updates need `rollout restart` — pods don't auto-restart
+- Container env vars don't reach systemd services or login shells — use `EnvironmentFile` + `.bashrc.d/`
+- `hostUsers: false` required for sysbox on containerd 2.x / Ubuntu 24.04+
+- `cp -rn /etc/skel/. /home/coder/` needed because PVC mount blocks `useradd` skel copy
