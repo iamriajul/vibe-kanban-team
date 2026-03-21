@@ -1,6 +1,6 @@
-From a5317c4a9cde438532a2a90c751a012f9bef313d Mon Sep 17 00:00:00 2001
-From: Riajul Islam <kmriajulislami@gmail.com>
-Date: Thu, 12 Mar 2026 15:52:01 +0000
+From 81a6c5c05b773c287cf581d98a9b5ff3be2c92b2 Mon Sep 17 00:00:00 2001
+From: Riajul Islam <opensource@example.com>
+Date: Sat, 21 Mar 2026 12:13:25 +0000
 Subject: [PATCH] fix(remote): add attachment upload relay for legacy clients
 
 ---
@@ -11,13 +11,13 @@ Subject: [PATCH] fix(remote): add attachment upload relay for legacy clients
  4 files changed, 83 insertions(+), 20 deletions(-)
 
 diff --git a/crates/remote/Cargo.toml b/crates/remote/Cargo.toml
-index 1fb7126a6..ef7d93173 100644
+index 4dd086353..79f788b6f 100644
 --- a/crates/remote/Cargo.toml
 +++ b/crates/remote/Cargo.toml
-@@ -56,7 +56,7 @@ urlencoding = "2.1"
+@@ -57,7 +57,7 @@ hex = "0.4"
+ urlencoding = "2.1"
  url = "2.5"
  base64 = "0.22"
- rmp-serde = "1.3"
 -aws-sdk-s3 = { version = "1.65", default-features = false, features = ["behavior-version-latest", "rt-tokio"] }
 +aws-sdk-s3 = { version = "1.65", default-features = false, features = ["behavior-version-latest", "rt-tokio", "rustls", "default-https-client"] }
  aws-credential-types = "1.2"
@@ -133,7 +133,7 @@ index 135f6bd36..659abf58e 100644
          Ok(folder_path)
      }
 diff --git a/crates/remote/src/routes/attachments.rs b/crates/remote/src/routes/attachments.rs
-index ff5cf0129..425789227 100644
+index 440764d45..fe5655871 100644
 --- a/crates/remote/src/routes/attachments.rs
 +++ b/crates/remote/src/routes/attachments.rs
 @@ -3,10 +3,11 @@ use api_types::{
@@ -159,9 +159,9 @@ index ff5cf0129..425789227 100644
 +}
 +
  #[derive(Debug, Serialize, Deserialize, TS)]
- #[ts(export)]
  pub struct InitUploadRequest {
-@@ -204,7 +209,7 @@ async fn init_upload(
+     pub project_id: Uuid,
+@@ -199,7 +204,7 @@ async fn init_upload(
          }));
      }
  
@@ -170,7 +170,7 @@ index ff5cf0129..425789227 100644
      let sanitized_filename = sanitize_filename(&payload.filename);
      let blob_path = format!(
          "attachments/{}/{}_{}",
-@@ -212,26 +217,67 @@ async fn init_upload(
+@@ -207,26 +212,67 @@ async fn init_upload(
          Uuid::new_v4(),
          sanitized_filename
      );
@@ -243,7 +243,7 @@ index ff5cf0129..425789227 100644
  #[instrument(name = "attachments.confirm_upload", skip(state, ctx, payload), fields(project_id = %payload.project_id, user_id = %ctx.user.id))]
  async fn confirm_upload(
      State(state): State<AppState>,
-@@ -264,8 +310,11 @@ async fn confirm_upload(
+@@ -259,8 +305,11 @@ async fn confirm_upload(
              .await?
              .ok_or(RouteError::UploadNotFound)?;
  
@@ -257,10 +257,10 @@ index ff5cf0129..425789227 100644
          if props.content_length > MAX_FILE_SIZE {
              let _ = r2.delete_blob(blob_path).await;
 diff --git a/crates/remote/src/routes/mod.rs b/crates/remote/src/routes/mod.rs
-index 2414cda62..fd88c10dd 100644
+index 7db94df24..584cdefe6 100644
 --- a/crates/remote/src/routes/mod.rs
 +++ b/crates/remote/src/routes/mod.rs
-@@ -101,6 +101,7 @@ pub fn router(state: AppState) -> Router {
+@@ -104,6 +104,7 @@ pub fn router(state: AppState) -> Router {
          .merge(oauth::public_router())
          .merge(organization_members::public_router())
          .merge(tokens::public_router())

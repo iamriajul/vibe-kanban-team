@@ -42,7 +42,7 @@ index 60bc19e3b..d13fbfa5a 100644
 +            spawn_cleanup_task(pool.clone(), r2_service.clone());
          }
  
-         let state = AppState::new(
+         let digest_enabled = std::env::var("DIGEST_ENABLED")
 diff --git a/crates/remote/src/attachments/cleanup.rs b/crates/remote/src/attachments/cleanup.rs
 index d8968916e..ab3c38773 100644
 --- a/crates/remote/src/attachments/cleanup.rs

@@ -1,6 +1,6 @@
-From 8ab688c687d91cf2d031291e2016a8b05d29efbe Mon Sep 17 00:00:00 2001
-From: Riajul Islam <kmriajulislami@gmail.com>
-Date: Thu, 12 Mar 2026 15:46:55 +0000
+From ebce8c7c4e0575e3b61581aed9d6ee1e987dab7f Mon Sep 17 00:00:00 2001
+From: Riajul Islam <opensource@example.com>
+Date: Sat, 21 Mar 2026 12:10:08 +0000
 Subject: [PATCH] update: loops template IDs
 
 ---
@@ -8,12 +8,12 @@ Subject: [PATCH] update: loops template IDs
  1 file changed, 3 insertions(+), 3 deletions(-)
 
 diff --git a/crates/remote/src/mail.rs b/crates/remote/src/mail.rs
-index 83aac904c..a4a8b3b67 100644
+index d74f8a1b6..17fc126f6 100644
 --- a/crates/remote/src/mail.rs
 +++ b/crates/remote/src/mail.rs
-@@ -4,9 +4,9 @@ use api_types::MemberRole;
- use async_trait::async_trait;
- use serde_json::json;
+@@ -6,9 +6,9 @@ use serde_json::json;
+ 
+ use crate::digest::DigestError;
  
 -const LOOPS_INVITE_TEMPLATE_ID: &str = "cmhvy2wgs3s13z70i1pxakij9";
 -const LOOPS_REVIEW_READY_TEMPLATE_ID: &str = "cmj47k5ge16990iylued9by17";
@@ -22,8 +22,8 @@ index 83aac904c..a4a8b3b67 100644
 +const LOOPS_REVIEW_READY_TEMPLATE_ID: &str = "cmlb45ki603ia0i1pdiq2ekyr";
 +const LOOPS_REVIEW_FAILED_TEMPLATE_ID: &str = "cmlb44vqe03p90i04bwkfqjv3";
  
- #[async_trait]
- pub trait Mailer: Send + Sync {
+ pub const DIGEST_PREVIEW_COUNT: usize = 5;
+ 
 -- 
 2.50.1
 
