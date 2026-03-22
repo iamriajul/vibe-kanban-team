@@ -397,6 +397,12 @@ frontend:
   claudeCode:
     oauthToken: ""
 
+  # ZAI/OpenCode configuration
+  # When set, the installer automatically installs OpenCode and configures auth.
+  # The API key is used for the zai-coding-plan provider.
+  zai:
+    apiKey: ""
+
   # Additional environment variables for frontend container
   env: []
   extraEnv: []
