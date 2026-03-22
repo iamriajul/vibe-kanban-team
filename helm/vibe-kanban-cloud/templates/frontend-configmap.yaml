@@ -57,12 +57,38 @@ data:
       echo "Installing Codex..."
       npm install -g @openai/codex 2>&1 || true
     fi
+
+    # Install OpenCode when ZAI_API_KEY is provided
+    if [ -n "${ZAI_API_KEY:-}" ]; then
+      echo "ZAI_API_KEY detected, installing OpenCode..."
+      if ! command -v opencode &>/dev/null; then
+        curl -fsSL https://raw.githubusercontent.com/opencode-ai/opencode/main/install.sh | bash 2>&1 || true
+      fi
+
+      # Configure OpenCode auth for zai-coding-plan provider
+      OPENCODE_AUTH_DIR="$HOME/.local/share/opencode"
+      OPENCODE_AUTH_FILE="$OPENCODE_AUTH_DIR/auth.json"
+      if [ ! -f "$OPENCODE_AUTH_FILE" ]; then
+        echo "Configuring OpenCode auth for zai-coding-plan..."
+        mkdir -p "$OPENCODE_AUTH_DIR"
+        cat > "$OPENCODE_AUTH_FILE" << AUTHJSONEOF
+    {
+      "zai-coding-plan": {
+        "type": "api",
+        "key": "${ZAI_API_KEY}"
+      }
+    }
+    AUTHJSONEOF
+        chmod 600 "$OPENCODE_AUTH_FILE"
+        chown -R coder:coder "$OPENCODE_AUTH_DIR"
+      fi
+    fi
     INSTALLEOF
     chmod +x /usr/local/bin/install-ai-tools.sh
 
     cat > /etc/systemd/system/install-ai-tools.service << EOF
     [Unit]
-    Description=Install Claude Code and Codex
+    Description=Install Claude Code, Codex, and OpenCode
     After=network-online.target
     Wants=network-online.target
 
@@ -181,6 +207,9 @@ data:
     if [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
       echo "CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN}" >> /etc/default/vibe-kanban-env
     fi
+    if [ -n "${ZAI_API_KEY:-}" ]; then
+      echo "ZAI_API_KEY=${ZAI_API_KEY}" >> /etc/default/vibe-kanban-env
+    fi
     {{- if .Values.frontend.codeServer.proxyDomain }}
     echo "VSCODE_PROXY_URI=https://{{ .Values.frontend.codeServer.proxyDomain }}/" >> /etc/default/vibe-kanban-env
     {{- end }}
@@ -194,6 +223,9 @@ data:
       : > "$RC_DIR/80-container-env.sh"
       if [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
         echo "export CLAUDE_CODE_OAUTH_TOKEN=\"${CLAUDE_CODE_OAUTH_TOKEN}\"" >> "$RC_DIR/80-container-env.sh"
+      fi
+      if [ -n "${ZAI_API_KEY:-}" ]; then
+        echo "export ZAI_API_KEY=\"${ZAI_API_KEY}\"" >> "$RC_DIR/80-container-env.sh"
       fi
       {{- if .Values.frontend.codeServer.proxyDomain }}
       echo 'export VSCODE_PROXY_URI="https://{{ .Values.frontend.codeServer.proxyDomain }}/"' >> "$RC_DIR/80-container-env.sh"

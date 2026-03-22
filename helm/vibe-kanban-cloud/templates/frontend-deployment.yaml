@@ -55,6 +55,12 @@ spec:
                   name: vibe-kanban-claude-code
                   key: oauth-token
                   optional: true
+            - name: ZAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: vibe-kanban-zai
+                  key: api-key
+                  optional: true
             {{- with .Values.frontend.env }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
