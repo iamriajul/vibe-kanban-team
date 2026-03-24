@@ -1,7 +1,7 @@
-From e84ce605aa40616ac9285e08bffd10ae0da39ca4 Mon Sep 17 00:00:00 2001
+From ca6ec940a3debce3addc8351ea19fe6e8dab40d1 Mon Sep 17 00:00:00 2001
 From: Riajul Islam <opensource@example.com>
 Date: Tue, 17 Mar 2026 05:04:11 +0000
-Subject: [PATCH 3/4] feat: unified code-server editor flow
+Subject: [PATCH] feat: unified code-server editor flow
 
 ---
  .../src/services/config/editor/mod.rs         | 159 +++++++++++++++++-
@@ -234,10 +234,10 @@ index 6f5c3a708..f9eb2ba9d 100644
 +    }
 +}
 diff --git a/packages/web-core/src/features/onboarding/ui/LandingPage.tsx b/packages/web-core/src/features/onboarding/ui/LandingPage.tsx
-index 4967f7436..8ba32dc84 100644
+index 7e2677955..7cc60d5c7 100644
 --- a/packages/web-core/src/features/onboarding/ui/LandingPage.tsx
 +++ b/packages/web-core/src/features/onboarding/ui/LandingPage.tsx
-@@ -251,9 +251,18 @@ export function LandingPage() {
+@@ -252,9 +252,18 @@ export function LandingPage() {
      void previewSound(value);
    };
  
@@ -259,7 +259,7 @@ index 4967f7436..8ba32dc84 100644
  
    const handleContinue = async () => {
      if (!config || !canContinue) return;
-@@ -261,7 +270,7 @@ export function LandingPage() {
+@@ -262,7 +271,7 @@ export function LandingPage() {
      const editorConfig: EditorConfig = {
        editor_type: editorType,
        custom_command:
@@ -268,7 +268,7 @@ index 4967f7436..8ba32dc84 100644
        remote_ssh_host: null,
        remote_ssh_user: null,
        auto_install_extension: true,
-@@ -273,7 +282,8 @@ export function LandingPage() {
+@@ -274,7 +283,8 @@ export function LandingPage() {
        selected_agent: selectedAgent,
        editor_type: editorType,
        custom_editor_command_set:
@@ -278,7 +278,7 @@ index 4967f7436..8ba32dc84 100644
        sound_enabled: soundEnabled,
        sound_file: soundEnabled ? soundFile : null,
      });
-@@ -446,25 +456,35 @@ export function LandingPage() {
+@@ -453,25 +463,35 @@ export function LandingPage() {
                  })}
                </div>
  
@@ -319,10 +319,10 @@ index 4967f7436..8ba32dc84 100644
                )}
              </section>
 diff --git a/packages/web-core/src/i18n/locales/en/settings.json b/packages/web-core/src/i18n/locales/en/settings.json
-index fd921b1fb..1fe8e5cd6 100644
+index bb5d8958f..954cff769 100644
 --- a/packages/web-core/src/i18n/locales/en/settings.json
 +++ b/packages/web-core/src/i18n/locales/en/settings.json
-@@ -79,6 +79,9 @@
+@@ -91,6 +91,9 @@
            "placeholder": "e.g., code, subl, vim",
            "helper": "Enter the command to launch your custom editor. This will be used to open files."
          },
@@ -332,7 +332,7 @@ index fd921b1fb..1fe8e5cd6 100644
          "remoteSsh": {
            "host": {
              "label": "Remote SSH Host (Optional)",
-@@ -93,7 +96,7 @@
+@@ -105,7 +108,7 @@
          },
          "autoInstallExtension": {
            "label": "Auto-install VS Code Extension",
@@ -342,7 +342,7 @@ index fd921b1fb..1fe8e5cd6 100644
          "availability": {
            "checking": "Checking availability...",
 diff --git a/packages/web-core/src/shared/actions/index.ts b/packages/web-core/src/shared/actions/index.ts
-index c5d3dd98b..536f2d1f5 100644
+index 4ae5d409c..aeb263ca5 100644
 --- a/packages/web-core/src/shared/actions/index.ts
 +++ b/packages/web-core/src/shared/actions/index.ts
 @@ -66,6 +66,7 @@ import { RenameWorkspaceDialog } from '@vibe/ui/components/RenameWorkspaceDialog
@@ -353,7 +353,7 @@ index c5d3dd98b..536f2d1f5 100644
  import { EditorSelectionDialog } from '@/shared/dialogs/command-bar/EditorSelectionDialog';
  import { StartReviewDialog } from '@/shared/dialogs/command-bar/StartReviewDialog';
  import posthog from 'posthog-js';
-@@ -753,7 +754,10 @@ export const Actions = {
+@@ -758,7 +759,10 @@ export const Actions = {
          if (response.url) {
            window.open(response.url, '_blank');
          }
@@ -365,7 +365,7 @@ index c5d3dd98b..536f2d1f5 100644
          // Show editor selection dialog on failure
          EditorSelectionDialog.show({
            selectedAttemptId: ctx.currentWorkspaceId,
-@@ -1123,6 +1127,9 @@ export const Actions = {
+@@ -1128,6 +1132,9 @@ export const Actions = {
            window.open(response.url, '_blank');
          }
        } catch (err) {
@@ -441,18 +441,18 @@ index 3c5fb6ab6..5fcaef770 100644
              id="auto-install-extension"
              label={t('settings.general.editor.autoInstallExtension.label')}
 diff --git a/packages/web-core/src/shared/hooks/useOpenInEditor.ts b/packages/web-core/src/shared/hooks/useOpenInEditor.ts
-index 21af4233f..619717005 100644
+index db81e7f62..7cad4b1c1 100644
 --- a/packages/web-core/src/shared/hooks/useOpenInEditor.ts
 +++ b/packages/web-core/src/shared/hooks/useOpenInEditor.ts
 @@ -1,6 +1,7 @@
  import { useCallback } from 'react';
- import { workspacesApi } from '@/shared/lib/api';
+ import { workspacesApi, relayApi } from '@/shared/lib/api';
  import { EditorSelectionDialog } from '@/shared/dialogs/command-bar/EditorSelectionDialog';
 +import { alertIfCodeServerNotConfigured } from '@/shared/lib/editorWarnings';
  import type { EditorType } from 'shared/types';
- 
- type OpenEditorOptions = {
-@@ -29,6 +30,9 @@ export function useOpenInEditor(
+ import { useAppRuntime } from '@/shared/hooks/useAppRuntime';
+ import { useHostId } from '@/shared/providers/HostIdProvider';
+@@ -42,6 +43,9 @@ export function useOpenInEditor(
            window.open(response.url, '_blank');
          }
        } catch (err) {
@@ -502,10 +502,10 @@ index 8c634a5af..9f49b72de 100644
        return i18n.t('common:editorNames.custom');
      case EditorType.GOOGLE_ANTIGRAVITY:
 diff --git a/shared/types.ts b/shared/types.ts
-index 48ea09e57..88ce288a3 100644
+index bcfa35409..c79bdbb74 100644
 --- a/shared/types.ts
 +++ b/shared/types.ts
-@@ -476,7 +476,7 @@ export enum ThemeMode { LIGHT = "LIGHT", DARK = "DARK", SYSTEM = "SYSTEM" }
+@@ -500,7 +500,7 @@ export enum ThemeMode { LIGHT = "LIGHT", DARK = "DARK", SYSTEM = "SYSTEM" }
  
  export type EditorConfig = { editor_type: EditorType, custom_command: string | null, remote_ssh_host: string | null, remote_ssh_user: string | null, auto_install_extension: boolean, };
  
