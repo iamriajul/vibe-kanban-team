@@ -140,9 +140,26 @@ Exception: [publish-credentials.bashrc](scripts/publish-credentials.bashrc) — 
 
 **Gitignore** (do not modify): `values-production.yaml`, `*-secrets.yaml`, `*-secret.yaml`, `.env*`
 
-## Patch Deployment
+## Release & Deployment Flows
 
-Push branch → `glab mr create --squash-before-merge --remove-source-branch --no-editor --yes` → `glab mr merge <id> --squash --remove-source-branch --yes` → fetch main and tags → create new tag by incrementing the timestamp of the latest `v<version>-<YYYYMMDDHHmmss>` tag by 1 → push the tag.
+Not all changes require the same flow. Only changes affecting **runtime artifacts** need a tag to trigger CI.
+
+**Tag-triggered (CI builds automatically)** — patches in `patches/`, submodule ref bumps:
+
+| Tag pattern | Pipeline | Artifacts built |
+|-------------|----------|-----------------|
+| `v*` (not `remote-*`) | `.gitlab/ci/npm-publish.yml` | NPM package + platform binaries |
+| `remote-v*` | `.gitlab/ci/image-build.yml` | Remote + Relay Docker images, Helm chart |
+
+Tagging flow: push branch → `glab mr create --squash-before-merge --remove-source-branch --no-editor --yes` → `glab mr merge <id> --squash --remove-source-branch --yes` → fetch main and tags → create new tag → push tag.
+
+Tag naming depends on scenario:
+- **Upstream bump**: frontend uses `v<upstream-semver>-<YYYYMMDDHHmmss>` (current time), remote uses upstream tag as-is (`remote-v<semver>`)
+- **Patch-only release** (no upstream change): increment timestamp of latest `v<version>-<YYYYMMDDHHmmss>` by 1
+
+**MR-only (no tag needed)** — Helm chart templates, K8s values, scripts, CI config. Take effect on next `helm upgrade` or pipeline run.
+
+**Nightly automation** — `scripts/nightly-check-release.sh` detects new upstream tags, verifies patches apply, auto-commits and tags. Alerts Discord on patch conflicts.
 
 ## Commit Conventions
 
