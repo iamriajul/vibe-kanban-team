@@ -535,6 +535,76 @@ data:
     chmod 440 /etc/sudoers.d/vpn-lockdown
     {{- end }}
 
+    # =========================================================================
+    # Docker prune (daily cleanup of unused images and build cache)
+    # =========================================================================
+    cat > /usr/local/bin/docker-prune.sh << 'DPEOF'
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if ! command -v docker &>/dev/null; then echo "docker not found"; exit 1; fi
+    if ! docker info &>/dev/null; then echo "docker daemon not running"; exit 1; fi
+    echo "$(date): Running docker system prune..."
+    docker system prune -f 2>&1
+    echo "$(date): Docker prune complete."
+    DPEOF
+    chmod +x /usr/local/bin/docker-prune.sh
+
+    cat > /etc/systemd/system/docker-prune.service << EOF
+    [Unit]
+    Description=Docker system prune
+    Requires=docker.service
+    After=docker.service
+
+    [Service]
+    Type=oneshot
+    ExecStart=/usr/local/bin/docker-prune.sh
+    EOF
+
+    cat > /etc/systemd/system/docker-prune.timer << EOF
+    [Unit]
+    Description=Daily Docker system prune
+
+    [Timer]
+    OnCalendar=daily
+    Persistent=true
+    RandomizedDelaySec=300
+
+    [Install]
+    WantedBy=timers.target
+    EOF
+    ln -sf /etc/systemd/system/docker-prune.timer /etc/systemd/system/timers.target.wants/docker-prune.timer
+
+    {{- if .Values.frontend.dockerCache.enabled }}
+    # =========================================================================
+    # Docker registry cache (Zot pull-through proxy)
+    # =========================================================================
+    DOCKER_MIRROR_URL="{{ .Values.frontend.dockerCache.registryMirrorUrl }}"
+    MIRROR_HOST="${DOCKER_MIRROR_URL#*://}"  # strip scheme for insecure-registries
+
+    if [ -f /etc/docker/daemon.json ]; then
+      which jq > /dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq jq > /dev/null 2>&1)
+      cat > /tmp/docker_cache_settings.json << DCEOF
+    {
+      "registry-mirrors": ["${DOCKER_MIRROR_URL}"],
+      "insecure-registries": ["${MIRROR_HOST}"]
+    }
+    DCEOF
+      jq -s '.[0] * .[1]' /etc/docker/daemon.json /tmp/docker_cache_settings.json > /tmp/daemon_merged.json
+      cp /etc/docker/daemon.json /etc/docker/daemon.json.bak
+      mv /tmp/daemon_merged.json /etc/docker/daemon.json
+      rm -f /tmp/docker_cache_settings.json
+    else
+      mkdir -p /etc/docker
+      cat > /etc/docker/daemon.json << DCEOF
+    {
+      "registry-mirrors": ["${DOCKER_MIRROR_URL}"],
+      "insecure-registries": ["${MIRROR_HOST}"]
+    }
+    DCEOF
+    fi
+    echo "Docker configured with registry cache: ${DOCKER_MIRROR_URL}"
+    {{- end }}
+
     # Enable services by creating symlinks directly
     # (systemctl enable doesn't work before systemd is PID 1)
     ln -sf /etc/systemd/system/code-server.service /etc/systemd/system/multi-user.target.wants/code-server.service

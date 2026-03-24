@@ -1,0 +1,18 @@
+{{- if .Values.frontend.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "vibe-kanban-cloud.frontend.fullname" . }}-docker
+  labels:
+    {{- include "vibe-kanban-cloud.labels" . | nindent 4 }}
+    app.kubernetes.io/component: frontend
+spec:
+  accessModes:
+    {{- toYaml .Values.frontend.dockerPersistence.accessModes | nindent 4 }}
+  {{- if .Values.frontend.dockerPersistence.storageClass }}
+  storageClassName: {{ .Values.frontend.dockerPersistence.storageClass | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.frontend.dockerPersistence.size }}
+{{- end }}
