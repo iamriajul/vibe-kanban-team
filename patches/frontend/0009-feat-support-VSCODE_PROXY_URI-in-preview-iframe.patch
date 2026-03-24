@@ -1,6 +1,6 @@
-From c38c323d6918c698717432661fe8f177bb5293a3 Mon Sep 17 00:00:00 2001
+From 4ac56ed6057d009cffe3e0309a92e8f411222620 Mon Sep 17 00:00:00 2001
 From: Riajul Islam <opensource@example.com>
-Date: Tue, 24 Mar 2026 15:08:03 +0000
+Date: Tue, 24 Mar 2026 15:53:13 +0000
 Subject: [PATCH] feat: support VSCODE_PROXY_URI in preview iframe
 
 Route the preview iframe through the Rust preview proxy when
@@ -13,19 +13,20 @@ parameter. The proxy persists it in a vk_preview_target cookie so that
 subsequent sub-resource requests (CSS, JS, images, fetch) are routed to
 the correct dev server without needing the query parameter.
 
-Also fixes app-port detection: in VSCODE_PROXY_URI mode the app port
-is extracted from the hostname subdomain (e.g. 13500.code.vk.community.example.com)
-since window.location.port is empty for HTTPS. This prevents the
-preview from accidentally targeting Vibe Kanban's own port.
+Also fixes app-port detection and log URL detection: in VSCODE_PROXY_URI
+mode the app port is extracted from the hostname subdomain so the preview
+correctly filters out the app's own port. Dev server log output
+containing VSCODE_PROXY_URI URLs (e.g. https://3000.code.vk.community.example.com/)
+is now recognized alongside traditional localhost URLs.
 
 Falls back to direct VSCODE_PROXY_URI bypass when previewProxyPort is
 unavailable, and to subdomain routing for local (non-cloud) mode.
 ---
  crates/preview-proxy/src/devtools_script.js   |   1 +
  crates/preview-proxy/src/lib.rs               | 234 ++++++++++-
- .../workspaces/PreviewBrowserContainer.tsx    | 372 ++++++++++++++----
- .../src/shared/hooks/usePreviewUrl.ts         |  14 +-
- 4 files changed, 537 insertions(+), 84 deletions(-)
+ .../workspaces/PreviewBrowserContainer.tsx    | 378 ++++++++++++++----
+ .../src/shared/hooks/usePreviewUrl.ts         |  58 ++-
+ 4 files changed, 579 insertions(+), 92 deletions(-)
 
 diff --git a/crates/preview-proxy/src/devtools_script.js b/crates/preview-proxy/src/devtools_script.js
 index ca1c3d3af..4314377f4 100644
@@ -344,7 +345,7 @@ index 3081db220..ad1f38fe0 100644
      let status = StatusCode::from_u16(response.status().as_u16()).unwrap_or(StatusCode::OK);
  
 diff --git a/packages/web-core/src/pages/workspaces/PreviewBrowserContainer.tsx b/packages/web-core/src/pages/workspaces/PreviewBrowserContainer.tsx
-index cf0ed825c..426bde5e2 100644
+index cf0ed825c..84ce09f88 100644
 --- a/packages/web-core/src/pages/workspaces/PreviewBrowserContainer.tsx
 +++ b/packages/web-core/src/pages/workspaces/PreviewBrowserContainer.tsx
 @@ -77,60 +77,178 @@ function normalizePreviewUrl(rawUrl: string, baseUrl?: string): string | null {
@@ -648,7 +649,20 @@ index cf0ed825c..426bde5e2 100644
    const hostId = useHostId();
  
    const {
-@@ -241,17 +439,24 @@ export function PreviewBrowserContainer({
+@@ -192,7 +390,11 @@ export function PreviewBrowserContainer({
+     );
+   }, [runningDevServers]);
+   const { logs } = useLogStream(primaryDevServer?.id ?? '');
+-  const urlInfo = usePreviewUrl(logs, previewProxyPort ?? undefined);
++  const urlInfo = usePreviewUrl(
++    logs,
++    previewProxyPort ?? undefined,
++    vsCodeProxyUri
++  );
+ 
+   // Detect failed dev server process (failed status or completed with non-zero exit code)
+   const failedDevServerProcess = devServerProcesses.find(
+@@ -241,17 +443,24 @@ export function PreviewBrowserContainer({
      );
    }, [hasOverride, urlInfo?.port, effectiveParsedUrl]);
  
@@ -680,7 +694,7 @@ index cf0ed825c..426bde5e2 100644
      if (devServerPort === vibeKanbanPort) {
        console.warn(
          `[Preview] Ignoring dev server URL with same port as Vibe Kanban (${devServerPort}). ` +
-@@ -260,38 +465,40 @@ export function PreviewBrowserContainer({
+@@ -260,38 +469,40 @@ export function PreviewBrowserContainer({
        return undefined;
      }
  
@@ -736,7 +750,7 @@ index cf0ed825c..426bde5e2 100644
    ]);
  
    const urlInputRef = useRef<HTMLInputElement>(null);
-@@ -336,14 +543,31 @@ export function PreviewBrowserContainer({
+@@ -336,14 +547,31 @@ export function PreviewBrowserContainer({
    } = usePreviewNavigation();
    const bridgeRef = useRef<PreviewDevToolsBridge | null>(null);
    const displayedPreviewUrl = useMemo(() => {
@@ -771,7 +785,7 @@ index cf0ed825c..426bde5e2 100644
          );
          if (transformed) {
            return transformed;
-@@ -351,12 +575,20 @@ export function PreviewBrowserContainer({
+@@ -351,12 +579,20 @@ export function PreviewBrowserContainer({
        }
      }
  
@@ -795,7 +809,7 @@ index cf0ed825c..426bde5e2 100644
  
    const handleBridgeMessage = useCallback(
      (message: PreviewDevToolsMessage) => {
-@@ -670,11 +902,16 @@ export function PreviewBrowserContainer({
+@@ -670,11 +906,16 @@ export function PreviewBrowserContainer({
      const normalizedInput = normalizedInputUrl.toString();
      const normalizedInputDevPort = getTargetDevPort(
        normalizedInputUrl,
@@ -815,7 +829,7 @@ index cf0ed825c..426bde5e2 100644
      const normalizedInputDevParsed = parsePreviewUrl(normalizedInputDevUrl);
      if (!normalizedInputDevParsed) {
        return;
-@@ -696,19 +933,19 @@ export function PreviewBrowserContainer({
+@@ -696,19 +937,19 @@ export function PreviewBrowserContainer({
  
      resetNavigation();
  
@@ -847,7 +861,7 @@ index cf0ed825c..426bde5e2 100644
        }
      }
  
-@@ -722,6 +959,7 @@ export function PreviewBrowserContainer({
+@@ -722,6 +963,7 @@ export function PreviewBrowserContainer({
      hasOverride,
      showIframe,
      previewProxyPort,
@@ -856,7 +870,7 @@ index cf0ed825c..426bde5e2 100644
      resetNavigation,
      setOverrideUrl,
 diff --git a/packages/web-core/src/shared/hooks/usePreviewUrl.ts b/packages/web-core/src/shared/hooks/usePreviewUrl.ts
-index e0b9f91e8..88ece83e4 100644
+index e0b9f91e8..92389e4e9 100644
 --- a/packages/web-core/src/shared/hooks/usePreviewUrl.ts
 +++ b/packages/web-core/src/shared/hooks/usePreviewUrl.ts
 @@ -82,9 +82,21 @@ const isBetterPreviewUrlCandidate = (
@@ -882,6 +896,104 @@ index e0b9f91e8..88ece83e4 100644
    return null;
  };
  
+@@ -148,7 +160,10 @@ const toOriginUrlInfo = (
+   };
+ };
+ 
+-export const detectPreviewUrl = (line: string): PreviewUrlInfo | null => {
++export const detectPreviewUrl = (
++  line: string,
++  vsCodeProxyUri?: string | null
++): PreviewUrlInfo | null => {
+   const cleaned = stripAnsi(line);
+   // Some dev servers split terminal output into chunks, which can break
+   // ports as `:40\n00`. Collapse whitespace inside the port before matching.
+@@ -216,12 +231,38 @@ export const detectPreviewUrl = (line: string): PreviewUrlInfo | null => {
+     };
+   }
+ 
++  // VSCODE_PROXY_URI detection: match URLs like https://3000.code.vk.community.example.com/
++  // that the dev server may print instead of localhost URLs.
++  if (vsCodeProxyUri?.includes('{{port}}')) {
++    const [tplPrefix, tplSuffix] = vsCodeProxyUri.split('{{port}}');
++    if (tplPrefix != null && tplSuffix != null) {
++      const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
++      const proxyRe = new RegExp(
++        `${esc(tplPrefix)}(\\d{2,5})${esc(tplSuffix)}`,
++        'i'
++      );
++      const proxyMatch = proxyRe.exec(normalized);
++      if (proxyMatch) {
++        const port = Number(proxyMatch[1]);
++        if (vibeKanbanPort && String(port) === vibeKanbanPort) {
++          return null;
++        }
++        return {
++          url: `http://localhost:${port}/`,
++          port,
++          scheme: 'http',
++        };
++      }
++    }
++  }
++
+   return null;
+ };
+ 
+ function detectPreviewUrlFromBuffer(
+   buffer: string,
+-  blockedPort?: number
++  blockedPort?: number,
++  vsCodeProxyUri?: string | null
+ ): PreviewUrlInfo | null {
+   const lines = buffer.split(/\r?\n/);
+   let best: PreviewUrlInfo | null = null;
+@@ -231,7 +272,7 @@ function detectPreviewUrlFromBuffer(
+     const line = lines[i];
+     if (!line) continue;
+ 
+-    const detected = detectPreviewUrl(line);
++    const detected = detectPreviewUrl(line, vsCodeProxyUri);
+     if (!detected || (blockedPort && detected.port === blockedPort)) {
+       continue;
+     }
+@@ -243,7 +284,7 @@ function detectPreviewUrlFromBuffer(
+   if (best) return best;
+ 
+   // Fallback for URLs split across chunk boundaries where line-by-line matching fails.
+-  const fallback = detectPreviewUrl(buffer);
++  const fallback = detectPreviewUrl(buffer, vsCodeProxyUri);
+   if (fallback && blockedPort && fallback.port === blockedPort) {
+     return null;
+   }
+@@ -252,7 +293,8 @@ function detectPreviewUrlFromBuffer(
+ 
+ export function usePreviewUrl(
+   logs: Array<{ content: string }> | undefined,
+-  previewProxyPort?: number
++  previewProxyPort?: number,
++  vsCodeProxyUri?: string | null
+ ): PreviewUrlInfo | undefined {
+   const [urlInfo, setUrlInfo] = useState<PreviewUrlInfo | undefined>();
+   const lastIndexRef = useRef(0);
+@@ -292,7 +334,7 @@ export function usePreviewUrl(
+           ? merged.slice(-LOG_SCAN_BUFFER_LIMIT)
+           : merged;
+       detectedUrl =
+-        detectPreviewUrlFromBuffer(logBufferRef.current, previewProxyPort) ??
++        detectPreviewUrlFromBuffer(logBufferRef.current, previewProxyPort, vsCodeProxyUri) ??
+         undefined;
+     }
+ 
+@@ -306,7 +348,7 @@ export function usePreviewUrl(
+     }
+ 
+     lastIndexRef.current = logs.length;
+-  }, [logs, urlInfo, previewProxyPort]);
++  }, [logs, urlInfo, previewProxyPort, vsCodeProxyUri]);
+ 
+   return urlInfo;
+ }
 -- 
 2.50.1
 
