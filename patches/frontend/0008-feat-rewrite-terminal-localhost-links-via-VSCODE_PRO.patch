@@ -1,0 +1,161 @@
+From 90e0a0153c77c89eaeed9be5173918046abb558c Mon Sep 17 00:00:00 2001
+From: Riajul Islam <opensource@example.com>
+Date: Tue, 24 Mar 2026 10:13:07 +0000
+Subject: [PATCH] feat: rewrite terminal localhost links via VSCODE_PROXY_URI
+
+When VSCODE_PROXY_URI is set (e.g. https://{{port}}.code.vk.community.example.com/),
+terminal links like http://localhost:8000 are rewritten to the proxy URL
+when clicked. The env var is read server-side, passed to the frontend
+via UserSystemInfo, and used in a custom WebLinksAddon handler.
+
+Handles localhost, 127.0.0.1, and 0.0.0.0 with any port.
+---
+ crates/server/src/routes/config.rs            |  2 ++
+ .../src/shared/components/XTermInstance.tsx   | 25 ++++++++++++++++++-
+ .../src/shared/hooks/useUserSystem.ts         |  2 ++
+ .../shared/hooks/useUserSystemController.ts   |  4 +++
+ shared/types.ts                               |  2 +-
+ 5 files changed, 33 insertions(+), 2 deletions(-)
+
+diff --git a/crates/server/src/routes/config.rs b/crates/server/src/routes/config.rs
+index 3861bc2aa..978d1ace8 100644
+--- a/crates/server/src/routes/config.rs
++++ b/crates/server/src/routes/config.rs
+@@ -97,6 +97,7 @@ pub struct UserSystemInfo {
+     pub capabilities: HashMap<String, Vec<BaseAgentCapability>>,
+     pub shared_api_base: Option<String>,
+     pub preview_proxy_port: Option<u16>,
++    pub vscode_proxy_uri: Option<String>,
+ }
+ 
+ // TODO: update frontend, BE schema has changed, this replaces GET /config and /config/constants
+@@ -131,6 +132,7 @@ async fn get_user_system_info(
+         },
+         shared_api_base: deployment.remote_info().get_api_base(),
+         preview_proxy_port: deployment.client_info().get_preview_proxy_port(),
++        vscode_proxy_uri: std::env::var("VSCODE_PROXY_URI").ok(),
+     };
+ 
+     ResponseJson(ApiResponse::success(user_system_info))
+diff --git a/packages/web-core/src/shared/components/XTermInstance.tsx b/packages/web-core/src/shared/components/XTermInstance.tsx
+index c49db6486..ba27fb410 100644
+--- a/packages/web-core/src/shared/components/XTermInstance.tsx
++++ b/packages/web-core/src/shared/components/XTermInstance.tsx
+@@ -7,6 +7,24 @@ import '@xterm/xterm/css/xterm.css';
+ import { useTheme } from '@/shared/hooks/useTheme';
+ import { getTerminalTheme } from '@/shared/lib/terminalTheme';
+ import { useTerminal } from '@/shared/hooks/useTerminal';
++import { useUserSystem } from '@/shared/hooks/useUserSystem';
++
++const LOCAL_URL_RE =
++  /^https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0):(\d+)(.*)/;
++
++function resolveTerminalUrl(
++  uri: string,
++  proxyUri: string | null
++): string {
++  if (!proxyUri || !proxyUri.includes('{{port}}')) return uri;
++  const m = uri.match(LOCAL_URL_RE);
++  if (!m) return uri;
++  const [, port, rest] = m;
++  const base = proxyUri.replace('{{port}}', port);
++  // Avoid double trailing slash when rest is empty and base already ends with /
++  if (!rest || rest === '/') return base;
++  return base.replace(/\/$/, '') + rest;
++}
+ 
+ interface XTermInstanceProps {
+   tabId: string;
+@@ -27,6 +45,9 @@ export function XTermInstance({
+   const fitAddonRef = useRef<FitAddon | null>(null);
+   const initialSizeRef = useRef({ cols: 80, rows: 24 });
+   const { theme } = useTheme();
++  const { vsCodeProxyUri } = useUserSystem();
++  const vsCodeProxyUriRef = useRef(vsCodeProxyUri);
++  vsCodeProxyUriRef.current = vsCodeProxyUri;
+   const {
+     registerTerminalInstance,
+     getTerminalInstance,
+@@ -73,7 +94,9 @@ export function XTermInstance({
+     });
+ 
+     const fitAddon = new FitAddon();
+-    const webLinksAddon = new WebLinksAddon();
++    const webLinksAddon = new WebLinksAddon((_event, uri) => {
++      window.open(resolveTerminalUrl(uri, vsCodeProxyUriRef.current), '_blank');
++    });
+ 
+     terminal.loadAddon(fitAddon);
+     terminal.loadAddon(webLinksAddon);
+diff --git a/packages/web-core/src/shared/hooks/useUserSystem.ts b/packages/web-core/src/shared/hooks/useUserSystem.ts
+index 7efe222d1..272ca551d 100644
+--- a/packages/web-core/src/shared/hooks/useUserSystem.ts
++++ b/packages/web-core/src/shared/hooks/useUserSystem.ts
+@@ -18,6 +18,7 @@ export interface UserSystemState {
+   machineId: string | null;
+   loginStatus: LoginStatus | null;
+   sharedApiBase: string | null;
++  vsCodeProxyUri: string | null;
+ }
+ 
+ export interface UserSystemContextType {
+@@ -39,6 +40,7 @@ export interface UserSystemContextType {
+   machineId: string | null;
+   loginStatus: LoginStatus | null;
+   sharedApiBase: string | null;
++  vsCodeProxyUri: string | null;
+   setEnvironment: (env: Environment | null) => void;
+   setProfiles: (profiles: Record<string, ExecutorProfile> | null) => void;
+   setCapabilities: (caps: Record<string, BaseAgentCapability[]> | null) => void;
+diff --git a/packages/web-core/src/shared/hooks/useUserSystemController.ts b/packages/web-core/src/shared/hooks/useUserSystemController.ts
+index 93a27f353..3e3393408 100644
+--- a/packages/web-core/src/shared/hooks/useUserSystemController.ts
++++ b/packages/web-core/src/shared/hooks/useUserSystemController.ts
+@@ -44,6 +44,7 @@ export function useUserSystemController({
+   const machineId = userSystemInfo?.machine_id || null;
+   const loginStatus = userSystemInfo?.login_status || null;
+   const sharedApiBase = userSystemInfo?.shared_api_base || null;
++  const vsCodeProxyUri = userSystemInfo?.vscode_proxy_uri || null;
+   const profiles =
+     (userSystemInfo?.executors as Record<string, ExecutorProfile> | null) ||
+     null;
+@@ -153,6 +154,7 @@ export function useUserSystemController({
+         machineId,
+         loginStatus,
+         sharedApiBase,
++        vsCodeProxyUri,
+       },
+       appVersion,
+       previewProxyPort,
+@@ -163,6 +165,7 @@ export function useUserSystemController({
+       machineId,
+       loginStatus,
+       sharedApiBase,
++      vsCodeProxyUri,
+       updateConfig,
+       saveConfig,
+       updateAndSaveConfig,
+@@ -190,6 +193,7 @@ export function useUserSystemController({
+       setProfiles,
+       updateAndSaveConfig,
+       updateConfig,
++      vsCodeProxyUri,
+     ]
+   );
+ 
+diff --git a/shared/types.ts b/shared/types.ts
+index dc0bcf7b5..05724720e 100644
+--- a/shared/types.ts
++++ b/shared/types.ts
+@@ -276,7 +276,7 @@ export type UserSystemInfo = { version: string, config: Config, machine_id: stri
+ /**
+  * Capabilities supported per executor (e.g., { "CLAUDE_CODE": ["SESSION_FORK"] })
+  */
+-capabilities: { [key in string]?: Array<BaseAgentCapability> }, shared_api_base: string | null, preview_proxy_port: number | null, executors: { [key in BaseCodingAgent]?: ExecutorProfile }, };
++capabilities: { [key in string]?: Array<BaseAgentCapability> }, shared_api_base: string | null, preview_proxy_port: number | null, vscode_proxy_uri: string | null, executors: { [key in BaseCodingAgent]?: ExecutorProfile }, };
+ 
+ export type Environment = { os_type: string, os_version: string, os_architecture: string, bitness: string, };
+ 
+-- 
+2.50.1
+
