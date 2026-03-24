@@ -1,4 +1,4 @@
-From ca6ec940a3debce3addc8351ea19fe6e8dab40d1 Mon Sep 17 00:00:00 2001
+From 85867ffe01d175fda8d9e552286389bcbbc00909 Mon Sep 17 00:00:00 2001
 From: Riajul Islam <opensource@example.com>
 Date: Tue, 17 Mar 2026 05:04:11 +0000
 Subject: [PATCH] feat: unified code-server editor flow

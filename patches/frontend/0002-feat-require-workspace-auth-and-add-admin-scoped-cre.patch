@@ -1,4 +1,4 @@
-From adf2434985fe316284228390a2601572a97515cf Mon Sep 17 00:00:00 2001
+From 77b4a6547056de194c2fdf883f73d6b6c432ef3c Mon Sep 17 00:00:00 2001
 From: Riajul Islam <opensource@example.com>
 Date: Tue, 17 Mar 2026 05:00:38 +0000
 Subject: [PATCH] feat: require workspace auth and add admin-scoped creator
@@ -9,9 +9,10 @@ Subject: [PATCH] feat: require workspace auth and add admin-scoped creator
  .../src/pages/workspaces/WorkspacesLayout.tsx |  34 ++-
  .../workspaces/WorkspacesSidebarContainer.tsx | 234 +++++++++++++++++-
  .../src/shared/hooks/useUserSystem.ts         |   2 +
+ .../shared/hooks/useUserSystemController.ts   |   4 +
  .../src/shared/hooks/useWorkspaces.ts         |  27 +-
  .../shared/providers/WorkspaceProvider.tsx    |  29 ++-
- 6 files changed, 332 insertions(+), 25 deletions(-)
+ 7 files changed, 336 insertions(+), 25 deletions(-)
 
 diff --git a/crates/server/src/routes/workspaces/mod.rs b/crates/server/src/routes/workspaces/mod.rs
 index a0a3f3c39..144c749c1 100644
@@ -498,6 +499,42 @@ index 7f67ce3f9..7efe222d1 100644
    setEnvironment: (env: Environment | null) => void;
    setProfiles: (profiles: Record<string, ExecutorProfile> | null) => void;
    setCapabilities: (caps: Record<string, BaseAgentCapability[]> | null) => void;
+diff --git a/packages/web-core/src/shared/hooks/useUserSystemController.ts b/packages/web-core/src/shared/hooks/useUserSystemController.ts
+index 3af151490..93a27f353 100644
+--- a/packages/web-core/src/shared/hooks/useUserSystemController.ts
++++ b/packages/web-core/src/shared/hooks/useUserSystemController.ts
+@@ -43,6 +43,7 @@ export function useUserSystemController({
+   const environment = userSystemInfo?.environment || null;
+   const machineId = userSystemInfo?.machine_id || null;
+   const loginStatus = userSystemInfo?.login_status || null;
++  const sharedApiBase = userSystemInfo?.shared_api_base || null;
+   const profiles =
+     (userSystemInfo?.executors as Record<string, ExecutorProfile> | null) ||
+     null;
+@@ -151,6 +152,7 @@ export function useUserSystemController({
+         capabilities,
+         machineId,
+         loginStatus,
++        sharedApiBase,
+       },
+       appVersion,
+       previewProxyPort,
+@@ -160,6 +162,7 @@ export function useUserSystemController({
+       capabilities,
+       machineId,
+       loginStatus,
++      sharedApiBase,
+       updateConfig,
+       saveConfig,
+       updateAndSaveConfig,
+@@ -178,6 +181,7 @@ export function useUserSystemController({
+       loading,
+       previewProxyPort,
+       loginStatus,
++      sharedApiBase,
+       profiles,
+       reloadSystem,
+       saveConfig,
 diff --git a/packages/web-core/src/shared/hooks/useWorkspaces.ts b/packages/web-core/src/shared/hooks/useWorkspaces.ts
 index 25be704a1..8d92b707e 100644
 --- a/packages/web-core/src/shared/hooks/useWorkspaces.ts
