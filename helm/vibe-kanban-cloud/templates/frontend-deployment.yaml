@@ -77,6 +77,8 @@ spec:
             - name: home
               mountPath: /home/coder
             {{- end }}
+            - name: docker-data
+              mountPath: /var/lib/docker
             {{- if .Values.frontend.vpn.enabled }}
             - name: vpn-config
               mountPath: /etc/wireguard-secret
@@ -92,6 +94,9 @@ spec:
           persistentVolumeClaim:
             claimName: {{ include "vibe-kanban-cloud.frontend.fullname" . }}-home
         {{- end }}
+        - name: docker-data
+          persistentVolumeClaim:
+            claimName: {{ include "vibe-kanban-cloud.frontend.fullname" . }}-docker
         {{- if .Values.frontend.vpn.enabled }}
         - name: vpn-config
           secret:

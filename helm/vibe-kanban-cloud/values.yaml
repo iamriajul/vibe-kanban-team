@@ -320,6 +320,25 @@ frontend:
     # DNS server to use through VPN (default: 1.1.1.1)
     dns: ""
 
+  # ===========================================================================
+  # Docker registry cache (optional)
+  # ===========================================================================
+  # Configures the in-pod Docker daemon to use a cluster-local registry mirror
+  # (e.g., Zot pull-through proxy). Default URL matches the Zot deployment
+  # from community-infra/coder-k8s.
+  dockerCache:
+    enabled: false
+    registryMirrorUrl: "http://zot.zot.svc.cluster.local:5000"
+
+  # Persistent Docker data (/var/lib/docker) on a separate PVC.
+  # Always created when frontend is enabled — Docker layers, images, and build
+  # cache survive pod restarts regardless of whether dockerCache is enabled.
+  dockerPersistence:
+    storageClass: ""
+    size: 50Gi
+    accessModes:
+      - ReadWriteOnce
+
   # code-server configuration
   # Uses high port to avoid conflicts with dev apps (8080 is common)
   codeServer:
