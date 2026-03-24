@@ -1,4 +1,4 @@
-From bbcb10effad23643bd862dfbfd43de6f6de1d979 Mon Sep 17 00:00:00 2001
+From 954119de1ff4350b53f585818ed641767ec351a7 Mon Sep 17 00:00:00 2001
 From: Riajul Islam <opensource@example.com>
 Date: Tue, 17 Mar 2026 05:00:28 +0000
 Subject: [PATCH] feat: support browser-scoped auth sessions and per-user git
