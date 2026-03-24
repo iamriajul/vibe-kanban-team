@@ -1,6 +1,6 @@
-From ced4ef758c83119e648f3c998810a0522f126c1e Mon Sep 17 00:00:00 2001
+From c38c323d6918c698717432661fe8f177bb5293a3 Mon Sep 17 00:00:00 2001
 From: Riajul Islam <opensource@example.com>
-Date: Tue, 24 Mar 2026 12:37:02 +0000
+Date: Tue, 24 Mar 2026 15:08:03 +0000
 Subject: [PATCH] feat: support VSCODE_PROXY_URI in preview iframe
 
 Route the preview iframe through the Rust preview proxy when
@@ -13,13 +13,19 @@ parameter. The proxy persists it in a vk_preview_target cookie so that
 subsequent sub-resource requests (CSS, JS, images, fetch) are routed to
 the correct dev server without needing the query parameter.
 
+Also fixes app-port detection: in VSCODE_PROXY_URI mode the app port
+is extracted from the hostname subdomain (e.g. 13500.code.vk.community.example.com)
+since window.location.port is empty for HTTPS. This prevents the
+preview from accidentally targeting Vibe Kanban's own port.
+
 Falls back to direct VSCODE_PROXY_URI bypass when previewProxyPort is
 unavailable, and to subdomain routing for local (non-cloud) mode.
 ---
  crates/preview-proxy/src/devtools_script.js   |   1 +
- crates/preview-proxy/src/lib.rs               | 234 +++++++++++-
- .../workspaces/PreviewBrowserContainer.tsx    | 359 ++++++++++++++----
- 3 files changed, 512 insertions(+), 82 deletions(-)
+ crates/preview-proxy/src/lib.rs               | 234 ++++++++++-
+ .../workspaces/PreviewBrowserContainer.tsx    | 372 ++++++++++++++----
+ .../src/shared/hooks/usePreviewUrl.ts         |  14 +-
+ 4 files changed, 537 insertions(+), 84 deletions(-)
 
 diff --git a/crates/preview-proxy/src/devtools_script.js b/crates/preview-proxy/src/devtools_script.js
 index ca1c3d3af..4314377f4 100644
@@ -34,7 +40,7 @@ index ca1c3d3af..4314377f4 100644
      } catch (e) {
        return url;
 diff --git a/crates/preview-proxy/src/lib.rs b/crates/preview-proxy/src/lib.rs
-index 3081db220..a334a3e03 100644
+index 3081db220..ad1f38fe0 100644
 --- a/crates/preview-proxy/src/lib.rs
 +++ b/crates/preview-proxy/src/lib.rs
 @@ -6,6 +6,12 @@
@@ -200,7 +206,7 @@ index 3081db220..a334a3e03 100644
  fn extract_target_from_host(headers: &HeaderMap) -> Option<PreviewTarget> {
      let host = headers.get(header::HOST)?.to_str().ok()?;
      let subdomain = host.split('.').next()?;
-@@ -382,16 +535,41 @@ pub async fn proxy_subdomain_request(
+@@ -382,16 +531,41 @@ pub async fn proxy_subdomain_request(
      proxy_port: u16,
      request: Request,
  ) -> Response {
@@ -249,7 +255,7 @@ index 3081db220..a334a3e03 100644
  }
  
  async fn proxy_impl(
-@@ -400,6 +578,7 @@ async fn proxy_impl(
+@@ -400,6 +574,7 @@ async fn proxy_impl(
      proxy_port: u16,
      target: PreviewTarget,
      path_str: String,
@@ -257,7 +263,7 @@ index 3081db220..a334a3e03 100644
      request: Request,
  ) -> Response {
      let (mut parts, body) = request.into_parts();
-@@ -407,7 +586,14 @@ async fn proxy_impl(
+@@ -407,7 +582,14 @@ async fn proxy_impl(
      // Extract query string and subprotocols before WebSocket upgrade.
      // Both are required: Vite 6+ needs ?token= for auth, and checks
      // Sec-WebSocket-Protocol: vite-hmr before accepting the upgrade.
@@ -273,7 +279,7 @@ index 3081db220..a334a3e03 100644
      let ws_protocols: Option<String> = extract_ws_protocols(&parts.headers);
  
      if let Ok(ws) = WebSocketUpgrade::from_request_parts(&mut parts, &()).await {
-@@ -444,7 +630,7 @@ async fn proxy_impl(
+@@ -444,7 +626,7 @@ async fn proxy_impl(
      }
  
      let request = Request::from_parts(parts, body);
@@ -282,7 +288,7 @@ index 3081db220..a334a3e03 100644
  }
  
  async fn http_proxy_handler(
-@@ -453,6 +639,7 @@ async fn http_proxy_handler(
+@@ -453,6 +635,7 @@ async fn http_proxy_handler(
      proxy_port: u16,
      target: PreviewTarget,
      path_str: String,
@@ -290,7 +296,7 @@ index 3081db220..a334a3e03 100644
      request: Request,
  ) -> Response {
      let (parts, body) = request.into_parts();
-@@ -460,7 +647,12 @@ async fn http_proxy_handler(
+@@ -460,7 +643,12 @@ async fn http_proxy_handler(
      let headers = parts.headers;
      let original_uri = parts.uri;
  
@@ -304,7 +310,7 @@ index 3081db220..a334a3e03 100644
      let normalized_path = normalized_proxy_path(&path_str);
  
      let is_rsc_request = headers.contains_key(header::HeaderName::from_static("rsc"));
-@@ -539,12 +731,26 @@ async fn http_proxy_handler(
+@@ -539,12 +727,26 @@ async fn http_proxy_handler(
      let is_html = content_type.contains("text/html");
  
      let mut response_headers = collect_response_headers(response.headers(), is_html);
@@ -338,7 +344,7 @@ index 3081db220..a334a3e03 100644
      let status = StatusCode::from_u16(response.status().as_u16()).unwrap_or(StatusCode::OK);
  
 diff --git a/packages/web-core/src/pages/workspaces/PreviewBrowserContainer.tsx b/packages/web-core/src/pages/workspaces/PreviewBrowserContainer.tsx
-index cf0ed825c..9f8a7f58c 100644
+index cf0ed825c..426bde5e2 100644
 --- a/packages/web-core/src/pages/workspaces/PreviewBrowserContainer.tsx
 +++ b/packages/web-core/src/pages/workspaces/PreviewBrowserContainer.tsx
 @@ -77,60 +77,178 @@ function normalizePreviewUrl(rawUrl: string, baseUrl?: string): string | null {
@@ -642,7 +648,7 @@ index cf0ed825c..9f8a7f58c 100644
    const hostId = useHostId();
  
    const {
-@@ -241,16 +439,12 @@ export function PreviewBrowserContainer({
+@@ -241,17 +439,24 @@ export function PreviewBrowserContainer({
      );
    }, [hasOverride, urlInfo?.port, effectiveParsedUrl]);
  
@@ -658,10 +664,23 @@ index cf0ed825c..9f8a7f58c 100644
      }
  
 -    // Don't proxy to Vibe Kanban's own ports (would create infinite loop)
-     const vibeKanbanPort = window.location.port || '80';
+-    const vibeKanbanPort = window.location.port || '80';
++    // Detect the port Vibe Kanban itself is served on.  In VSCODE_PROXY_URI
++    // mode window.location.port is empty (HTTPS default) — extract from the
++    // hostname subdomain or the VSCODE_PROXY_URI template instead.
++    const vibeKanbanPort =
++      window.location.port ||
++      (vsCodeProxyUri
++        ? extractPortFromVsCodeProxyUrl(
++            window.location.href,
++            vsCodeProxyUri
++          )
++        : null) ||
++      '80';
      if (devServerPort === vibeKanbanPort) {
        console.warn(
-@@ -260,38 +454,40 @@ export function PreviewBrowserContainer({
+         `[Preview] Ignoring dev server URL with same port as Vibe Kanban (${devServerPort}). ` +
+@@ -260,38 +465,40 @@ export function PreviewBrowserContainer({
        return undefined;
      }
  
@@ -717,7 +736,7 @@ index cf0ed825c..9f8a7f58c 100644
    ]);
  
    const urlInputRef = useRef<HTMLInputElement>(null);
-@@ -336,14 +532,31 @@ export function PreviewBrowserContainer({
+@@ -336,14 +543,31 @@ export function PreviewBrowserContainer({
    } = usePreviewNavigation();
    const bridgeRef = useRef<PreviewDevToolsBridge | null>(null);
    const displayedPreviewUrl = useMemo(() => {
@@ -752,7 +771,7 @@ index cf0ed825c..9f8a7f58c 100644
          );
          if (transformed) {
            return transformed;
-@@ -351,12 +564,20 @@ export function PreviewBrowserContainer({
+@@ -351,12 +575,20 @@ export function PreviewBrowserContainer({
        }
      }
  
@@ -776,7 +795,7 @@ index cf0ed825c..9f8a7f58c 100644
  
    const handleBridgeMessage = useCallback(
      (message: PreviewDevToolsMessage) => {
-@@ -670,11 +891,16 @@ export function PreviewBrowserContainer({
+@@ -670,11 +902,16 @@ export function PreviewBrowserContainer({
      const normalizedInput = normalizedInputUrl.toString();
      const normalizedInputDevPort = getTargetDevPort(
        normalizedInputUrl,
@@ -796,7 +815,7 @@ index cf0ed825c..9f8a7f58c 100644
      const normalizedInputDevParsed = parsePreviewUrl(normalizedInputDevUrl);
      if (!normalizedInputDevParsed) {
        return;
-@@ -696,19 +922,19 @@ export function PreviewBrowserContainer({
+@@ -696,19 +933,19 @@ export function PreviewBrowserContainer({
  
      resetNavigation();
  
@@ -828,7 +847,7 @@ index cf0ed825c..9f8a7f58c 100644
        }
      }
  
-@@ -722,6 +948,7 @@ export function PreviewBrowserContainer({
+@@ -722,6 +959,7 @@ export function PreviewBrowserContainer({
      hasOverride,
      showIframe,
      previewProxyPort,
@@ -836,6 +855,33 @@ index cf0ed825c..9f8a7f58c 100644
      clearOverride,
      resetNavigation,
      setOverrideUrl,
+diff --git a/packages/web-core/src/shared/hooks/usePreviewUrl.ts b/packages/web-core/src/shared/hooks/usePreviewUrl.ts
+index e0b9f91e8..88ece83e4 100644
+--- a/packages/web-core/src/shared/hooks/usePreviewUrl.ts
++++ b/packages/web-core/src/shared/hooks/usePreviewUrl.ts
+@@ -82,9 +82,21 @@ const isBetterPreviewUrlCandidate = (
+ };
+ 
+ const getVibeKanbanPort = (): string | null => {
+-  if (typeof window !== 'undefined' && window.location.port) {
++  if (typeof window === 'undefined') return null;
++
++  // Standard case: port is explicit in the URL (e.g. localhost:13500).
++  if (window.location.port) {
+     return window.location.port;
+   }
++
++  // VSCODE_PROXY_URI case: the app is accessed via a subdomain whose leading
++  // label is the port number (e.g. https://13500.code.vk.community.example.com/).
++  // window.location.port is empty (HTTPS default), so extract from hostname.
++  const leadingLabel = window.location.hostname.split('.')[0];
++  if (leadingLabel && /^\d{2,5}$/.test(leadingLabel)) {
++    return leadingLabel;
++  }
++
+   return null;
+ };
+ 
 -- 
 2.50.1
 
