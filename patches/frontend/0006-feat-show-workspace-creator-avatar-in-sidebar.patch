@@ -1,4 +1,4 @@
-From e7ac63d3f08b4d9259934c5c932178d654cf26d9 Mon Sep 17 00:00:00 2001
+From 0315ad42ac2443dbf85ca445829ccb46187acb9c Mon Sep 17 00:00:00 2001
 From: Riajul Islam <opensource@example.com>
 Date: Thu, 19 Mar 2026 11:56:12 +0000
 Subject: [PATCH] feat: show workspace creator avatar in sidebar
@@ -65,18 +65,18 @@ index 9ec0e2c0c..ce8923b55 100644
          {(!summary || isActive) && (
            <div className="flex w-full items-center gap-base text-sm h-5">
 diff --git a/packages/ui/src/components/WorkspacesSidebar.tsx b/packages/ui/src/components/WorkspacesSidebar.tsx
-index 8cf1713b3..1e33600fe 100644
+index 469d95c42..0bae73fa9 100644
 --- a/packages/ui/src/components/WorkspacesSidebar.tsx
 +++ b/packages/ui/src/components/WorkspacesSidebar.tsx
-@@ -10,6 +10,7 @@ import { useTranslation } from 'react-i18next';
- import { cn } from '../lib/cn';
+@@ -12,6 +12,7 @@ import { cn } from '../lib/cn';
  import { InputField } from './InputField';
  import { WorkspaceSummary } from './WorkspaceSummary';
+ import type { AppBarHostStatus } from './AppBar';
 +import type { UserAvatarUser } from './UserAvatar';
  import {
    CollapsibleSectionHeader,
    type SectionAction,
-@@ -31,6 +32,7 @@ export interface WorkspacesSidebarWorkspace {
+@@ -33,6 +34,7 @@ export interface WorkspacesSidebarWorkspace {
    latestProcessCompletedAt?: string;
    latestProcessStatus?: 'running' | 'completed' | 'failed' | 'killed';
    prStatus?: 'open' | 'merged' | 'closed' | 'unknown';
@@ -84,7 +84,7 @@ index 8cf1713b3..1e33600fe 100644
  }
  
  export interface WorkspacesSidebarPersistKeys {
-@@ -150,6 +152,7 @@ function WorkspaceList({
+@@ -158,6 +160,7 @@ function WorkspaceList({
            latestProcessCompletedAt={workspace.latestProcessCompletedAt}
            latestProcessStatus={workspace.latestProcessStatus}
            prStatus={workspace.prStatus}
@@ -92,7 +92,7 @@ index 8cf1713b3..1e33600fe 100644
            onOpenWorkspaceActions={onOpenWorkspaceActions}
            onClick={() => onSelectWorkspace(workspace.id)}
          />
-@@ -291,6 +294,7 @@ export function WorkspacesSidebar({
+@@ -351,6 +354,7 @@ export function WorkspacesSidebar({
                    latestProcessCompletedAt={workspace.latestProcessCompletedAt}
                    latestProcessStatus={workspace.latestProcessStatus}
                    prStatus={workspace.prStatus}
@@ -100,7 +100,7 @@ index 8cf1713b3..1e33600fe 100644
                    onOpenWorkspaceActions={handleOpenWorkspaceActions}
                    onClick={() => onSelectWorkspace(workspace.id)}
                  />
-@@ -408,6 +412,7 @@ export function WorkspacesSidebar({
+@@ -468,6 +472,7 @@ export function WorkspacesSidebar({
                  latestProcessCompletedAt={workspace.latestProcessCompletedAt}
                  latestProcessStatus={workspace.latestProcessStatus}
                  prStatus={workspace.prStatus}
@@ -109,10 +109,10 @@ index 8cf1713b3..1e33600fe 100644
                  onClick={() => onSelectWorkspace(workspace.id)}
                />
 diff --git a/packages/web-core/src/pages/workspaces/WorkspacesSidebarContainer.tsx b/packages/web-core/src/pages/workspaces/WorkspacesSidebarContainer.tsx
-index 0700097a6..9fbe9fda8 100644
+index 7452708ec..d27b413be 100644
 --- a/packages/web-core/src/pages/workspaces/WorkspacesSidebarContainer.tsx
 +++ b/packages/web-core/src/pages/workspaces/WorkspacesSidebarContainer.tsx
-@@ -6,6 +6,7 @@ import { useScratch } from '@/shared/hooks/useScratch';
+@@ -7,6 +7,7 @@ import { useScratch } from '@/shared/hooks/useScratch';
  import { useAllOrganizationProjects } from '@/shared/hooks/useAllOrganizationProjects';
  import { useUserOrganizations } from '@/shared/hooks/useUserOrganizations';
  import { useOrganizationSelection } from '@/shared/hooks/useOrganizationSelection';
@@ -120,7 +120,7 @@ index 0700097a6..9fbe9fda8 100644
  import { useAuth } from '@/shared/hooks/auth/useAuth';
  import {
    MemberRole as MemberRoleEnum,
-@@ -258,12 +259,19 @@ function getWorkspaceSortTimestamp(
+@@ -261,12 +262,19 @@ function getWorkspaceSortTimestamp(
  
  function formatCreatorLabel(
    ownerUserId: string,
@@ -141,7 +141,7 @@ index 0700097a6..9fbe9fda8 100644
    if (ownerUserId.length <= 12) {
      return ownerUserId;
    }
-@@ -335,6 +343,14 @@ export function WorkspacesSidebarContainer({
+@@ -341,6 +349,14 @@ export function WorkspacesSidebarContainer({
    const { data: orgsData } = useUserOrganizations();
    const { selectedOrg } = useOrganizationSelection({ organizations: orgsData });
    const isCurrentUserAdmin = selectedOrg?.user_role === MemberRoleEnum.ADMIN;
@@ -156,7 +156,7 @@ index 0700097a6..9fbe9fda8 100644
    const organizations = useMemo(
      () => orgsData?.organizations ?? [],
      [orgsData?.organizations]
-@@ -382,12 +398,12 @@ export function WorkspacesSidebarContainer({
+@@ -388,12 +404,12 @@ export function WorkspacesSidebarContainer({
        }
        options.push({
          value: ownerUserId,
@@ -171,7 +171,7 @@ index 0700097a6..9fbe9fda8 100644
  
    // Build org name lookup
    const orgNameById = useMemo(() => {
-@@ -645,6 +661,29 @@ export function WorkspacesSidebarContainer({
+@@ -651,6 +667,29 @@ export function WorkspacesSidebarContainer({
      [sortedArchivedWorkspaces, displayLimit, isSearching]
    );
  
@@ -201,7 +201,7 @@ index 0700097a6..9fbe9fda8 100644
    // Check if there are more workspaces to load
    const hasMoreWorkspaces = showArchive
      ? sortedArchivedWorkspaces.length > displayLimit
-@@ -782,9 +821,9 @@ export function WorkspacesSidebarContainer({
+@@ -803,9 +842,9 @@ export function WorkspacesSidebarContainer({
  
    return (
      <WorkspacesSidebar
@@ -210,9 +210,9 @@ index 0700097a6..9fbe9fda8 100644
        totalWorkspacesCount={activeWorkspaces.length}
 -      archivedWorkspaces={paginatedArchivedWorkspaces}
 +      archivedWorkspaces={sidebarArchivedWorkspaces}
+       isLoading={isWorkspacesListLoading}
        selectedWorkspaceId={selectedWorkspaceId ?? null}
        onSelectWorkspace={handleSelectWorkspace}
-       searchQuery={searchQuery}
 -- 
 2.50.1
 

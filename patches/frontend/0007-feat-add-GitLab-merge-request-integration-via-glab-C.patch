@@ -1,4 +1,4 @@
-From 211b1712b0e671a209f79ba6f958034e41d4bfaa Mon Sep 17 00:00:00 2001
+From de2e2eb27c5179688effa1ee2ed6434c5681f921 Mon Sep 17 00:00:00 2001
 From: Riajul Islam <opensource@example.com>
 Date: Thu, 19 Mar 2026 15:47:58 +0000
 Subject: [PATCH] feat: add GitLab merge request integration via glab CLI
@@ -898,10 +898,10 @@ index fcf9fd8c9..4128145dd 100644
                result.error.type === 'cli_not_installed'
                  ? 'not installed'
 diff --git a/shared/types.ts b/shared/types.ts
-index 48ea09e57..a5ddb8059 100644
+index c1805ed6d..dc0bcf7b5 100644
 --- a/shared/types.ts
 +++ b/shared/types.ts
-@@ -388,7 +388,7 @@ export type CreateAndStartWorkspaceResponse = { workspace: Workspace, execution_
+@@ -410,7 +410,7 @@ export type CreateAndStartWorkspaceResponse = { workspace: Workspace, execution_
  
  export type UnifiedPrComment = { "comment_type": "general", id: string, author: string, author_association: string | null, body: string, created_at: string, url: string | null, } | { "comment_type": "review", id: bigint, author: string, author_association: string | null, body: string, created_at: string, url: string | null, path: string, line: bigint | null, side: string | null, diff_hunk: string | null, };
  

@@ -1,21 +1,20 @@
-From 9a29ed69d196ef4d6e8915bbae27152260d6b752 Mon Sep 17 00:00:00 2001
+From adf2434985fe316284228390a2601572a97515cf Mon Sep 17 00:00:00 2001
 From: Riajul Islam <opensource@example.com>
 Date: Tue, 17 Mar 2026 05:00:38 +0000
-Subject: [PATCH 2/4] feat: require workspace auth and add admin-scoped creator
+Subject: [PATCH] feat: require workspace auth and add admin-scoped creator
  visibility
 
 ---
  crates/server/src/routes/workspaces/mod.rs    |  31 ++-
- .../src/app/providers/ConfigProvider.tsx      |   4 +
  .../src/pages/workspaces/WorkspacesLayout.tsx |  34 ++-
  .../workspaces/WorkspacesSidebarContainer.tsx | 234 +++++++++++++++++-
  .../src/shared/hooks/useUserSystem.ts         |   2 +
- .../src/shared/hooks/useWorkspaces.ts         |  28 ++-
+ .../src/shared/hooks/useWorkspaces.ts         |  27 +-
  .../shared/providers/WorkspaceProvider.tsx    |  29 ++-
- 7 files changed, 337 insertions(+), 25 deletions(-)
+ 6 files changed, 332 insertions(+), 25 deletions(-)
 
 diff --git a/crates/server/src/routes/workspaces/mod.rs b/crates/server/src/routes/workspaces/mod.rs
-index 14c692dac..e925a2e86 100644
+index a0a3f3c39..144c749c1 100644
 --- a/crates/server/src/routes/workspaces/mod.rs
 +++ b/crates/server/src/routes/workspaces/mod.rs
 @@ -13,13 +13,34 @@ pub mod repos;
@@ -43,7 +42,7 @@ index 14c692dac..e925a2e86 100644
 +    request: Request<Body>,
 +    next: Next,
 +) -> Result<Response, ApiError> {
-+    if deployment.shared_api_base().is_none() {
++    if deployment.remote_info().get_api_base().is_none() {
 +        return Ok(next.run(request).await);
 +    }
 +
@@ -58,7 +57,7 @@ index 14c692dac..e925a2e86 100644
 @@ -55,7 +76,11 @@ pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
          )
          .nest("/{id}", workspace_id_router)
-         .nest("/{id}/images", images::router(deployment))
+         .nest("/{id}/attachments", attachments::router(deployment))
 -        .nest("/{id}/links", links::router(deployment));
 +        .nest("/{id}/links", links::router(deployment))
 +        .layer(from_fn_with_state(
@@ -68,44 +67,8 @@ index 14c692dac..e925a2e86 100644
  
      Router::new().nest("/workspaces", workspaces_router)
  }
-diff --git a/packages/local-web/src/app/providers/ConfigProvider.tsx b/packages/local-web/src/app/providers/ConfigProvider.tsx
-index b7fa89419..501f2d366 100644
---- a/packages/local-web/src/app/providers/ConfigProvider.tsx
-+++ b/packages/local-web/src/app/providers/ConfigProvider.tsx
-@@ -33,6 +33,7 @@ export function UserSystemProvider({ children }: UserSystemProviderProps) {
-   const environment = userSystemInfo?.environment || null;
-   const analyticsUserId = userSystemInfo?.analytics_user_id || null;
-   const loginStatus = userSystemInfo?.login_status || null;
-+  const sharedApiBase = userSystemInfo?.shared_api_base || null;
-   const profiles =
-     (userSystemInfo?.executors as Record<string, ExecutorProfile> | null) ||
-     null;
-@@ -151,6 +152,7 @@ export function UserSystemProvider({ children }: UserSystemProviderProps) {
-         capabilities,
-         analyticsUserId,
-         loginStatus,
-+        sharedApiBase,
-       },
-       appVersion,
-       config,
-@@ -159,6 +161,7 @@ export function UserSystemProvider({ children }: UserSystemProviderProps) {
-       capabilities,
-       analyticsUserId,
-       loginStatus,
-+      sharedApiBase,
-       updateConfig,
-       saveConfig,
-       updateAndSaveConfig,
-@@ -176,6 +179,7 @@ export function UserSystemProvider({ children }: UserSystemProviderProps) {
-       capabilities,
-       analyticsUserId,
-       loginStatus,
-+      sharedApiBase,
-       updateConfig,
-       saveConfig,
-       updateAndSaveConfig,
 diff --git a/packages/web-core/src/pages/workspaces/WorkspacesLayout.tsx b/packages/web-core/src/pages/workspaces/WorkspacesLayout.tsx
-index e726ccb9e..61d3b4e2b 100644
+index 7291a1e48..5b1161e35 100644
 --- a/packages/web-core/src/pages/workspaces/WorkspacesLayout.tsx
 +++ b/packages/web-core/src/pages/workspaces/WorkspacesLayout.tsx
 @@ -33,6 +33,8 @@ import { CreateChatBoxContainer } from '@/shared/components/CreateChatBoxContain
@@ -117,15 +80,15 @@ index e726ccb9e..61d3b4e2b 100644
  
  import {
    PERSIST_KEYS,
-@@ -108,6 +110,7 @@ export function WorkspacesLayout() {
+@@ -110,6 +112,7 @@ export function WorkspacesLayout() {
    const isMobile = useIsMobile();
    const [mobileTab] = useMobileActiveTab();
    const mainContainerRef = useRef<WorkspacesMainContainerHandle>(null);
 +  const { isSignedIn, isLoaded: authLoaded } = useAuth();
  
-   const handleScrollToBottom = useCallback(() => {
-     mainContainerRef.current?.scrollToBottom();
-@@ -132,15 +135,18 @@ export function WorkspacesLayout() {
+   const handleScrollToBottom = useCallback(
+     (behavior: 'auto' | 'smooth' = 'smooth') => {
+@@ -137,15 +140,18 @@ export function WorkspacesLayout() {
  
    const {
      config,
@@ -146,7 +109,7 @@ index e726ccb9e..61d3b4e2b 100644
  
      const seenFeatures = config.showcases?.seen_features ?? [];
      if (seenFeatures.includes(WORKSPACES_GUIDE_ID)) return;
-@@ -151,7 +157,13 @@ export function WorkspacesLayout() {
+@@ -156,7 +162,13 @@ export function WorkspacesLayout() {
        showcases: { seen_features: [...seenFeatures, WORKSPACES_GUIDE_ID] },
      });
      WorkspacesGuideDialog.show().finally(() => WorkspacesGuideDialog.hide());
@@ -161,7 +124,7 @@ index e726ccb9e..61d3b4e2b 100644
  
    // Ensure left panels visible when right main panel hidden
    useEffect(() => {
-@@ -184,6 +196,22 @@ export function WorkspacesLayout() {
+@@ -189,6 +201,22 @@ export function WorkspacesLayout() {
        setRightMainPanelSize(layout['right-main']);
    };
  
@@ -185,10 +148,10 @@ index e726ccb9e..61d3b4e2b 100644
    // Uses `hidden` CSS class (NOT conditional rendering) to preserve
    // WebSocket connections and scroll positions across tab switches.
 diff --git a/packages/web-core/src/pages/workspaces/WorkspacesSidebarContainer.tsx b/packages/web-core/src/pages/workspaces/WorkspacesSidebarContainer.tsx
-index 19fe4c5ba..8cdea73e0 100644
+index 19d2bbbc9..217f7c75d 100644
 --- a/packages/web-core/src/pages/workspaces/WorkspacesSidebarContainer.tsx
 +++ b/packages/web-core/src/pages/workspaces/WorkspacesSidebarContainer.tsx
-@@ -5,7 +5,15 @@ import { useUserContext } from '@/shared/hooks/useUserContext';
+@@ -6,7 +6,15 @@ import { useUserContext } from '@/shared/hooks/useUserContext';
  import { useScratch } from '@/shared/hooks/useScratch';
  import { useAllOrganizationProjects } from '@/shared/hooks/useAllOrganizationProjects';
  import { useUserOrganizations } from '@/shared/hooks/useUserOrganizations';
@@ -205,7 +168,7 @@ index 19fe4c5ba..8cdea73e0 100644
  import type { Project } from 'shared/remote-types';
  import { splitMessageToTitleDescription } from '@/shared/lib/string';
  import { cn } from '@/shared/lib/utils';
-@@ -66,6 +74,8 @@ const DEFAULT_WORKSPACE_SORT = {
+@@ -69,6 +77,8 @@ const DEFAULT_WORKSPACE_SORT = {
  const PR_FILTER_OPTIONS: WorkspacePrFilter[] = ['all', 'has_pr', 'no_pr'];
  
  const SORT_BY_OPTIONS: WorkspaceSortBy[] = ['updated_at', 'created_at'];
@@ -213,8 +176,8 @@ index 19fe4c5ba..8cdea73e0 100644
 +const CREATOR_FILTER_ALL = '__all__';
  
  interface WorkspacesSidebarContainerProps {
-   onScrollToBottom?: () => void;
-@@ -248,6 +258,21 @@ function getWorkspaceSortTimestamp(
+   onScrollToBottom?: (behavior?: 'auto' | 'smooth') => void;
+@@ -251,6 +261,21 @@ function getWorkspaceSortTimestamp(
    return toTimestamp(workspace.createdAt);
  }
  
@@ -236,7 +199,7 @@ index 19fe4c5ba..8cdea73e0 100644
  export function WorkspacesSidebarContainer({
    onScrollToBottom = () => {},
  }: WorkspacesSidebarContainerProps) {
-@@ -273,9 +298,15 @@ export function WorkspacesSidebarContainer({
+@@ -279,9 +304,15 @@ export function WorkspacesSidebarContainer({
    );
    const [isSortDialogOpen, setIsSortDialogOpen] = useState(false);
    const [isFilterDialogOpen, setIsFilterDialogOpen] = useState(false);
@@ -252,7 +215,7 @@ index 19fe4c5ba..8cdea73e0 100644
  
    const layoutMode: WorkspaceLayoutMode = isAccordionLayout
      ? 'accordion'
-@@ -301,8 +332,11 @@ export function WorkspacesSidebarContainer({
+@@ -307,8 +338,11 @@ export function WorkspacesSidebarContainer({
  
    // Remote data for project filter (all orgs)
    const { workspaces: remoteWorkspaces } = useUserContext();
@@ -264,7 +227,7 @@ index 19fe4c5ba..8cdea73e0 100644
    const organizations = useMemo(
      () => orgsData?.organizations ?? [],
      [orgsData?.organizations]
-@@ -319,6 +353,146 @@ export function WorkspacesSidebarContainer({
+@@ -325,6 +359,146 @@ export function WorkspacesSidebarContainer({
      return map;
    }, [remoteWorkspaces]);
  
@@ -411,7 +374,7 @@ index 19fe4c5ba..8cdea73e0 100644
    // Build org name lookup
    const orgNameById = useMemo(() => {
      const map = new Map<string, string>();
-@@ -383,6 +557,33 @@ export function WorkspacesSidebarContainer({
+@@ -389,6 +563,33 @@ export function WorkspacesSidebarContainer({
    const hasNonDefaultSort =
      workspaceSort.sortBy !== DEFAULT_WORKSPACE_SORT.sortBy ||
      workspaceSort.sortOrder !== DEFAULT_WORKSPACE_SORT.sortOrder;
@@ -445,7 +408,7 @@ index 19fe4c5ba..8cdea73e0 100644
  
    // Pagination state for infinite scroll
    const [displayLimit, setDisplayLimit] = useState(PAGE_SIZE);
-@@ -390,7 +591,13 @@ export function WorkspacesSidebarContainer({
+@@ -396,7 +597,13 @@ export function WorkspacesSidebarContainer({
    // Reset display limit when search, filter, or sort state changes
    useEffect(() => {
      setDisplayLimit(PAGE_SIZE);
@@ -460,7 +423,7 @@ index 19fe4c5ba..8cdea73e0 100644
  
    const searchLower = searchQuery.toLowerCase();
    const isSearching = searchQuery.length > 0;
-@@ -399,6 +606,9 @@ export function WorkspacesSidebarContainer({
+@@ -405,6 +612,9 @@ export function WorkspacesSidebarContainer({
    const filteredActiveWorkspaces = useMemo(() => {
      let result = activeWorkspaces;
  
@@ -470,7 +433,7 @@ index 19fe4c5ba..8cdea73e0 100644
      // Project filter
      if (workspaceFilters.projectIds.length > 0) {
        const includeNoProject =
-@@ -430,11 +640,19 @@ export function WorkspacesSidebarContainer({
+@@ -436,11 +646,19 @@ export function WorkspacesSidebarContainer({
      }
  
      return result;
@@ -491,7 +454,7 @@ index 19fe4c5ba..8cdea73e0 100644
      if (workspaceFilters.projectIds.length > 0) {
        const includeNoProject =
          workspaceFilters.projectIds.includes(NO_PROJECT_ID);
-@@ -465,6 +683,7 @@ export function WorkspacesSidebarContainer({
+@@ -471,6 +689,7 @@ export function WorkspacesSidebarContainer({
      return result;
    }, [
      archivedWorkspaces,
@@ -499,7 +462,7 @@ index 19fe4c5ba..8cdea73e0 100644
      workspaceFilters,
      remoteProjectByLocalId,
      searchLower,
-@@ -605,6 +824,15 @@ export function WorkspacesSidebarContainer({
+@@ -611,6 +830,15 @@ export function WorkspacesSidebarContainer({
  
    const searchControls = (
      <>
@@ -516,30 +479,30 @@ index 19fe4c5ba..8cdea73e0 100644
          <div className="flex items-stretch">
            <IconButton
 diff --git a/packages/web-core/src/shared/hooks/useUserSystem.ts b/packages/web-core/src/shared/hooks/useUserSystem.ts
-index acf50cb32..483b92a02 100644
+index 7f67ce3f9..7efe222d1 100644
 --- a/packages/web-core/src/shared/hooks/useUserSystem.ts
 +++ b/packages/web-core/src/shared/hooks/useUserSystem.ts
-@@ -16,6 +16,7 @@ export interface UserSystemState {
+@@ -17,6 +17,7 @@ export interface UserSystemState {
    capabilities: Record<string, BaseAgentCapability[]> | null;
-   analyticsUserId: string | null;
+   machineId: string | null;
    loginStatus: LoginStatus | null;
 +  sharedApiBase: string | null;
  }
  
  export interface UserSystemContextType {
-@@ -35,6 +36,7 @@ export interface UserSystemContextType {
+@@ -37,6 +38,7 @@ export interface UserSystemContextType {
    capabilities: Record<string, BaseAgentCapability[]> | null;
-   analyticsUserId: string | null;
+   machineId: string | null;
    loginStatus: LoginStatus | null;
 +  sharedApiBase: string | null;
    setEnvironment: (env: Environment | null) => void;
    setProfiles: (profiles: Record<string, ExecutorProfile> | null) => void;
    setCapabilities: (caps: Record<string, BaseAgentCapability[]> | null) => void;
 diff --git a/packages/web-core/src/shared/hooks/useWorkspaces.ts b/packages/web-core/src/shared/hooks/useWorkspaces.ts
-index 8ccf8dd8a..aa5933927 100644
+index 25be704a1..8d92b707e 100644
 --- a/packages/web-core/src/shared/hooks/useWorkspaces.ts
 +++ b/packages/web-core/src/shared/hooks/useWorkspaces.ts
-@@ -45,6 +45,10 @@ export interface UseWorkspacesResult {
+@@ -46,6 +46,10 @@ export interface UseWorkspacesResult {
    error: string | null;
  }
  
@@ -550,7 +513,7 @@ index 8ccf8dd8a..aa5933927 100644
  // State shape from the WebSocket stream
  type WorkspacesState = {
    workspaces: Record<string, WorkspaceWithStatus>;
-@@ -121,7 +125,11 @@ async function fetchWorkspaceSummariesByArchived(
+@@ -127,7 +131,10 @@ async function fetchWorkspaceSummariesByArchived(
    }
  }
  
@@ -559,11 +522,10 @@ index 8ccf8dd8a..aa5933927 100644
 +  options: UseWorkspacesOptions = {}
 +): UseWorkspacesResult {
 +  const enabled = options.enabled ?? true;
-+
+   const hostId = useHostId();
+ 
    // Two separate WebSocket connections: one for active, one for archived
-   // No limit param - we fetch all and slice on frontend so backfill works when archiving
-   const activeEndpoint = '/api/workspaces/streams/ws?archived=false';
-@@ -137,7 +145,11 @@ export function useWorkspaces(): UseWorkspacesResult {
+@@ -146,7 +153,11 @@ export function useWorkspaces(): UseWorkspacesResult {
      isConnected: activeIsConnected,
      isInitialized: activeIsInitialized,
      error: activeError,
@@ -576,7 +538,7 @@ index 8ccf8dd8a..aa5933927 100644
  
    const {
      data: archivedData,
-@@ -146,7 +158,7 @@ export function useWorkspaces(): UseWorkspacesResult {
+@@ -155,7 +166,7 @@ export function useWorkspaces(): UseWorkspacesResult {
      error: archivedError,
    } = useJsonPatchWsStream<WorkspacesState>(
      archivedEndpoint,
@@ -585,25 +547,25 @@ index 8ccf8dd8a..aa5933927 100644
      initialData
    );
  
-@@ -156,7 +168,7 @@ export function useWorkspaces(): UseWorkspacesResult {
+@@ -165,7 +176,7 @@ export function useWorkspaces(): UseWorkspacesResult {
      useQuery({
-       queryKey: workspaceSummaryKeys.byArchived(false),
-       queryFn: () => fetchWorkspaceSummariesByArchived(false),
+       queryKey: workspaceSummaryKeys.byArchived(false, hostId),
+       queryFn: () => fetchWorkspaceSummariesByArchived(false, hostId),
 -      enabled: activeIsInitialized,
 +      enabled: enabled && activeIsInitialized,
        staleTime: 1000,
        refetchInterval: 15000,
        refetchOnWindowFocus: false,
-@@ -169,7 +181,7 @@ export function useWorkspaces(): UseWorkspacesResult {
+@@ -178,7 +189,7 @@ export function useWorkspaces(): UseWorkspacesResult {
      useQuery({
-       queryKey: workspaceSummaryKeys.byArchived(true),
-       queryFn: () => fetchWorkspaceSummariesByArchived(true),
+       queryKey: workspaceSummaryKeys.byArchived(true, hostId),
+       queryFn: () => fetchWorkspaceSummariesByArchived(true, hostId),
 -      enabled: archivedIsInitialized,
 +      enabled: enabled && archivedIsInitialized,
        staleTime: 1000,
        refetchInterval: 15000,
        refetchOnWindowFocus: false,
-@@ -210,13 +222,13 @@ export function useWorkspaces(): UseWorkspacesResult {
+@@ -219,13 +230,13 @@ export function useWorkspaces(): UseWorkspacesResult {
    }, [archivedData, archivedSummaries]);
  
    // isLoading is true when we haven't received initial data from either stream
@@ -621,7 +583,7 @@ index 8ccf8dd8a..aa5933927 100644
    return {
      workspaces,
 diff --git a/packages/web-core/src/shared/providers/WorkspaceProvider.tsx b/packages/web-core/src/shared/providers/WorkspaceProvider.tsx
-index 59a7279a7..a0b2b9195 100644
+index 58bdafb59..99da449eb 100644
 --- a/packages/web-core/src/shared/providers/WorkspaceProvider.tsx
 +++ b/packages/web-core/src/shared/providers/WorkspaceProvider.tsx
 @@ -13,6 +13,8 @@ import { useDiffViewStore } from '@/shared/stores/useDiffViewStore';
@@ -631,9 +593,9 @@ index 59a7279a7..a0b2b9195 100644
 +import { useAuth } from '@/shared/hooks/auth/useAuth';
 +import { useUserSystem } from '@/shared/hooks/useUserSystem';
  
- import { WorkspaceContext } from '@/shared/hooks/useWorkspaceContext';
- 
-@@ -25,6 +27,12 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
+ import {
+   WorkspaceContext,
+@@ -28,6 +30,12 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
    const appNavigation = useAppNavigation();
    const currentDestination = useCurrentAppDestination();
    const queryClient = useQueryClient();
@@ -644,24 +606,23 @@ index 59a7279a7..a0b2b9195 100644
 +  const workspaceDataEnabled =
 +    !requiresWorkspaceAuth || (authLoaded && isSignedIn);
  
-   // Derive isCreateMode from URL path instead of prop to allow provider to persist across route changes
    const isCreateMode = currentDestination?.kind === 'workspaces-create';
-@@ -34,12 +42,12 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
+ 
+@@ -35,11 +43,11 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
      workspaces: activeWorkspaces,
      archivedWorkspaces,
      isLoading: isLoadingList,
 -  } = useWorkspaces();
 +  } = useWorkspaces({ enabled: workspaceDataEnabled });
  
-   // Fetch real workspace data for the selected workspace
    const { data: workspace, isLoading: isLoadingWorkspace } = useWorkspaceRecord(
      workspaceId,
 -    { enabled: !!workspaceId && !isCreateMode }
 +    { enabled: workspaceDataEnabled && !!workspaceId && !isCreateMode }
    );
  
-   // Fetch sessions for the current workspace
-@@ -52,11 +60,13 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
+   const {
+@@ -51,10 +59,12 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
      isLoading: isSessionsLoading,
      isNewSessionMode,
      startNewSession,
@@ -670,14 +631,13 @@ index 59a7279a7..a0b2b9195 100644
 +    enabled: workspaceDataEnabled && !isCreateMode,
 +  });
  
-   // Fetch repos for the current workspace
    const { repos, isLoading: isReposLoading } = useWorkspaceRepo(workspaceId, {
 -    enabled: !isCreateMode,
 +    enabled: workspaceDataEnabled && !isCreateMode,
    });
  
-   // Get first repo ID for PR comments.
-@@ -82,11 +92,14 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
+   // TODO: Support multiple repos - currently only fetches comments from the primary repo.
+@@ -77,10 +87,13 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
    } = useGitHubComments({
      workspaceId,
      repoId: primaryRepoId,
@@ -685,7 +645,6 @@ index 59a7279a7..a0b2b9195 100644
 +    enabled: workspaceDataEnabled && !isCreateMode && hasPrAttached,
    });
  
-   // Stream diffs for the current workspace
 -  const { diffs } = useDiffStream(workspaceId ?? null, !isCreateMode);
 +  const { diffs } = useDiffStream(
 +    workspaceId ?? null,
@@ -694,16 +653,16 @@ index 59a7279a7..a0b2b9195 100644
  
    const diffPaths = useMemo(
      () =>
-@@ -115,7 +128,7 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
-   // This covers all navigation paths: sidebar clicks, kanban card clicks,
-   // direct URL navigation, and post-creation redirects.
+@@ -105,7 +118,7 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
+   const isLoading = isLoadingList || isLoadingWorkspace;
+ 
    useEffect(() => {
 -    if (!workspaceId || isCreateMode) return;
 +    if (!workspaceDataEnabled || !workspaceId || isCreateMode) return;
  
      workspacesApi
        .markSeen(workspaceId)
-@@ -125,7 +138,7 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
+@@ -115,7 +128,7 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
        .catch((error) => {
          console.warn('Failed to mark workspace as seen:', error);
        });
