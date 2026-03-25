@@ -1,6 +1,6 @@
-From 4ac56ed6057d009cffe3e0309a92e8f411222620 Mon Sep 17 00:00:00 2001
+From d2cde7ba6b76d0dfb5046db2680ca39b44c4c9b0 Mon Sep 17 00:00:00 2001
 From: Riajul Islam <opensource@example.com>
-Date: Tue, 24 Mar 2026 15:53:13 +0000
+Date: Wed, 25 Mar 2026 06:19:27 +0000
 Subject: [PATCH] feat: support VSCODE_PROXY_URI in preview iframe
 
 Route the preview iframe through the Rust preview proxy when
@@ -13,6 +13,10 @@ parameter. The proxy persists it in a vk_preview_target cookie so that
 subsequent sub-resource requests (CSS, JS, images, fetch) are routed to
 the correct dev server without needing the query parameter.
 
+When the Host header subdomain matches the proxy's own port (as happens
+with code-server forwarding), subdomain routing is skipped and the proxy
+falls through to cookie/query-based routing.
+
 Also fixes app-port detection and log URL detection: in VSCODE_PROXY_URI
 mode the app port is extracted from the hostname subdomain so the preview
 correctly filters out the app's own port. Dev server log output
@@ -23,10 +27,10 @@ Falls back to direct VSCODE_PROXY_URI bypass when previewProxyPort is
 unavailable, and to subdomain routing for local (non-cloud) mode.
 ---
  crates/preview-proxy/src/devtools_script.js   |   1 +
- crates/preview-proxy/src/lib.rs               | 234 ++++++++++-
+ crates/preview-proxy/src/lib.rs               | 238 ++++++++++-
  .../workspaces/PreviewBrowserContainer.tsx    | 378 ++++++++++++++----
  .../src/shared/hooks/usePreviewUrl.ts         |  58 ++-
- 4 files changed, 579 insertions(+), 92 deletions(-)
+ 4 files changed, 583 insertions(+), 92 deletions(-)
 
 diff --git a/crates/preview-proxy/src/devtools_script.js b/crates/preview-proxy/src/devtools_script.js
 index ca1c3d3af..4314377f4 100644
@@ -41,7 +45,7 @@ index ca1c3d3af..4314377f4 100644
      } catch (e) {
        return url;
 diff --git a/crates/preview-proxy/src/lib.rs b/crates/preview-proxy/src/lib.rs
-index 3081db220..ad1f38fe0 100644
+index 3081db220..9de71f9f1 100644
 --- a/crates/preview-proxy/src/lib.rs
 +++ b/crates/preview-proxy/src/lib.rs
 @@ -6,6 +6,12 @@
@@ -207,7 +211,7 @@ index 3081db220..ad1f38fe0 100644
  fn extract_target_from_host(headers: &HeaderMap) -> Option<PreviewTarget> {
      let host = headers.get(header::HOST)?.to_str().ok()?;
      let subdomain = host.split('.').next()?;
-@@ -382,16 +531,41 @@ pub async fn proxy_subdomain_request(
+@@ -382,16 +531,45 @@ pub async fn proxy_subdomain_request(
      proxy_port: u16,
      request: Request,
  ) -> Response {
@@ -217,10 +221,14 @@ index 3081db220..ad1f38fe0 100644
 -            return (StatusCode::BAD_REQUEST, "No valid port in Host subdomain").into_response();
 -        }
 -    };
++    // Try subdomain routing first (local mode: {port}.localhost:{proxyPort}).
++    // If the subdomain yields the proxy's own port (happens when code-server
++    // forwards with Host: {proxyPort}.code.vk.community.example.com), treat it as
++    // "no usable subdomain" and fall through to cookie/query routing.
 +    let (target, use_relative_redirects) =
 +        match extract_target_from_host(request.headers()) {
-+            Some(t) => (t, false),
-+            None => match extract_target_from_query_or_cookie(&request) {
++            Some(t) if t.port != proxy_port => (t, false),
++            _ => match extract_target_from_query_or_cookie(&request) {
 +                Some(t) => (t, true),
 +                None => {
 +                    return (
@@ -256,7 +264,7 @@ index 3081db220..ad1f38fe0 100644
  }
  
  async fn proxy_impl(
-@@ -400,6 +574,7 @@ async fn proxy_impl(
+@@ -400,6 +578,7 @@ async fn proxy_impl(
      proxy_port: u16,
      target: PreviewTarget,
      path_str: String,
@@ -264,7 +272,7 @@ index 3081db220..ad1f38fe0 100644
      request: Request,
  ) -> Response {
      let (mut parts, body) = request.into_parts();
-@@ -407,7 +582,14 @@ async fn proxy_impl(
+@@ -407,7 +586,14 @@ async fn proxy_impl(
      // Extract query string and subprotocols before WebSocket upgrade.
      // Both are required: Vite 6+ needs ?token= for auth, and checks
      // Sec-WebSocket-Protocol: vite-hmr before accepting the upgrade.
@@ -280,7 +288,7 @@ index 3081db220..ad1f38fe0 100644
      let ws_protocols: Option<String> = extract_ws_protocols(&parts.headers);
  
      if let Ok(ws) = WebSocketUpgrade::from_request_parts(&mut parts, &()).await {
-@@ -444,7 +626,7 @@ async fn proxy_impl(
+@@ -444,7 +630,7 @@ async fn proxy_impl(
      }
  
      let request = Request::from_parts(parts, body);
@@ -289,7 +297,7 @@ index 3081db220..ad1f38fe0 100644
  }
  
  async fn http_proxy_handler(
-@@ -453,6 +635,7 @@ async fn http_proxy_handler(
+@@ -453,6 +639,7 @@ async fn http_proxy_handler(
      proxy_port: u16,
      target: PreviewTarget,
      path_str: String,
@@ -297,7 +305,7 @@ index 3081db220..ad1f38fe0 100644
      request: Request,
  ) -> Response {
      let (parts, body) = request.into_parts();
-@@ -460,7 +643,12 @@ async fn http_proxy_handler(
+@@ -460,7 +647,12 @@ async fn http_proxy_handler(
      let headers = parts.headers;
      let original_uri = parts.uri;
  
@@ -311,7 +319,7 @@ index 3081db220..ad1f38fe0 100644
      let normalized_path = normalized_proxy_path(&path_str);
  
      let is_rsc_request = headers.contains_key(header::HeaderName::from_static("rsc"));
-@@ -539,12 +727,26 @@ async fn http_proxy_handler(
+@@ -539,12 +731,26 @@ async fn http_proxy_handler(
      let is_html = content_type.contains("text/html");
  
      let mut response_headers = collect_response_headers(response.headers(), is_html);
