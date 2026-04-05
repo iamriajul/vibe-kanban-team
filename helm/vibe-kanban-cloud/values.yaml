@@ -156,6 +156,20 @@ env:
   #       name: ""
   #       key: google-client-secret
 
+  # OR Zoho OAuth
+  # - name: ZOHO_OAUTH_CLIENT_ID
+  #   valueFrom:
+  #     secretKeyRef:
+  #       name: ""
+  #       key: zoho-client-id
+  # - name: ZOHO_OAUTH_CLIENT_SECRET
+  #   valueFrom:
+  #     secretKeyRef:
+  #       name: ""
+  #       key: zoho-client-secret
+  # - name: ZOHO_ACCOUNTS_URL  # Optional, defaults to https://accounts.zoho.com
+  #   value: ""
+
 # Additional environment variables (non-secret)
 extraEnv:
   - name: RUST_LOG
