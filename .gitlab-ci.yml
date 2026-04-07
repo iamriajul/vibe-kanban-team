@@ -1,5 +1,5 @@
 # GitLab CI/CD Pipeline for Vibe Kanban Cloud
-# Builds the remote server image and pushes to GitLab Registry
+# Builds the remote server image and pushes to configured container registries
 
 stages:
   - build
@@ -9,6 +9,9 @@ stages:
 variables:
   IMAGE_NAME: $CI_REGISTRY_IMAGE/vibe-kanban-remote
   RELAY_IMAGE_NAME: $CI_REGISTRY_IMAGE/vibe-kanban-relay
+  PUSH_GITLAB_REGISTRY: "true"
+  DOCKER_HUB_REMOTE_IMAGE_NAME: ""
+  DOCKER_HUB_RELAY_IMAGE_NAME: ""
   IMAGE_TAG: $CI_COMMIT_SHA
 
 # Default settings

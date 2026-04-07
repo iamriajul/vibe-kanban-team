@@ -1,5 +1,5 @@
 # Image Build Pipeline
-# Builds Docker images and pushes to GitLab Registry
+# Builds Docker images and pushes to GitLab Registry and optional Docker Hub repos
 # Deployment to MicroK8s is done manually using the Helm chart
 #
 # Release tag format: remote-vX.Y.Z or remote-X.Y.Z
@@ -27,7 +27,6 @@ build-image-release:
     - if: '$CI_COMMIT_TAG =~ /^remote-v?[0-9]+\.[0-9]+\.[0-9]+([-.].*)?$/'
     - when: never
   before_script:
-    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
     # Initialize vibe-kanban-remote submodule only (for remote server builds)
     - apk add --no-cache git
     - git submodule update --init vibe-kanban-remote
@@ -42,26 +41,83 @@ build-image-release:
         exit 1
       fi
 
-      # Pull latest for cache
-      docker pull $IMAGE_NAME:latest || true
+      GITLAB_PUSH_ENABLED="${PUSH_GITLAB_REGISTRY:-true}"
 
-      # Build and tag both release version and latest (using vibe-kanban-remote submodule)
-      docker build \
-        --cache-from $IMAGE_NAME:latest \
-        -f vibe-kanban-remote/crates/remote/Dockerfile \
-        --build-arg FEATURES="${FEATURES:-}" \
-        --build-arg POSTHOG_API_KEY="${POSTHOG_API_KEY:-}" \
-        --build-arg POSTHOG_API_ENDPOINT="${POSTHOG_API_ENDPOINT:-}" \
-        --build-arg VITE_RELAY_API_BASE_URL="${VITE_RELAY_API_BASE_URL:-}" \
-        -t $IMAGE_NAME:$RELEASE_VERSION \
-        -t $IMAGE_NAME:latest \
-        ./vibe-kanban-remote
+      if [ "$GITLAB_PUSH_ENABLED" = "true" ] && [ -z "${IMAGE_NAME:-}" ]; then
+        echo "PUSH_GITLAB_REGISTRY is true but IMAGE_NAME is empty"
+        exit 1
+      fi
 
-      # Push both release and latest tags
-      docker push $IMAGE_NAME:$RELEASE_VERSION
-      docker push $IMAGE_NAME:latest
+      if [ "$GITLAB_PUSH_ENABLED" != "true" ] && [ -z "${DOCKER_HUB_REMOTE_IMAGE_NAME:-}" ]; then
+        echo "No remote image target configured; set DOCKER_HUB_REMOTE_IMAGE_NAME or enable PUSH_GITLAB_REGISTRY"
+        exit 1
+      fi
 
-      echo "Release images pushed: $IMAGE_NAME:$RELEASE_VERSION and $IMAGE_NAME:latest"
+      if [ "$GITLAB_PUSH_ENABLED" = "true" ]; then
+        if [ -z "${CI_REGISTRY:-}" ] || [ -z "${CI_REGISTRY_USER:-}" ] || [ -z "${CI_REGISTRY_PASSWORD:-}" ]; then
+          echo "GitLab registry push is enabled but credentials are missing"
+          exit 1
+        fi
+        printf '%s\n' "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+      fi
+
+      if [ -n "${DOCKER_HUB_REMOTE_IMAGE_NAME:-}" ]; then
+        if [ -z "${DOCKER_HUB_USERNAME:-}" ] || [ -z "${DOCKER_HUB_TOKEN:-}" ]; then
+          echo "DOCKER_HUB_REMOTE_IMAGE_NAME is set but DOCKER_HUB_USERNAME or DOCKER_HUB_TOKEN is missing"
+          exit 1
+        fi
+        printf '%s\n' "$DOCKER_HUB_TOKEN" | docker login -u "$DOCKER_HUB_USERNAME" --password-stdin
+      fi
+
+      CACHE_FROM_IMAGE=""
+      if [ "$GITLAB_PUSH_ENABLED" = "true" ]; then
+        CACHE_FROM_IMAGE="${IMAGE_NAME}:latest"
+      elif [ -n "${DOCKER_HUB_REMOTE_IMAGE_NAME:-}" ]; then
+        CACHE_FROM_IMAGE="${DOCKER_HUB_REMOTE_IMAGE_NAME}:latest"
+      fi
+
+      if [ -n "$CACHE_FROM_IMAGE" ]; then
+        docker pull "$CACHE_FROM_IMAGE" || true
+      fi
+
+      BUILD_IMAGE="vibe-kanban-remote-build:${CI_PIPELINE_ID:-local}"
+      if [ -n "$CACHE_FROM_IMAGE" ]; then
+        docker build \
+          --cache-from "$CACHE_FROM_IMAGE" \
+          -f vibe-kanban-remote/crates/remote/Dockerfile \
+          --build-arg FEATURES="${FEATURES:-}" \
+          --build-arg POSTHOG_API_KEY="${POSTHOG_API_KEY:-}" \
+          --build-arg POSTHOG_API_ENDPOINT="${POSTHOG_API_ENDPOINT:-}" \
+          --build-arg VITE_RELAY_API_BASE_URL="${VITE_RELAY_API_BASE_URL:-}" \
+          -t "$BUILD_IMAGE" \
+          ./vibe-kanban-remote
+      else
+        docker build \
+          -f vibe-kanban-remote/crates/remote/Dockerfile \
+          --build-arg FEATURES="${FEATURES:-}" \
+          --build-arg POSTHOG_API_KEY="${POSTHOG_API_KEY:-}" \
+          --build-arg POSTHOG_API_ENDPOINT="${POSTHOG_API_ENDPOINT:-}" \
+          --build-arg VITE_RELAY_API_BASE_URL="${VITE_RELAY_API_BASE_URL:-}" \
+          -t "$BUILD_IMAGE" \
+          ./vibe-kanban-remote
+      fi
+
+      push_target() {
+        target_image="$1"
+        docker tag "$BUILD_IMAGE" "${target_image}:${RELEASE_VERSION}"
+        docker tag "$BUILD_IMAGE" "${target_image}:latest"
+        docker push "${target_image}:${RELEASE_VERSION}"
+        docker push "${target_image}:latest"
+      }
+
+      if [ "$GITLAB_PUSH_ENABLED" = "true" ]; then
+        push_target "$IMAGE_NAME"
+      fi
+      if [ -n "${DOCKER_HUB_REMOTE_IMAGE_NAME:-}" ]; then
+        push_target "$DOCKER_HUB_REMOTE_IMAGE_NAME"
+      fi
+
+      echo "Remote release image pushed for version ${RELEASE_VERSION}"
   tags:
     - docker
 
@@ -82,7 +138,6 @@ build-relay-image-release:
     - if: '$CI_COMMIT_TAG =~ /^remote-v?[0-9]+\.[0-9]+\.[0-9]+([-.].*)?$/'
     - when: never
   before_script:
-    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
     # Initialize vibe-kanban-remote submodule only (for relay server builds)
     - apk add --no-cache git
     - git submodule update --init vibe-kanban-remote
@@ -97,22 +152,75 @@ build-relay-image-release:
         exit 1
       fi
 
-      # Pull latest for cache
-      docker pull $RELAY_IMAGE_NAME:latest || true
+      GITLAB_PUSH_ENABLED="${PUSH_GITLAB_REGISTRY:-true}"
 
-      # Build and tag both release version and latest (using vibe-kanban-remote submodule)
-      docker build \
-        --cache-from $RELAY_IMAGE_NAME:latest \
-        -f vibe-kanban-remote/crates/relay-tunnel/Dockerfile \
-        -t $RELAY_IMAGE_NAME:$RELEASE_VERSION \
-        -t $RELAY_IMAGE_NAME:latest \
-        ./vibe-kanban-remote
+      if [ "$GITLAB_PUSH_ENABLED" = "true" ] && [ -z "${RELAY_IMAGE_NAME:-}" ]; then
+        echo "PUSH_GITLAB_REGISTRY is true but RELAY_IMAGE_NAME is empty"
+        exit 1
+      fi
 
-      # Push both release and latest tags
-      docker push $RELAY_IMAGE_NAME:$RELEASE_VERSION
-      docker push $RELAY_IMAGE_NAME:latest
+      if [ "$GITLAB_PUSH_ENABLED" != "true" ] && [ -z "${DOCKER_HUB_RELAY_IMAGE_NAME:-}" ]; then
+        echo "No relay image target configured; set DOCKER_HUB_RELAY_IMAGE_NAME or enable PUSH_GITLAB_REGISTRY"
+        exit 1
+      fi
 
-      echo "Release images pushed: $RELAY_IMAGE_NAME:$RELEASE_VERSION and $RELAY_IMAGE_NAME:latest"
+      if [ "$GITLAB_PUSH_ENABLED" = "true" ]; then
+        if [ -z "${CI_REGISTRY:-}" ] || [ -z "${CI_REGISTRY_USER:-}" ] || [ -z "${CI_REGISTRY_PASSWORD:-}" ]; then
+          echo "GitLab registry push is enabled but credentials are missing"
+          exit 1
+        fi
+        printf '%s\n' "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+      fi
+
+      if [ -n "${DOCKER_HUB_RELAY_IMAGE_NAME:-}" ]; then
+        if [ -z "${DOCKER_HUB_USERNAME:-}" ] || [ -z "${DOCKER_HUB_TOKEN:-}" ]; then
+          echo "DOCKER_HUB_RELAY_IMAGE_NAME is set but DOCKER_HUB_USERNAME or DOCKER_HUB_TOKEN is missing"
+          exit 1
+        fi
+        printf '%s\n' "$DOCKER_HUB_TOKEN" | docker login -u "$DOCKER_HUB_USERNAME" --password-stdin
+      fi
+
+      CACHE_FROM_IMAGE=""
+      if [ "$GITLAB_PUSH_ENABLED" = "true" ]; then
+        CACHE_FROM_IMAGE="${RELAY_IMAGE_NAME}:latest"
+      elif [ -n "${DOCKER_HUB_RELAY_IMAGE_NAME:-}" ]; then
+        CACHE_FROM_IMAGE="${DOCKER_HUB_RELAY_IMAGE_NAME}:latest"
+      fi
+
+      if [ -n "$CACHE_FROM_IMAGE" ]; then
+        docker pull "$CACHE_FROM_IMAGE" || true
+      fi
+
+      BUILD_IMAGE="vibe-kanban-relay-build:${CI_PIPELINE_ID:-local}"
+      if [ -n "$CACHE_FROM_IMAGE" ]; then
+        docker build \
+          --cache-from "$CACHE_FROM_IMAGE" \
+          -f vibe-kanban-remote/crates/relay-tunnel/Dockerfile \
+          -t "$BUILD_IMAGE" \
+          ./vibe-kanban-remote
+      else
+        docker build \
+          -f vibe-kanban-remote/crates/relay-tunnel/Dockerfile \
+          -t "$BUILD_IMAGE" \
+          ./vibe-kanban-remote
+      fi
+
+      push_target() {
+        target_image="$1"
+        docker tag "$BUILD_IMAGE" "${target_image}:${RELEASE_VERSION}"
+        docker tag "$BUILD_IMAGE" "${target_image}:latest"
+        docker push "${target_image}:${RELEASE_VERSION}"
+        docker push "${target_image}:latest"
+      }
+
+      if [ "$GITLAB_PUSH_ENABLED" = "true" ]; then
+        push_target "$RELAY_IMAGE_NAME"
+      fi
+      if [ -n "${DOCKER_HUB_RELAY_IMAGE_NAME:-}" ]; then
+        push_target "$DOCKER_HUB_RELAY_IMAGE_NAME"
+      fi
+
+      echo "Relay release image pushed for version ${RELEASE_VERSION}"
   tags:
     - docker
 
@@ -185,6 +293,29 @@ notify-discord-release:
       # Extract version from tag: remote-v0.1.2 -> 0.1.2
       RELEASE_VERSION="${CI_COMMIT_TAG#remote-}"
       RELEASE_VERSION="${RELEASE_VERSION#v}"
+      GITLAB_PUSH_ENABLED="${PUSH_GITLAB_REGISTRY:-true}"
+
+      REMOTE_IMAGE_OUTPUTS=""
+      if [ "$GITLAB_PUSH_ENABLED" = "true" ] && [ -n "${IMAGE_NAME:-}" ]; then
+        REMOTE_IMAGE_OUTPUTS="${IMAGE_NAME}:${RELEASE_VERSION}"
+      fi
+      if [ -n "${DOCKER_HUB_REMOTE_IMAGE_NAME:-}" ]; then
+        if [ -n "$REMOTE_IMAGE_OUTPUTS" ]; then
+          REMOTE_IMAGE_OUTPUTS="$(printf '%s\n' "$REMOTE_IMAGE_OUTPUTS")"
+        fi
+        REMOTE_IMAGE_OUTPUTS="${REMOTE_IMAGE_OUTPUTS}${DOCKER_HUB_REMOTE_IMAGE_NAME}:${RELEASE_VERSION}"
+      fi
+
+      RELAY_IMAGE_OUTPUTS=""
+      if [ "$GITLAB_PUSH_ENABLED" = "true" ] && [ -n "${RELAY_IMAGE_NAME:-}" ]; then
+        RELAY_IMAGE_OUTPUTS="${RELAY_IMAGE_NAME}:${RELEASE_VERSION}"
+      fi
+      if [ -n "${DOCKER_HUB_RELAY_IMAGE_NAME:-}" ]; then
+        if [ -n "$RELAY_IMAGE_OUTPUTS" ]; then
+          RELAY_IMAGE_OUTPUTS="$(printf '%s\n' "$RELAY_IMAGE_OUTPUTS")"
+        fi
+        RELAY_IMAGE_OUTPUTS="${RELAY_IMAGE_OUTPUTS}${DOCKER_HUB_RELAY_IMAGE_NAME}:${RELEASE_VERSION}"
+      fi
 
       # Determine build status
       if [ "$CI_JOB_STATUS" == "success" ]; then
@@ -209,8 +340,8 @@ notify-discord-release:
         --arg pipeline_url "$CI_PIPELINE_URL" \
         --arg version "$RELEASE_VERSION" \
         --arg tag "$CI_COMMIT_TAG" \
-        --arg remote_image "$IMAGE_NAME:$RELEASE_VERSION" \
-        --arg relay_image "$RELAY_IMAGE_NAME:$RELEASE_VERSION" \
+        --arg remote_image "$REMOTE_IMAGE_OUTPUTS" \
+        --arg relay_image "$RELAY_IMAGE_OUTPUTS" \
         --arg timestamp "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)" \
         --argjson color "$COLOR" \
         '{
