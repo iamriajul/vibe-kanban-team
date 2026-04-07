@@ -21,8 +21,16 @@ CI/CD pipelines are **triggered exclusively by Git tags**. There are two distinc
 **What Happens:**
 1. Remote Docker image is built and pushed as `$IMAGE_NAME:{VERSION}`
 2. Relay Docker image is built and pushed as `$RELAY_IMAGE_NAME:{VERSION}`
-3. Helm chart is packaged and published to GitLab Helm registry
-4. Discord notification is sent (if configured)
+3. If `DOCKER_HUB_REMOTE_IMAGE_NAME` / `DOCKER_HUB_RELAY_IMAGE_NAME` are set, the same tags are also pushed to Docker Hub
+4. Helm chart is packaged and published to GitLab Helm registry
+5. Discord notification is sent (if configured)
+
+**Docker Hub Variables:**
+- `PUSH_GITLAB_REGISTRY` - set to `false` to skip GitLab Registry and push only to Docker Hub
+- `DOCKER_HUB_REMOTE_IMAGE_NAME` - full remote image name, e.g. `docker.io/acme/vibe-kanban-remote`
+- `DOCKER_HUB_RELAY_IMAGE_NAME` - full relay image name, e.g. `docker.io/acme/vibe-kanban-relay`
+- `DOCKER_HUB_USERNAME` - Docker Hub username
+- `DOCKER_HUB_TOKEN` - Docker Hub access token
 
 **How to Release:**
 ```bash

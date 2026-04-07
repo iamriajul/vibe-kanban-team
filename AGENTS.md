@@ -151,6 +151,8 @@ Not all changes require the same flow. Only changes affecting **runtime artifact
 | `v*` (not `remote-*`) | `.gitlab/ci/npm-publish.yml` | NPM package + platform binaries |
 | `remote-v*` | `.gitlab/ci/image-build.yml` | Remote + Relay Docker images, Helm chart |
 
+Remote image pipeline pushes to GitLab Registry by default. Docker Hub push is optional via CI vars: `DOCKER_HUB_REMOTE_IMAGE_NAME`, `DOCKER_HUB_RELAY_IMAGE_NAME`, `DOCKER_HUB_USERNAME`, `DOCKER_HUB_TOKEN`. Set `PUSH_GITLAB_REGISTRY=false` for Docker Hub-only release jobs.
+
 Tagging flow: push branch → `glab mr create --squash-before-merge --remove-source-branch --no-editor --yes` → `glab mr merge <id> --squash --remove-source-branch --yes` → fetch main and tags → create new tag → push tag.
 
 Tag naming depends on scenario:
