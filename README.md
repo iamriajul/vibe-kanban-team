@@ -308,12 +308,11 @@ If you use the CNPG manifests, the role is created by the init SQL secret.
 
 ## Release Automation
 
-Checked-in GitLab CI has been removed from the public tree. GitHub Actions are planned next, but are not part of the repository yet.
+GitHub Actions now handle the checked-in release flows:
+- `remote-v*` tags build Remote and Relay images, push to GHCR, optionally mirror to Docker Hub, and publish the Helm chart to GHCR as an OCI artifact
+- `v*` tags publish the npm package through `scripts/publish-npm.sh`
 
-For now:
-- build images manually when you need them
-- push to the registry you control
-- pin the resulting tags in the Helm values you deploy
+For stable releases, the image workflow also updates the `latest` tag. Prereleases publish only their version tag.
 
 ## Release Tracking (Upstream Vibe Kanban)
 
@@ -322,12 +321,12 @@ We track upstream releases from the Vibe Kanban GitHub repo and bump the shared 
 1. Watch for new upstream releases (GitHub Releases/notifications).
 2. Decide the version to adopt (e.g. `v1.4.0`).
 3. Update the shared submodule and patch stack.
-4. Build the artifact you need manually.
+4. Push the release tag that matches the artifact flow you want.
 5. Deploy by pinning the image tag.
 
 ## Patch Stack (Downstream Changes)
 
-We keep downstream changes as a small patch stack in `patches/` (similar to quilt). Apply them before local builds or future CI runs.
+We keep downstream changes as a small patch stack in `patches/` (similar to quilt). The local scripts and GitHub Actions both apply this same stack before building.
 
 ### Creating a Patch
 

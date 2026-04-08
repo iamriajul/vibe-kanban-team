@@ -1,29 +1,55 @@
 # Release Process
 
-This repository currently has no checked-in CI workflow. GitLab CI was removed from the public tree, and GitHub Actions have not been added yet.
+This repository uses GitHub Actions for checked-in release automation.
 
 ## Current State
 
-- Releases are manual for now.
-- Keep tag naming stable so future GitHub Actions can adopt the same contract.
-- Docker registry publishing targets are still undecided; Docker Hub is the baseline and GHCR is a likely future addition.
+- `remote-v*` tags trigger `.github/workflows/release-images.yml`
+- `v*` tags trigger `.github/workflows/publish-npm.yml`
+- GHCR is the default public registry for images and the Helm chart
+- Docker Hub image pushes are optional and controlled by repository variables and secrets
 
 ## Reserved Tag Formats
 
 - Remote + relay images: `remote-v<version>`
 - Frontend / npm package: `v<version>` or `v<version>-<timestamp>`
 
+## Remote / Relay Release
+
+Artifacts:
+- `ghcr.io/<owner>/vibe-kanban-remote:<version>`
+- `ghcr.io/<owner>/vibe-kanban-relay:<version>`
+- `oci://ghcr.io/<owner>/helm-charts/vibe-kanban-cloud:<version>`
+
+Optional Docker Hub mirrors:
+- set `DOCKERHUB_REMOTE_IMAGE_NAME`
+- set `DOCKERHUB_RELAY_IMAGE_NAME`
+- set `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`
+
+## NPM Release
+
+Artifacts:
+- npm package published by `scripts/publish-npm.sh`
+- binaries uploaded through the existing R2-based publish flow
+
+Required secrets and variables:
+- `NPM_TOKEN`
+- `R2_ACCESS_KEY_ID`
+- `R2_SECRET_ACCESS_KEY`
+- `R2_ENDPOINT`
+- `R2_BUCKET`
+- `R2_PUBLIC_URL`
+- `VITE_PUBLIC_REACT_VIRTUOSO_LICENSE_KEY`
+
 ## Manual Flow
 
 1. Update the tracked upstream ref with `scripts/update-vibe-kanban.sh`.
 2. Apply and verify the downstream patch stack with `scripts/apply-patches.sh`.
-3. Build or publish the artifacts you need manually.
-4. Push the release tag you want to preserve for future automation.
+3. Commit and push the submodule or patch changes.
+4. Push the release tag for the workflow you want to run.
 
-## Next Step
+## Future Additions
 
-Replace the removed GitLab pipeline with GitHub Actions for:
-- remote and relay image builds
-- optional Docker Hub and GHCR pushes
-- npm publishing
-- optional GitHub Packages publishing
+- GHCR image publishing is already included.
+- Docker Hub is the public mirror path today.
+- GitHub Packages for npm can be added later if you want a secondary registry.

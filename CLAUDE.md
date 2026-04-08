@@ -13,6 +13,7 @@ Downstream deployment and integration layer for Vibe Kanban. Owns the Helm chart
 ## Ownership
 
 - `helm/vibe-kanban-cloud/`: Helm chart for Remote, Relay, ElectricSQL, and optional Frontend
+- `.github/workflows/`: GitHub Actions for image, chart, and npm releases
 - `scripts/`: `apply-patches.sh`, `update-vibe-kanban.sh`, `deploy.sh`, `publish-npm.sh`
 - `patches/`: linear downstream patch stack (`series` + `*.patch`)
 - `vibe-kanban/`: single upstream submodule for frontend, backend, remote, and relay
@@ -27,10 +28,10 @@ Downstream deployment and integration layer for Vibe Kanban. Owns the Helm chart
 
 ## Current Release State
 
-- GitLab CI files are intentionally removed from the checked-in tree.
-- GitHub Actions have not been added yet.
-- Treat releases as manual until a new workflow exists.
-- Keep tag naming stable for the future automation:
+- GitHub Actions own the checked-in release automation.
+- `remote-v*` tags build Remote and Relay images, publish them to GHCR, optionally mirror them to Docker Hub, and publish the Helm chart to GHCR as an OCI artifact.
+- `v*` tags publish the npm package via `scripts/publish-npm.sh`.
+- Keep tag naming stable:
   - frontend/npm: `v<upstream-semver>-<YYYYMMDDHHmmss>`
   - remote/relay: `remote-v<upstream-semver>`
 
