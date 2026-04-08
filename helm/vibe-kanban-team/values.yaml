@@ -1,4 +1,4 @@
-# Default values for vibe-kanban-cloud
+# Default values for vibe-kanban-team
 # This is a YAML-formatted file.
 
 # =============================================================================
@@ -8,7 +8,7 @@
 replicaCount: 1
 
 image:
-  repository: registry.example.com/community-infra/vibe-kanban-cloud/vibe-kanban-remote
+  repository: registry.example.com/community-infra/vibe-kanban-team/vibe-kanban-remote
   pullPolicy: IfNotPresent
   tag: ""  # Defaults to chart appVersion (latest in repo; release packages set appVersion to version)
 
@@ -186,7 +186,7 @@ relay:
   replicaCount: 1
 
   image:
-    repository: registry.example.com/community-infra/vibe-kanban-cloud/vibe-kanban-relay
+    repository: registry.example.com/community-infra/vibe-kanban-team/vibe-kanban-relay
     pullPolicy: IfNotPresent
     tag: ""  # Defaults to chart appVersion
 

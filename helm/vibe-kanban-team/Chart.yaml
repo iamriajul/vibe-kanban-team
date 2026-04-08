@@ -1,6 +1,6 @@
 apiVersion: v2
-name: vibe-kanban-cloud
-description: A Helm chart for Vibe Kanban Cloud with Frontend, Remote Server, Relay, and ElectricSQL
+name: vibe-kanban-team
+description: A Helm chart for Vibe Kanban Team with Frontend, Remote Server, Relay, and ElectricSQL
 
 type: application
 version: 0.1.0

@@ -11,7 +11,7 @@ This repository now manages Vibe Kanban through a single upstream reference:
 ## Layout
 
 ```text
-vibe-kanban-cloud/
+vibe-kanban-team/
 ├── vibe-kanban/              # Shared upstream checkout
 ├── patches/
 │   ├── series                # Linear patch order
@@ -24,7 +24,7 @@ vibe-kanban-cloud/
 ├── .github/workflows/
 │   ├── release-images.yml
 │   └── publish-npm.yml
-└── helm/vibe-kanban-cloud/
+└── helm/vibe-kanban-team/
     └── ...
 ```
 

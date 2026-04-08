@@ -9,16 +9,16 @@ Vibe Kanban Cloud has been deployed!
 {{- end }}
 {{- else if contains "NodePort" .Values.service.type }}
 1. Get the application URL by running:
-   export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ include "vibe-kanban-cloud.fullname" . }})
+   export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ include "vibe-kanban-team.fullname" . }})
    export NODE_IP=$(kubectl get nodes --namespace {{ .Release.Namespace }} -o jsonpath="{.items[0].status.addresses[0].address}")
    echo http://$NODE_IP:$NODE_PORT
 {{- else if contains "LoadBalancer" .Values.service.type }}
 1. Get the application URL by running:
    NOTE: It may take a few minutes for the LoadBalancer IP to be available.
-   kubectl get --namespace {{ .Release.Namespace }} svc -w {{ include "vibe-kanban-cloud.fullname" . }}
+   kubectl get --namespace {{ .Release.Namespace }} svc -w {{ include "vibe-kanban-team.fullname" . }}
 {{- else if contains "ClusterIP" .Values.service.type }}
 1. Get the application URL by running:
-   kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "vibe-kanban-cloud.fullname" . }} 8081:{{ .Values.service.port }}
+   kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "vibe-kanban-team.fullname" . }} 8081:{{ .Values.service.port }}
    echo "Visit http://localhost:8081"
 {{- end }}
 
@@ -51,22 +51,22 @@ Code Server:
 {{- end }}
 
 2. Components deployed:
-   - Vibe Kanban Remote Server: {{ include "vibe-kanban-cloud.fullname" . }}
+   - Vibe Kanban Remote Server: {{ include "vibe-kanban-team.fullname" . }}
 {{- if .Values.frontend.enabled }}
-   - Frontend (code-server + app): {{ include "vibe-kanban-cloud.frontend.fullname" . }}
+   - Frontend (code-server + app): {{ include "vibe-kanban-team.frontend.fullname" . }}
 {{- end }}
 {{- if .Values.relay.enabled }}
-   - Relay Server: {{ include "vibe-kanban-cloud.relay.fullname" . }}
+   - Relay Server: {{ include "vibe-kanban-team.relay.fullname" . }}
 {{- end }}
 {{- if .Values.electric.enabled }}
-   - ElectricSQL: {{ include "vibe-kanban-cloud.electric.fullname" . }}
+   - ElectricSQL: {{ include "vibe-kanban-team.electric.fullname" . }}
 {{- end }}
 
 3. Check deployment status:
    kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }}
 
 4. View logs:
-   kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/name={{ include "vibe-kanban-cloud.name" . }} -f
+   kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/name={{ include "vibe-kanban-team.name" . }} -f
 
 ================================================================================
 IMPORTANT: Database Requirements

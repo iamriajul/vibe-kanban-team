@@ -1,5 +1,5 @@
 # Helm
-helm/vibe-kanban-cloud/charts/
+helm/vibe-kanban-team/charts/
 *.tgz
 
 # Values files with secrets

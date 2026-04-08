@@ -1,9 +1,9 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "vibe-kanban-cloud.fullname" . }}
+  name: {{ include "vibe-kanban-team.fullname" . }}
   labels:
-    {{- include "vibe-kanban-cloud.labels" . | nindent 4 }}
+    {{- include "vibe-kanban-team.labels" . | nindent 4 }}
 spec:
   type: {{ .Values.service.type }}
   ports:
@@ -12,5 +12,5 @@ spec:
       protocol: TCP
       name: http
   selector:
-    {{- include "vibe-kanban-cloud.selectorLabels" . | nindent 4 }}
+    {{- include "vibe-kanban-team.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: app

@@ -12,7 +12,7 @@ Downstream deployment and integration layer for Vibe Kanban. Owns the Helm chart
 
 ## Ownership
 
-- `helm/vibe-kanban-cloud/`: Helm chart for Remote, Relay, ElectricSQL, and optional Frontend
+- `helm/vibe-kanban-team/`: Helm chart for Remote, Relay, ElectricSQL, and optional Frontend
 - `.github/workflows/`: GitHub Actions for image, chart, and npm releases
 - `scripts/`: `apply-patches.sh`, `update-vibe-kanban.sh`, `deploy.sh`, `publish-npm.sh`
 - `patches/`: linear downstream patch stack (`series` + `*.patch`)
@@ -64,8 +64,8 @@ Edit `vibe-kanban/` → commit → `git -C vibe-kanban format-patch -1 -o ../pat
 
 **Helm chart changes**:
 ```bash
-helm template test helm/vibe-kanban-cloud/ \
-  -f helm/vibe-kanban-cloud/values-example.yaml > /dev/null
+helm template test helm/vibe-kanban-team/ \
+  -f helm/vibe-kanban-team/values-example.yaml > /dev/null
 ```
 
 **Patch or submodule changes**:
@@ -86,8 +86,8 @@ bash -n scripts/<modified-script>.sh
 ### Deploy (reference)
 
 ```bash
-helm upgrade --install vibe-kanban ./helm/vibe-kanban-cloud \
-  -n vibe-kanban-cloud -f helm/vibe-kanban-cloud/values-example.yaml
+helm upgrade --install vibe-kanban ./helm/vibe-kanban-team \
+  -n vibe-kanban-team -f helm/vibe-kanban-team/values-example.yaml
 ```
 
 ## Helm Chart Components

@@ -182,9 +182,9 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          helm package helm/vibe-kanban-cloud \
+          helm package helm/vibe-kanban-team \
             --version "$VERSION" \
             --app-version "$VERSION" \
             --destination dist
 
-          helm push "dist/vibe-kanban-cloud-${VERSION}.tgz" "oci://ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/helm-charts"
+          helm push "dist/vibe-kanban-team-${VERSION}.tgz" "oci://ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/helm-charts"

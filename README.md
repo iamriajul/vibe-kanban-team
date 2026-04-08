@@ -121,7 +121,7 @@ git clone git@github.com:iamriajul/vibe-kanban-team.git
 cd vibe-kanban-team
 ```
 
-You can then install from the local path `./helm/vibe-kanban-cloud` (see Quick Start below). If you use GitOps (Argo CD / Flux), point your HelmRelease to the `helm/vibe-kanban-cloud` path in this repo.
+You can then install from the local path `./helm/vibe-kanban-team` (see Quick Start below). If you use GitOps (Argo CD / Flux), point your HelmRelease to the `helm/vibe-kanban-team` path in this repo.
 
 ## Quick Start
 
@@ -143,23 +143,23 @@ If you use the CNPG manifests in `k8s/cnpg/`, the `electric_sync` role is create
 ### 2. Create Namespace and Kubernetes Secrets
 
 ```bash
-kubectl create namespace vibe-kanban-cloud
+kubectl create namespace vibe-kanban-team
 
 # Database connection URLs
 kubectl create secret generic vibe-kanban-db \
-  --namespace vibe-kanban-cloud \
+  --namespace vibe-kanban-team \
   --from-literal=url='postgres://user:pass@your-db-host:5432/remote' \
   --from-literal=electric-url='postgresql://electric_sync:pass@your-db-host:5432/remote?sslmode=disable'
 
 # Application secrets
 kubectl create secret generic vibe-kanban-secrets \
-  --namespace vibe-kanban-cloud \
+  --namespace vibe-kanban-team \
   --from-literal=jwt-secret="$(openssl rand -base64 32)" \
   --from-literal=electric-role-password='your-electric-password'
 
 # OAuth credentials
 kubectl create secret generic vibe-kanban-oauth \
-  --namespace vibe-kanban-cloud \
+  --namespace vibe-kanban-team \
   --from-literal=github-client-id='your-github-client-id' \
   --from-literal=github-client-secret='your-github-client-secret'
 ```
@@ -170,7 +170,7 @@ If your image registry is private, create a pull secret and reference it in `ima
 
 ```bash
 kubectl create secret docker-registry registry-credentials \
-  --namespace vibe-kanban-cloud \
+  --namespace vibe-kanban-team \
   --docker-server='your-registry.example.com' \
   --docker-username='your-registry-username' \
   --docker-password='your-registry-token' \
@@ -180,15 +180,15 @@ kubectl create secret docker-registry registry-credentials \
 ### 4. Create Values File
 
 ```bash
-cp helm/vibe-kanban-cloud/values-example.yaml values-production.yaml
+cp helm/vibe-kanban-team/values-example.yaml values-production.yaml
 # Edit values-production.yaml with your secret names and image repositories.
 ```
 
 ### 5. Deploy
 
 ```bash
-helm upgrade --install vibe-kanban ./helm/vibe-kanban-cloud \
-  --namespace vibe-kanban-cloud \
+helm upgrade --install vibe-kanban ./helm/vibe-kanban-team \
+  --namespace vibe-kanban-team \
   --create-namespace \
   -f values-production.yaml
 ```
@@ -389,24 +389,24 @@ If you want a versioned release tag for this repo (optional), create a tag like 
 ### Check Pod Status
 
 ```bash
-kubectl get pods -n vibe-kanban-cloud
-kubectl describe pod <pod-name> -n vibe-kanban-cloud
+kubectl get pods -n vibe-kanban-team
+kubectl describe pod <pod-name> -n vibe-kanban-team
 ```
 
 ### View Logs
 
 ```bash
 # Vibe Kanban server
-kubectl logs -n vibe-kanban-cloud -l app.kubernetes.io/name=vibe-kanban-cloud -f
+kubectl logs -n vibe-kanban-team -l app.kubernetes.io/name=vibe-kanban-team -f
 
 # ElectricSQL
-kubectl logs -n vibe-kanban-cloud -l app.kubernetes.io/component=electric -f
+kubectl logs -n vibe-kanban-team -l app.kubernetes.io/component=electric -f
 ```
 
 ### ElectricSQL Health
 
 ```bash
-kubectl port-forward -n vibe-kanban-cloud svc/<release>-electric 3000:3000
+kubectl port-forward -n vibe-kanban-team svc/<release>-electric 3000:3000
 curl http://localhost:3000/v1/health
 ```
 

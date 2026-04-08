@@ -2,9 +2,9 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "vibe-kanban-cloud.frontend.fullname" . }}
+  name: {{ include "vibe-kanban-team.frontend.fullname" . }}
   labels:
-    {{- include "vibe-kanban-cloud.labels" . | nindent 4 }}
+    {{- include "vibe-kanban-team.labels" . | nindent 4 }}
     app.kubernetes.io/component: frontend
 spec:
   type: {{ .Values.frontend.service.type }}
@@ -18,6 +18,6 @@ spec:
       protocol: TCP
       name: code-server
   selector:
-    {{- include "vibe-kanban-cloud.selectorLabels" . | nindent 4 }}
+    {{- include "vibe-kanban-team.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: frontend
 {{- end }}

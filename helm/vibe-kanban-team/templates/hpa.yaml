@@ -2,14 +2,14 @@
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: {{ include "vibe-kanban-cloud.fullname" . }}
+  name: {{ include "vibe-kanban-team.fullname" . }}
   labels:
-    {{- include "vibe-kanban-cloud.labels" . | nindent 4 }}
+    {{- include "vibe-kanban-team.labels" . | nindent 4 }}
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: {{ include "vibe-kanban-cloud.fullname" . }}
+    name: {{ include "vibe-kanban-team.fullname" . }}
   minReplicas: {{ .Values.autoscaling.minReplicas }}
   maxReplicas: {{ .Values.autoscaling.maxReplicas }}
   metrics:

@@ -2,15 +2,15 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "vibe-kanban-cloud.relay.fullname" . }}
+  name: {{ include "vibe-kanban-team.relay.fullname" . }}
   labels:
-    {{- include "vibe-kanban-cloud.labels" . | nindent 4 }}
+    {{- include "vibe-kanban-team.labels" . | nindent 4 }}
     app.kubernetes.io/component: relay
 spec:
   replicas: {{ .Values.relay.replicaCount }}
   selector:
     matchLabels:
-      {{- include "vibe-kanban-cloud.selectorLabels" . | nindent 6 }}
+      {{- include "vibe-kanban-team.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: relay
   template:
     metadata:
@@ -19,7 +19,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       labels:
-        {{- include "vibe-kanban-cloud.labels" . | nindent 8 }}
+        {{- include "vibe-kanban-team.labels" . | nindent 8 }}
         app.kubernetes.io/component: relay
         {{- with .Values.podLabels }}
         {{- toYaml . | nindent 8 }}
@@ -29,7 +29,7 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ include "vibe-kanban-cloud.serviceAccountName" . }}
+      serviceAccountName: {{ include "vibe-kanban-team.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:

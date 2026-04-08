@@ -3,7 +3,7 @@
 
 # Image configuration
 image:
-  repository: registry.example.com/community-infra/vibe-kanban-cloud/vibe-kanban-remote
+  repository: registry.example.com/community-infra/vibe-kanban-team/vibe-kanban-remote
   tag: ""  # Defaults to chart appVersion; set to a version to pin
   pullPolicy: Always
 
@@ -38,7 +38,7 @@ relay:
   enabled: false
 
   image:
-    repository: registry.example.com/community-infra/vibe-kanban-cloud/vibe-kanban-relay
+    repository: registry.example.com/community-infra/vibe-kanban-team/vibe-kanban-relay
     tag: ""  # Defaults to chart appVersion; set to a version to pin
     pullPolicy: Always
 

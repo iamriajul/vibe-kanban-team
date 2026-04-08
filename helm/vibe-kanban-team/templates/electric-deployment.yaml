@@ -2,27 +2,27 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "vibe-kanban-cloud.electric.fullname" . }}
+  name: {{ include "vibe-kanban-team.electric.fullname" . }}
   labels:
-    {{- include "vibe-kanban-cloud.labels" . | nindent 4 }}
+    {{- include "vibe-kanban-team.labels" . | nindent 4 }}
     app.kubernetes.io/component: electric
 spec:
   replicas: 1
   selector:
     matchLabels:
-      {{- include "vibe-kanban-cloud.selectorLabels" . | nindent 6 }}
+      {{- include "vibe-kanban-team.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: electric
   template:
     metadata:
       labels:
-        {{- include "vibe-kanban-cloud.labels" . | nindent 8 }}
+        {{- include "vibe-kanban-team.labels" . | nindent 8 }}
         app.kubernetes.io/component: electric
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ include "vibe-kanban-cloud.serviceAccountName" . }}
+      serviceAccountName: {{ include "vibe-kanban-team.serviceAccountName" . }}
       securityContext:
         fsGroup: 1000
       # Wait for Vibe Kanban to run migrations before starting Electric
@@ -34,7 +34,7 @@ spec:
             - -c
             - |
               echo "Waiting for Vibe Kanban to initialize database..."
-              until wget -q --spider http://{{ include "vibe-kanban-cloud.fullname" . }}:{{ .Values.service.port }}/health 2>/dev/null; do
+              until wget -q --spider http://{{ include "vibe-kanban-team.fullname" . }}:{{ .Values.service.port }}/health 2>/dev/null; do
                 echo "Vibe Kanban not ready yet, retrying in 5s..."
                 sleep 5
               done
@@ -58,7 +58,7 @@ spec:
             - name: PG_PROXY_PORT
               value: "65432"
             - name: LOGICAL_PUBLISHER_HOST
-              value: "{{ include "vibe-kanban-cloud.electric.fullname" . }}"
+              value: "{{ include "vibe-kanban-team.electric.fullname" . }}"
             {{- with .Values.electric.env }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

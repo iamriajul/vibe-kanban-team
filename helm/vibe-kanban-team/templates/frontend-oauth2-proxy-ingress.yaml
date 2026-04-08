@@ -1,11 +1,11 @@
 {{- if and .Values.frontend.enabled .Values.frontend.auth.enabled }}
-{{- $proxyName := printf "%s-oauth2-proxy" (include "vibe-kanban-cloud.frontend.fullname" .) -}}
+{{- $proxyName := printf "%s-oauth2-proxy" (include "vibe-kanban-team.frontend.fullname" .) -}}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: {{ $proxyName }}
   labels:
-    {{- include "vibe-kanban-cloud.labels" . | nindent 4 }}
+    {{- include "vibe-kanban-team.labels" . | nindent 4 }}
     app.kubernetes.io/component: oauth2-proxy
   {{- with .Values.frontend.auth.ingress.annotations }}
   annotations:

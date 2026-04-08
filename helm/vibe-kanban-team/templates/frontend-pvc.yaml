@@ -2,9 +2,9 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: {{ include "vibe-kanban-cloud.frontend.fullname" . }}-home
+  name: {{ include "vibe-kanban-team.frontend.fullname" . }}-home
   labels:
-    {{- include "vibe-kanban-cloud.labels" . | nindent 4 }}
+    {{- include "vibe-kanban-team.labels" . | nindent 4 }}
     app.kubernetes.io/component: frontend
 spec:
   accessModes:

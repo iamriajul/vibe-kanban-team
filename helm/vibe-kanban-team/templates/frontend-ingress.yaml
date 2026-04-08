@@ -1,12 +1,12 @@
 {{- if and .Values.frontend.enabled .Values.frontend.ingress.enabled -}}
-{{- $frontendName := include "vibe-kanban-cloud.frontend.fullname" . -}}
+{{- $frontendName := include "vibe-kanban-team.frontend.fullname" . -}}
 {{- $frontendPort := .Values.frontend.app.port -}}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: {{ $frontendName }}
   labels:
-    {{- include "vibe-kanban-cloud.labels" . | nindent 4 }}
+    {{- include "vibe-kanban-team.labels" . | nindent 4 }}
     app.kubernetes.io/component: frontend
   annotations:
     {{- with .Values.frontend.ingress.annotations }}

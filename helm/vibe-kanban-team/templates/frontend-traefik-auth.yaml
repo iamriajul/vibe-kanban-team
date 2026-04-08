@@ -1,12 +1,12 @@
 {{- if and .Values.frontend.enabled .Values.frontend.auth.enabled .Values.frontend.auth.createTraefikMiddleware }}
-{{- $proxyName := printf "%s-oauth2-proxy" (include "vibe-kanban-cloud.frontend.fullname" .) -}}
+{{- $proxyName := printf "%s-oauth2-proxy" (include "vibe-kanban-team.frontend.fullname" .) -}}
 # Traefik ForwardAuth middleware — delegates auth to oauth2-proxy
 apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
   name: {{ $proxyName }}
   labels:
-    {{- include "vibe-kanban-cloud.labels" . | nindent 4 }}
+    {{- include "vibe-kanban-team.labels" . | nindent 4 }}
     app.kubernetes.io/component: oauth2-proxy
 spec:
   forwardAuth:

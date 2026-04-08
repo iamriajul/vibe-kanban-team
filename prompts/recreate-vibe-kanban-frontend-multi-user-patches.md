@@ -3,7 +3,7 @@
 Use this prompt when upgrading to a new major upstream `vibe-kanban` release and rebuilding our downstream frontend patch stack without relying on old patch hunks.
 
 ## Goal
-Recreate the current downstream behavior as a clean, minimal patch stack in this repo (`vibe-kanban-cloud`) using patch architecture only.
+Recreate the current downstream behavior as a clean, minimal patch stack in this repo (`vibe-kanban-team`) using patch architecture only.
 
 Canonical output patch stack (frontend):
 1. `0001-feat-support-browser-scoped-auth-sessions-and-per-us.patch`

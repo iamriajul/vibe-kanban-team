@@ -1,9 +1,9 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "vibe-kanban-cloud.fullname" . }}
+  name: {{ include "vibe-kanban-team.fullname" . }}
   labels:
-    {{- include "vibe-kanban-cloud.labels" . | nindent 4 }}
+    {{- include "vibe-kanban-team.labels" . | nindent 4 }}
     app.kubernetes.io/component: app
 spec:
   {{- if not .Values.autoscaling.enabled }}
@@ -11,7 +11,7 @@ spec:
   {{- end }}
   selector:
     matchLabels:
-      {{- include "vibe-kanban-cloud.selectorLabels" . | nindent 6 }}
+      {{- include "vibe-kanban-team.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       {{- with .Values.podAnnotations }}
@@ -19,7 +19,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       labels:
-        {{- include "vibe-kanban-cloud.labels" . | nindent 8 }}
+        {{- include "vibe-kanban-team.labels" . | nindent 8 }}
         app.kubernetes.io/component: app
         {{- with .Values.podLabels }}
         {{- toYaml . | nindent 8 }}
@@ -29,7 +29,7 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ include "vibe-kanban-cloud.serviceAccountName" . }}
+      serviceAccountName: {{ include "vibe-kanban-team.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
@@ -45,7 +45,7 @@ spec:
           env:
             {{- if .Values.electric.enabled }}
             - name: ELECTRIC_URL
-              value: "http://{{ include "vibe-kanban-cloud.electric.fullname" . }}:{{ .Values.electric.service.port }}"
+              value: "http://{{ include "vibe-kanban-team.electric.fullname" . }}:{{ .Values.electric.service.port }}"
             {{- end }}
             {{- with .Values.env }}
             {{- toYaml . | nindent 12 }}

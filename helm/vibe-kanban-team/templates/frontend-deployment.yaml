@@ -2,15 +2,15 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "vibe-kanban-cloud.frontend.fullname" . }}
+  name: {{ include "vibe-kanban-team.frontend.fullname" . }}
   labels:
-    {{- include "vibe-kanban-cloud.labels" . | nindent 4 }}
+    {{- include "vibe-kanban-team.labels" . | nindent 4 }}
     app.kubernetes.io/component: frontend
 spec:
   replicas: 1
   selector:
     matchLabels:
-      {{- include "vibe-kanban-cloud.selectorLabels" . | nindent 6 }}
+      {{- include "vibe-kanban-team.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: frontend
   template:
     metadata:
@@ -19,7 +19,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       labels:
-        {{- include "vibe-kanban-cloud.labels" . | nindent 8 }}
+        {{- include "vibe-kanban-team.labels" . | nindent 8 }}
         app.kubernetes.io/component: frontend
     spec:
       {{- with .Values.imagePullSecrets }}
@@ -87,16 +87,16 @@ spec:
       volumes:
         - name: init-script
           configMap:
-            name: {{ include "vibe-kanban-cloud.frontend.fullname" . }}-init
+            name: {{ include "vibe-kanban-team.frontend.fullname" . }}-init
             defaultMode: 0755
         {{- if .Values.frontend.persistence.enabled }}
         - name: home
           persistentVolumeClaim:
-            claimName: {{ include "vibe-kanban-cloud.frontend.fullname" . }}-home
+            claimName: {{ include "vibe-kanban-team.frontend.fullname" . }}-home
         {{- end }}
         - name: docker-data
           persistentVolumeClaim:
-            claimName: {{ include "vibe-kanban-cloud.frontend.fullname" . }}-docker
+            claimName: {{ include "vibe-kanban-team.frontend.fullname" . }}-docker
         {{- if .Values.frontend.vpn.enabled }}
         - name: vpn-config
           secret:

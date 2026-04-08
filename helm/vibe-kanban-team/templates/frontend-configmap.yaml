@@ -2,9 +2,9 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ include "vibe-kanban-cloud.frontend.fullname" . }}-init
+  name: {{ include "vibe-kanban-team.frontend.fullname" . }}-init
   labels:
-    {{- include "vibe-kanban-cloud.labels" . | nindent 4 }}
+    {{- include "vibe-kanban-team.labels" . | nindent 4 }}
     app.kubernetes.io/component: frontend
 data:
   init.sh: |

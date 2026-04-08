@@ -1,12 +1,12 @@
 {{- if and .Values.relay.enabled .Values.relay.ingress.enabled -}}
-{{- $relayName := include "vibe-kanban-cloud.relay.fullname" . -}}
+{{- $relayName := include "vibe-kanban-team.relay.fullname" . -}}
 {{- $relaySvcPort := .Values.relay.service.port -}}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: {{ $relayName }}
   labels:
-    {{- include "vibe-kanban-cloud.labels" . | nindent 4 }}
+    {{- include "vibe-kanban-team.labels" . | nindent 4 }}
     app.kubernetes.io/component: relay
   {{- with .Values.relay.ingress.annotations }}
   annotations:
