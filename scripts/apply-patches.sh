@@ -3,22 +3,21 @@ set -eu
 
 usage() {
   cat <<'USAGE'
-Usage: scripts/apply-patches.sh [TARGET_SUBMODULE]
+Usage: scripts/apply-patches.sh [TARGET_REPO]
 
-Applies patches to the specified Vibe Kanban submodule.
+Applies patches to the shared Vibe Kanban checkout.
 
 Arguments:
-  TARGET_SUBMODULE   Path to submodule (vibe-kanban or vibe-kanban-remote)
+  TARGET_REPO        Path to checkout
                      Default: vibe-kanban
 
-Patch Categories:
-  common/    - Applied to both submodules
-  frontend/  - Applied only to vibe-kanban/
-  remote/    - Applied only to vibe-kanban-remote/
+Patch Source:
+  patches/series
 
 Examples:
-  ./scripts/apply-patches.sh vibe-kanban          # Apply frontend patches
-  ./scripts/apply-patches.sh vibe-kanban-remote   # Apply remote patches
+  ./scripts/apply-patches.sh
+  ./scripts/apply-patches.sh vibe-kanban
+  ./scripts/apply-patches.sh /path/to/vibe-kanban
 
 USAGE
 }
@@ -29,9 +28,13 @@ if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
 fi
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-TARGET_REPO="${1:-${REPO_ROOT}/vibe-kanban}"
+TARGET_REPO_INPUT="${1:-vibe-kanban}"
 
-# Determine target name from path
+case "${TARGET_REPO_INPUT}" in
+  /*) TARGET_REPO="${TARGET_REPO_INPUT}" ;;
+  *) TARGET_REPO="${REPO_ROOT}/${TARGET_REPO_INPUT}" ;;
+esac
+
 TARGET_NAME="$(basename "${TARGET_REPO}")"
 
 # Validate target repository
@@ -40,27 +43,11 @@ if ! git -C "${TARGET_REPO}" rev-parse --is-inside-work-tree >/dev/null 2>&1; th
   exit 1
 fi
 
-# Determine which patch category to use based on target
-case "${TARGET_NAME}" in
-  vibe-kanban)
-    PATCH_CATEGORY="frontend"
-    ;;
-  vibe-kanban-remote)
-    PATCH_CATEGORY="remote"
-    ;;
-  *)
-    echo "Error: Unknown target '${TARGET_NAME}'. Expected 'vibe-kanban' or 'vibe-kanban-remote'"
-    exit 1
-    ;;
-esac
+echo "Applying linear patch series to ${TARGET_NAME}"
 
-echo "Applying patches to ${TARGET_NAME} (category: ${PATCH_CATEGORY})"
-
-# Function to apply patches from a series file
 apply_patch_series() {
   local series_file="$1"
   local patch_dir="$2"
-  local category_name="$3"
 
   if [ ! -f "${series_file}" ]; then
     echo "Warning: Series file not found: ${series_file}"
@@ -80,7 +67,7 @@ apply_patch_series() {
       exit 1
     fi
 
-    echo "  [${category_name}] Applying: ${patch}"
+    echo "  Applying: ${patch}"
     if ! git -C "${TARGET_REPO}" apply --whitespace=nowarn "${PATCH_PATH}"; then
       echo "Error: Failed to apply patch: ${patch}"
       echo "You may need to resolve conflicts manually or update the patch for the current version."
@@ -90,28 +77,12 @@ apply_patch_series() {
   done < "${series_file}"
 
   if [ "${applied}" -gt 0 ]; then
-    echo "  [${category_name}] Applied ${applied} patch(es)"
+    echo "Applied ${applied} patch(es)"
   fi
 }
 
-# Apply common patches first (if any)
-COMMON_SERIES="${REPO_ROOT}/patches/common/series"
-COMMON_DIR="${REPO_ROOT}/patches/common"
-if [ -f "${COMMON_SERIES}" ]; then
-  echo "Step 1/2: Applying common patches..."
-  apply_patch_series "${COMMON_SERIES}" "${COMMON_DIR}" "common"
-else
-  echo "Step 1/2: No common patches to apply"
-fi
-
-# Apply category-specific patches
-CATEGORY_SERIES="${REPO_ROOT}/patches/${PATCH_CATEGORY}/series"
-CATEGORY_DIR="${REPO_ROOT}/patches/${PATCH_CATEGORY}"
-if [ -f "${CATEGORY_SERIES}" ]; then
-  echo "Step 2/2: Applying ${PATCH_CATEGORY} patches..."
-  apply_patch_series "${CATEGORY_SERIES}" "${CATEGORY_DIR}" "${PATCH_CATEGORY}"
-else
-  echo "Step 2/2: No ${PATCH_CATEGORY} patches to apply"
-fi
+SERIES_FILE="${REPO_ROOT}/patches/series"
+PATCH_DIR="${REPO_ROOT}/patches"
+apply_patch_series "${SERIES_FILE}" "${PATCH_DIR}"
 
 echo "Patch application complete for ${TARGET_NAME}"

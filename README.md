@@ -364,7 +364,7 @@ The CI/CD pipeline builds the Docker image and pushes it to the GitLab registry.
 
 ### Image Output
 
-After a successful build:
+After a successful remote-image build:
 - `$CI_REGISTRY_IMAGE/vibe-kanban-remote:<release-version>`
 - `$CI_REGISTRY_IMAGE/vibe-kanban-remote:latest`
 
@@ -372,11 +372,11 @@ The Helm chart defaults to the chart `appVersion` (which is `latest` on main). T
 
 ## Release Tracking (Upstream Vibe Kanban)
 
-We track upstream releases from the Vibe Kanban GitHub repo and bump the submodule when we want a new feature or fix. Keep it simple:
+We track upstream releases from the Vibe Kanban GitHub repo and bump the shared `vibe-kanban/` submodule when we want a new feature or fix. Keep it simple:
 
 1. Watch for new upstream releases (GitHub Releases/notifications).
 2. Decide the version to adopt (e.g. `v1.4.0`).
-3. Update the submodule and open a merge request.
+3. Update the shared submodule and open a merge request.
 4. Merge → CI builds a new image.
 5. Deploy by pinning the image tag.
 
@@ -397,7 +397,7 @@ cd ..
 ls patches
 ```
 
-Add the patch filename to `patches/series` in the order you want them applied.
+Rename the patch into the next `NNNN-...patch` slot and add it to `patches/series` in the order you want it applied.
 
 ### Applying Patches Locally
 
@@ -410,7 +410,7 @@ Keep the patch stack minimal and prefer upstreaming when possible.
 ## Upgrading Vibe Kanban (Process)
 
 ```bash
-# 1) Update the submodule to a tag or commit
+# 1) Update the shared submodule to a tag or commit
 scripts/update-vibe-kanban.sh v1.4.0
 
 # 2) Review and commit

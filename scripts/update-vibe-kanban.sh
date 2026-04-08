@@ -34,9 +34,12 @@ git -C "${REPO_ROOT}/vibe-kanban" checkout "${TARGET}"
 
 git -C "${REPO_ROOT}" add vibe-kanban
 
-echo "Updated submodule to ${TARGET}."
+echo "Updated shared vibe-kanban submodule to ${TARGET}."
 echo "Next:"
+echo "  ./scripts/apply-patches.sh"
 echo "  git status"
 echo "  git commit -m \"chore: bump vibe-kanban to ${TARGET}\""
+echo "  git tag v${TARGET#v}-<timestamp>    # npm/frontend release"
+echo "  git tag remote-v${TARGET#v}         # remote/relay release"
 echo "  git push"
-echo "Then wait for CI to build the image and deploy using scripts/deploy.sh <commit-sha>."
+echo "Then push the release tag you need and deploy using scripts/deploy.sh <commit-sha>."

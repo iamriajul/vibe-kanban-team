@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Nightly release check for vibe-kanban submodules.
+# Nightly release check for the shared vibe-kanban submodule.
 #
 # Detects new upstream tags, verifies patches apply cleanly, updates patch
 # metadata and submodule refs, then commits + tags + pushes to trigger the
 # existing tag-based CI pipelines.
 #
 # Usage:
-#   scripts/nightly-check-release.sh frontend   # check vibe-kanban (NPM)
-#   scripts/nightly-check-release.sh remote      # check vibe-kanban-remote (Docker)
+#   scripts/nightly-check-release.sh frontend   # create NPM/frontend release tag
+#   scripts/nightly-check-release.sh remote     # create remote/relay release tag
 #
 # Required environment variables:
 #   PROJECT_ACCESS_TOKEN  - GitLab token with write_repository scope
@@ -32,24 +32,20 @@ fi
 
 # ── Configuration per target ─────────────────────────────────────────────────
 UPSTREAM_REPO_API="${UPSTREAM_REPO_API:-https://api.github.com/repos/BloopAI/vibe-kanban}"
+SUBMODULE_PATH="vibe-kanban"
+UPSTREAM_TAG_REGEX='^v?[0-9]+\.[0-9]+\.[0-9]+([-.].*)?$'
 
 if [ "$TARGET" = "frontend" ]; then
-  SUBMODULE_PATH="vibe-kanban"
-  PATCH_DIR="patches/frontend"
-  # Match: v0.1.29-20260311170839 (semver + 14-digit timestamp)
-  TAG_REGEX='^v[0-9]+\.[0-9]+\.[0-9]+-[0-9]{14}$'
-  TAG_PREFIX=""
+  LOCAL_TAG_REGEX='^v[0-9]+\.[0-9]+\.[0-9]+-[0-9]{14}$'
 else
-  SUBMODULE_PATH="vibe-kanban-remote"
-  PATCH_DIR="patches/remote"
-  # Match: remote-v0.1.21 (semver only)
-  TAG_REGEX='^remote-v[0-9]+\.[0-9]+\.[0-9]+$'
-  TAG_PREFIX="remote-"
+  LOCAL_TAG_REGEX='^remote-v?[0-9]+\.[0-9]+\.[0-9]+([-.].*)?$'
 fi
 
 echo "=== Nightly release check: $TARGET ==="
 echo "Submodule: $SUBMODULE_PATH"
-echo "Patch dir: $PATCH_DIR"
+echo "Patch dir: patches/"
+
+SERIES_FILE="${REPO_ROOT}/patches/series"
 
 # ── Fetch upstream tags ──────────────────────────────────────────────────────
 echo ""
@@ -58,11 +54,11 @@ echo "Fetching upstream tags..."
 UPSTREAM_TAGS=$(curl -sf "${UPSTREAM_REPO_API}/git/refs/tags" \
   | jq -r '.[].ref' \
   | sed 's|^refs/tags/||' \
-  | grep -E "$TAG_REGEX" \
+  | grep -E "$UPSTREAM_TAG_REGEX" \
   | sort -V)
 
 if [ -z "$UPSTREAM_TAGS" ]; then
-  echo "No upstream tags matched pattern: $TAG_REGEX"
+  echo "No upstream tags matched pattern: $UPSTREAM_TAG_REGEX"
   exit 0
 fi
 
@@ -72,18 +68,27 @@ echo "Upstream tags found: $(echo "$UPSTREAM_TAGS" | wc -l)"
 echo "Fetching local tags..."
 git fetch --tags origin 2>/dev/null || true
 
-LOCAL_TAGS=$(git tag -l | grep -E "$TAG_REGEX" | sort -V)
+LOCAL_TAGS=$(git tag -l | grep -E "$LOCAL_TAG_REGEX" | sort -V || true)
 
 echo "Local tags found: $(echo "$LOCAL_TAGS" | grep -c . || echo 0)"
 
-# ── Find new tags (only those newer than our latest local tag) ────────────────
+# ── Find new upstream tags newer than the latest released upstream version ───
+LATEST_RELEASED_UPSTREAM=""
 if [ -n "$LOCAL_TAGS" ]; then
-  LATEST_LOCAL=$(echo "$LOCAL_TAGS" | tail -1)  # already sort -V'd
+  LATEST_LOCAL=$(echo "$LOCAL_TAGS" | tail -1)
   echo "Latest local tag: $LATEST_LOCAL"
-  # Insert our latest tag into upstream list, sort, take everything after it
-  NEW_TAGS=$(printf '%s\n' "$LATEST_LOCAL" $UPSTREAM_TAGS \
+  if [ "$TARGET" = "frontend" ]; then
+    LATEST_RELEASED_UPSTREAM="${LATEST_LOCAL%-*}"
+  else
+    LATEST_RELEASED_UPSTREAM="${LATEST_LOCAL#remote-}"
+  fi
+  echo "Latest released upstream tag: $LATEST_RELEASED_UPSTREAM"
+fi
+
+if [ -n "$LATEST_RELEASED_UPSTREAM" ]; then
+  NEW_TAGS=$(printf '%s\n%s\n' "$LATEST_RELEASED_UPSTREAM" "$UPSTREAM_TAGS" \
     | sort -V -u \
-    | awk -v latest="$LATEST_LOCAL" 'found {print} $0 == latest {found=1}') || true
+    | awk -v latest="$LATEST_RELEASED_UPSTREAM" 'seen { print } $0 == latest { seen = 1 }') || true
 else
   NEW_TAGS="$UPSTREAM_TAGS"
 fi
@@ -101,7 +106,7 @@ echo "$NEW_TAGS"
 # Take only the latest (highest version)
 LATEST_TAG=$(echo "$NEW_TAGS" | tail -1)
 echo ""
-echo "Processing latest: $LATEST_TAG"
+echo "Processing latest upstream tag: $LATEST_TAG"
 
 # ── Resolve the tag to a commit SHA ──────────────────────────────────────────
 TAG_REF=$(curl -sf "${UPSTREAM_REPO_API}/git/refs/tags/${LATEST_TAG}")
@@ -130,20 +135,16 @@ git -C "${REPO_ROOT}/${SUBMODULE_PATH}" checkout "$COMMIT_SHA"
 echo ""
 echo "Verifying patches apply cleanly..."
 
-SERIES_FILE="${REPO_ROOT}/${PATCH_DIR}/series"
-if [ ! -f "$SERIES_FILE" ]; then
-  echo "No series file at $SERIES_FILE — skipping patch check"
-else
-  PATCH_FAILED=false
-  FAILED_PATCH=""
+PATCH_FAILED=false
+FAILED_PATCH=""
 
+if [ -f "$SERIES_FILE" ]; then
   while IFS= read -r patch_name; do
-    # Skip empty lines and comments
     case "${patch_name}" in
       "" | \#*) continue ;;
     esac
 
-    PATCH_FILE="${REPO_ROOT}/${PATCH_DIR}/${patch_name}"
+    PATCH_FILE="${REPO_ROOT}/patches/${patch_name}"
     if [ ! -f "$PATCH_FILE" ]; then
       echo "  ERROR: Patch file missing: $patch_name"
       PATCH_FAILED=true
@@ -152,25 +153,28 @@ else
     fi
 
     if ! git -C "${REPO_ROOT}/${SUBMODULE_PATH}" apply --check --whitespace=nowarn "$PATCH_FILE" 2>/dev/null; then
-      echo "  FAIL: $patch_name does not apply cleanly"
+      echo "  FAIL: ${patch_name} does not apply cleanly"
       PATCH_FAILED=true
       FAILED_PATCH="$patch_name"
       break
     fi
 
-    echo "  OK: $patch_name"
+    echo "  OK: ${patch_name}"
   done < "$SERIES_FILE"
+else
+  echo "No series file at $SERIES_FILE"
+fi
 
-  if [ "$PATCH_FAILED" = true ]; then
-    echo ""
-    echo "Patch verification FAILED for $TARGET at tag $LATEST_TAG"
-    echo "Failed patch: $FAILED_PATCH"
+if [ "$PATCH_FAILED" = true ]; then
+  echo ""
+  echo "Patch verification FAILED for $TARGET at tag $LATEST_TAG"
+  echo "Failed patch: $FAILED_PATCH"
 
-    # ── Discord notification for patch failure ─────────────────────────────
-    if [ -n "${DISCORD_WEBHOOK_PRODUCTION:-}" ]; then
-      echo "Sending Discord notification..."
+  # ── Discord notification for patch failure ─────────────────────────────
+  if [ -n "${DISCORD_WEBHOOK_PRODUCTION:-}" ]; then
+    echo "Sending Discord notification..."
 
-      PAYLOAD=$(cat <<DISCORD_EOF
+    PAYLOAD=$(cat <<DISCORD_EOF
 {
   "embeds": [{
     "title": "Patch Failure: ${TARGET}",
@@ -188,19 +192,18 @@ else
   }]
 }
 DISCORD_EOF
-      )
+    )
 
-      curl -sf -X POST \
-        -H "Content-Type: application/json" \
-        -d "$PAYLOAD" \
-        "$DISCORD_WEBHOOK_PRODUCTION" \
-        --max-time 30 \
-        --retry 3 \
-        --retry-delay 5 || echo "Warning: Discord notification failed"
-    fi
-
-    exit 1
+    curl -sf -X POST \
+      -H "Content-Type: application/json" \
+      -d "$PAYLOAD" \
+      "$DISCORD_WEBHOOK_PRODUCTION" \
+      --max-time 30 \
+      --retry 3 \
+      --retry-delay 5 || echo "Warning: Discord notification failed"
   fi
+
+  exit 1
 fi
 
 echo ""
@@ -216,11 +219,10 @@ if [ -f "$SERIES_FILE" ]; then
       "" | \#*) continue ;;
     esac
 
-    PATCH_FILE="${REPO_ROOT}/${PATCH_DIR}/${patch_name}"
+    PATCH_FILE="${REPO_ROOT}/patches/${patch_name}"
     if [ -f "$PATCH_FILE" ]; then
-      # Replace the From hash on the first line
       sed -i "1s/^From [0-9a-f]\\{40\\}/From ${COMMIT_SHA}/" "$PATCH_FILE"
-      echo "  Updated: $patch_name"
+      echo "  Updated: ${patch_name}"
     fi
   done < "$SERIES_FILE"
 fi
@@ -230,7 +232,7 @@ echo ""
 echo "Staging submodule ref and patch updates..."
 
 git -C "$REPO_ROOT" add "$SUBMODULE_PATH"
-git -C "$REPO_ROOT" add "$PATCH_DIR/"
+git -C "$REPO_ROOT" add "${REPO_ROOT}/patches/"
 
 # Check if there are actual changes to commit
 if git -C "$REPO_ROOT" diff --cached --quiet; then
@@ -240,12 +242,11 @@ fi
 
 # ── Commit, tag, push ───────────────────────────────────────────────────────
 if [ "$TARGET" = "frontend" ]; then
-  COMMIT_MSG="chore: bump vibe-kanban to ${LATEST_TAG}"
-  RELEASE_TAG="$LATEST_TAG"
+  RELEASE_TAG="${LATEST_TAG}-$(date -u +%Y%m%d%H%M%S)"
+  COMMIT_MSG="chore: bump vibe-kanban to ${LATEST_TAG} for frontend release"
 else
-  VERSION="${LATEST_TAG#remote-}"
-  COMMIT_MSG="chore: ${LATEST_TAG}"
-  RELEASE_TAG="$LATEST_TAG"
+  RELEASE_TAG="remote-${LATEST_TAG#remote-}"
+  COMMIT_MSG="chore: bump vibe-kanban to ${LATEST_TAG} for remote release"
 fi
 
 echo ""

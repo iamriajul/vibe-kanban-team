@@ -1,86 +1,50 @@
 # Patch Directory Structure
 
-This directory contains patches for downstream customizations to Vibe Kanban.
+This directory contains the linear downstream patch stack for the shared `vibe-kanban/` checkout.
 
 ## Organization
 
-```
+```text
 patches/
-├── common/          # Applied to both vibe-kanban/ and vibe-kanban-remote/
-│   └── series
-├── frontend/        # Applied only to vibe-kanban/ (NPM package)
-│   ├── series
-│   └── *.patch
-└── remote/          # Applied only to vibe-kanban-remote/ (Docker image)
-    ├── series
-    └── *.patch
+├── series
+├── 0001-*.patch
+├── 0002-*.patch
+└── ...
 ```
 
-## Patch Categories
-
-### Common Patches (`common/`)
-Patches that need to apply to both the frontend NPM package and the remote server.
-Examples: build system fixes, shared configuration changes.
-
-### Frontend Patches (`frontend/`)
-Patches specific to the NPM package (`npx vibe-kanban`).
-Currently includes:
-- `0005-fix-restore-old-vibe-kanban-experience.patch` - Restores v0.1.14 UX (disables migration prompts)
-
-### Remote Server Patches (`remote/`)
-Patches specific to the remote server deployment.
-Currently includes:
-- `0003-update-loops-template-ids.patch` - Custom Loops email template IDs
+`series` is the single source of truth. Patches apply top to bottom.
 
 ## Usage
 
 Patches are applied automatically by CI/CD pipelines and the `scripts/apply-patches.sh` script.
 
-### Apply patches to a specific submodule:
+### Apply patches:
 
 ```bash
-# Frontend (vibe-kanban/)
-./scripts/apply-patches.sh vibe-kanban
-
-# Remote server (vibe-kanban-remote/)
-./scripts/apply-patches.sh vibe-kanban-remote
+./scripts/apply-patches.sh
 ```
 
 ### Creating a new patch:
 
-#### For frontend:
+#### Creating a new patch:
 ```bash
 cd vibe-kanban/
 # Make your changes
 git add -A
 git commit -m "fix: your change description"
-git format-patch -1 -o ../patches/frontend/
-echo "NNNN-your-patch-name.patch" >> ../patches/frontend/series
-```
-
-#### For remote server:
-```bash
-cd vibe-kanban-remote/
-# Make your changes
-git add -A
-git commit -m "feat: your change description"
-git format-patch -1 -o ../patches/remote/
-echo "NNNN-your-patch-name.patch" >> ../patches/remote/series
+git format-patch -1 -o ../patches/
+mv ../patches/0001-your-patch.patch ../patches/NNNN-your-patch.patch
+echo "NNNN-your-patch.patch" >> ../patches/series
 ```
 
 ## Migration Notes
 
-**Previous structure** (removed):
-- All patches were in the root `patches/` directory
-- Single `patches/series` file
-- Applied to single `vibe-kanban/` submodule
-
-**New structure** (current):
-- Patches organized by target: `common/`, `frontend/`, `remote/`
-- Separate `series` files for each category
-- Support for dual submodules: `vibe-kanban/` and `vibe-kanban-remote/`
+**Current structure**:
+- Linear patch files at `patches/*.patch`
+- One ordering file: `patches/series`
+- A single upstream checkout: `vibe-kanban/`
 
 ## See Also
 
-- [ARCHITECTURE.md](../ARCHITECTURE.md) - Dual submodule architecture overview
+- [ARCHITECTURE.md](../ARCHITECTURE.md) - Shared submodule architecture overview
 - [scripts/apply-patches.sh](../scripts/apply-patches.sh) - Patch application script

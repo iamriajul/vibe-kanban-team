@@ -27,10 +27,10 @@ build-image-release:
     - if: '$CI_COMMIT_TAG =~ /^remote-v?[0-9]+\.[0-9]+\.[0-9]+([-.].*)?$/'
     - when: never
   before_script:
-    # Initialize vibe-kanban-remote submodule only (for remote server builds)
+    # Initialize the shared vibe-kanban submodule for remote server builds
     - apk add --no-cache git
-    - git submodule update --init vibe-kanban-remote
-    - scripts/apply-patches.sh vibe-kanban-remote
+    - git submodule update --init vibe-kanban
+    - scripts/apply-patches.sh
   script:
     - |
       # Extract version from tag: remote-v0.1.2 -> 0.1.2
@@ -84,22 +84,22 @@ build-image-release:
       if [ -n "$CACHE_FROM_IMAGE" ]; then
         docker build \
           --cache-from "$CACHE_FROM_IMAGE" \
-          -f vibe-kanban-remote/crates/remote/Dockerfile \
+          -f vibe-kanban/crates/remote/Dockerfile \
           --build-arg FEATURES="${FEATURES:-}" \
           --build-arg POSTHOG_API_KEY="${POSTHOG_API_KEY:-}" \
           --build-arg POSTHOG_API_ENDPOINT="${POSTHOG_API_ENDPOINT:-}" \
           --build-arg VITE_RELAY_API_BASE_URL="${VITE_RELAY_API_BASE_URL:-}" \
           -t "$BUILD_IMAGE" \
-          ./vibe-kanban-remote
+          ./vibe-kanban
       else
         docker build \
-          -f vibe-kanban-remote/crates/remote/Dockerfile \
+          -f vibe-kanban/crates/remote/Dockerfile \
           --build-arg FEATURES="${FEATURES:-}" \
           --build-arg POSTHOG_API_KEY="${POSTHOG_API_KEY:-}" \
           --build-arg POSTHOG_API_ENDPOINT="${POSTHOG_API_ENDPOINT:-}" \
           --build-arg VITE_RELAY_API_BASE_URL="${VITE_RELAY_API_BASE_URL:-}" \
           -t "$BUILD_IMAGE" \
-          ./vibe-kanban-remote
+          ./vibe-kanban
       fi
 
       push_target() {
@@ -138,10 +138,10 @@ build-relay-image-release:
     - if: '$CI_COMMIT_TAG =~ /^remote-v?[0-9]+\.[0-9]+\.[0-9]+([-.].*)?$/'
     - when: never
   before_script:
-    # Initialize vibe-kanban-remote submodule only (for relay server builds)
+    # Initialize the shared vibe-kanban submodule for relay server builds
     - apk add --no-cache git
-    - git submodule update --init vibe-kanban-remote
-    - scripts/apply-patches.sh vibe-kanban-remote
+    - git submodule update --init vibe-kanban
+    - scripts/apply-patches.sh
   script:
     - |
       # Extract version from tag: remote-v0.1.2 -> 0.1.2
@@ -195,14 +195,14 @@ build-relay-image-release:
       if [ -n "$CACHE_FROM_IMAGE" ]; then
         docker build \
           --cache-from "$CACHE_FROM_IMAGE" \
-          -f vibe-kanban-remote/crates/relay-tunnel/Dockerfile \
+          -f vibe-kanban/crates/relay-tunnel/Dockerfile \
           -t "$BUILD_IMAGE" \
-          ./vibe-kanban-remote
+          ./vibe-kanban
       else
         docker build \
-          -f vibe-kanban-remote/crates/relay-tunnel/Dockerfile \
+          -f vibe-kanban/crates/relay-tunnel/Dockerfile \
           -t "$BUILD_IMAGE" \
-          ./vibe-kanban-remote
+          ./vibe-kanban
       fi
 
       push_target() {
