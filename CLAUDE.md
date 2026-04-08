@@ -14,25 +14,26 @@ Downstream deployment and integration layer for Vibe Kanban. Owns Helm chart, K8
 
 - `helm/vibe-kanban-cloud/`: Helm chart (Remote, Relay, ElectricSQL, Frontend — all optional)
 - `k8s/`: environment-specific values (`values-production-{office,dol,hetzner,ovh}.yaml`)
-- `scripts/`: `apply-patches.sh`, `update-vibe-kanban.sh`, `update-vibe-kanban-remote.sh`, `deploy.sh`
-- `patches/{common,frontend,remote}/`: downstream patch stack
+- `scripts/`: `apply-patches.sh`, `update-vibe-kanban.sh`, `deploy.sh`
+- `patches/`: linear downstream patch stack (`series` + `*.patch`)
 - `.gitlab-ci.yml`, `.gitlab/ci/`: build/release pipelines
-- `vibe-kanban/` submodule (NPM package) / `vibe-kanban-remote/` submodule (Docker image)
+- `vibe-kanban/` submodule: single upstream reference for NPM, Remote, Relay
 
-## Submodule Architecture
+## Shared Submodule Model
 
-- `vibe-kanban/` = full app: local backend (`crates/server/`, `crates/db/`, SQLite), frontend (`packages/web-core/`), AND `crates/remote/`. Built as NPM package.
-- `vibe-kanban-remote/` = separate deployment ref for `crates/remote/` only. Tracks latest upstream. Built as Docker image.
-
-**Patch targeting**: local backend/UI → `patches/frontend/` (applied to `vibe-kanban/`). Remote/cloud server → `patches/remote/` (applied to `vibe-kanban-remote/`).
+- `vibe-kanban/` is the only upstream checkout. It contains the local backend (`crates/server/`, `crates/db/`), frontend (`packages/web-core/`), remote server (`crates/remote/`), and relay (`crates/relay-tunnel/`).
+- All downstream patches live directly in `patches/`.
+- `patches/series` is the only ordering source. Patches apply top to bottom.
+- `scripts/apply-patches.sh [repo]` applies the full downstream stack.
+- `scripts/update-vibe-kanban.sh` is the only manual submodule bump entrypoint.
 
 ## Agent Operating Model
 
 1. Deployment/integration first. Prefer `helm/`, `k8s/`, `scripts/`, CI, `patches/`.
 2. Submodule edits only as intermediate steps to generate patches.
-3. Never leave durable changes only in submodule working tree.
+3. Never leave durable changes only in the submodule working tree.
 4. **Every change must pass verification before committing** — see Development Workflow.
-5. See [ARCHITECTURE.md](./ARCHITECTURE.md) for dual submodule rationale.
+5. See [ARCHITECTURE.md](./ARCHITECTURE.md) for the shared-reference patch/release model.
 
 ## Development Workflow
 
@@ -48,9 +49,7 @@ sudo apt-get install -y libssl-dev libsqlite3-dev libclang-dev pkg-config 2>/dev
 
 ### Patch Creation
 
-**Frontend/NPM**: edit `vibe-kanban/` → commit → `git -C vibe-kanban format-patch -1 -o ../patches/frontend/` → update `series` → verify.
-
-**Remote**: same flow with `vibe-kanban-remote/` and `patches/remote/`.
+Edit `vibe-kanban/` → commit → `git -C vibe-kanban format-patch -1 -o ../patches/` → rename to the next linear `NNNN-...patch` slot → append to `patches/series` → verify.
 
 ### Verify (mandatory before every commit)
 
@@ -65,14 +64,15 @@ for f in k8s/values-production-*.yaml; do
 done
 ```
 
-**Patch changes** — apply, then compile-check:
+**Patch or submodule changes**:
 ```bash
-git submodule update --init <submodule>
-scripts/apply-patches.sh vibe-kanban          # frontend patches
-scripts/apply-patches.sh vibe-kanban-remote   # remote patches
-(cd vibe-kanban && cargo check)              # frontend — full workspace
-(cd vibe-kanban-remote && cargo check)       # remote — remote + relay crates
+git submodule update --init vibe-kanban
+git -C vibe-kanban reset --hard HEAD
+scripts/apply-patches.sh
+(cd vibe-kanban && cargo check --manifest-path crates/relay-tunnel/Cargo.toml)
 ```
+
+If you need full-workspace or private-dependency checks, run them explicitly and document any environment blockers.
 
 **Shell script changes** — `bash -n scripts/<modified-script>.sh`
 
@@ -142,9 +142,7 @@ Exception: [publish-credentials.bashrc](scripts/publish-credentials.bashrc) — 
 
 ## Release & Deployment Flows
 
-Not all changes require the same flow. Only changes affecting **runtime artifacts** need a tag to trigger CI.
-
-**Tag-triggered (CI builds automatically)** — patches in `patches/`, submodule ref bumps:
+Only changes affecting runtime artifacts need a tag to trigger CI.
 
 | Tag pattern | Pipeline | Artifacts built |
 |-------------|----------|-----------------|
@@ -153,15 +151,14 @@ Not all changes require the same flow. Only changes affecting **runtime artifact
 
 Remote image pipeline pushes to GitLab Registry by default. Docker Hub push is optional via CI vars: `DOCKER_HUB_REMOTE_IMAGE_NAME`, `DOCKER_HUB_RELAY_IMAGE_NAME`, `DOCKER_HUB_USERNAME`, `DOCKER_HUB_TOKEN`. Set `PUSH_GITLAB_REGISTRY=false` for Docker Hub-only release jobs.
 
-Tagging flow: push branch → `glab mr create --squash-before-merge --remove-source-branch --no-editor --yes` → `glab mr merge <id> --squash --remove-source-branch --yes` → fetch main and tags → create new tag → push tag.
-
-Tag naming depends on scenario:
-- **Upstream bump**: frontend uses `v<upstream-semver>-<YYYYMMDDHHmmss>` (current time), remote uses upstream tag as-is (`remote-v<semver>`)
-- **Patch-only release** (no upstream change): increment timestamp of latest `v<version>-<YYYYMMDDHHmmss>` by 1
+Tag naming:
+- **Frontend upstream bump**: `v<upstream-semver>-<YYYYMMDDHHmmss>`
+- **Remote upstream bump**: `remote-v<upstream-semver>`
+- **Patch-only release**: update the linear patch stack, then cut the tag for the artifact you want
 
 **MR-only (no tag needed)** — Helm chart templates, K8s values, scripts, CI config. Take effect on next `helm upgrade` or pipeline run.
 
-**Nightly automation** — `scripts/nightly-check-release.sh` detects new upstream tags, verifies patches apply, auto-commits and tags. Alerts Discord on patch conflicts.
+**Nightly automation** — `scripts/nightly-check-release.sh` checks upstream tags against the latest frontend/remote release tags, verifies `patches/series`, updates patch metadata, commits the shared submodule ref, and pushes the requested release tag. Alerts Discord on patch conflicts.
 
 ## Commit Conventions
 

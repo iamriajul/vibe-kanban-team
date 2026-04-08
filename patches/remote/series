@@ -1,4 +1,0 @@
-# Remote server-specific patches (applied to vibe-kanban-remote/ submodule only)
-0001-feat-remote-use-R2-for-attachment-storage.patch
-0002-update-loops-template-ids.patch
-0003-fix-remote-add-attachment-upload-relay-for-legacy-cl.patch

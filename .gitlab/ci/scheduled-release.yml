@@ -10,7 +10,7 @@
 #   PROJECT_ACCESS_TOKEN       - GitLab token with write_repository scope
 #   DISCORD_WEBHOOK_PRODUCTION - Discord webhook for patch-failure alerts
 
-# Frontend submodule (NPM package) nightly check
+# Frontend release nightly check
 nightly-frontend:
   stage: release
   image: alpine:3.20
@@ -24,7 +24,7 @@ nightly-frontend:
   tags:
     - docker
 
-# Remote submodule (Docker image) nightly check
+# Remote release nightly check
 nightly-remote:
   stage: release
   image: alpine:3.20

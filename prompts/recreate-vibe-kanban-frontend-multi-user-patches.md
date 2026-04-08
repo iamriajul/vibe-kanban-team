@@ -86,8 +86,8 @@ Do **not** leave durable behavior only in submodule working tree state.
 3. Rebuild Patch 0001:
    - Implement session-scoped auth + git identity behavior in the 0001 file set.
    - Commit locally in submodule (temporary commit acceptable).
-   - Export patch: `git -C vibe-kanban format-patch -1 -o ../patches/frontend/`
-   - Name it as `0001-...patch` and update `patches/frontend/series`.
+   - Export patch: `git -C vibe-kanban format-patch -1 -o ../patches/`
+   - Rename it into the next `NNNN-...patch` slot and update `patches/series`.
 4. Rebuild Patch 0002 on top of 0001:
    - Implement shared-mode workspace auth requirement + WorkspacesLayout auth rendering + admin-scoped creator visibility logic.
    - Ensure non-admin forced `Mine`, admin retains dropdown.
@@ -101,9 +101,9 @@ Do **not** leave durable behavior only in submodule working tree state.
    - (Recommended) `pnpm --filter @vibe/local-web run check`
    - (Recommended) `pnpm run web-core:format`
 7. Commit only patch artifacts in this repo:
-   - `patches/frontend/0001-...patch`
-   - `patches/frontend/0002-...patch`
-   - `patches/frontend/series`
+   - `patches/0001-...patch`
+   - `patches/0002-...patch`
+   - `patches/series`
 
 ---
 

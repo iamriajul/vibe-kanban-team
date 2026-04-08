@@ -122,7 +122,7 @@ build → release → notify
 
 ### Docker Build Fails
 
-- Check submodule initialization
+- Check shared submodule initialization
 - Verify patches apply cleanly
 - Review build logs for missing dependencies
 

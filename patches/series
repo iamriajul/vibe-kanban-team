@@ -1,0 +1,17 @@
+# Downstream patch stack applied to vibe-kanban/ in order
+0001-feat-add-Zoho-OAuth-provider-support.patch
+0002-feat-support-browser-scoped-auth-sessions-and-per-us.patch
+0003-feat-require-workspace-auth-and-add-admin-scoped-cre.patch
+0004-feat-unified-code-server-editor-flow.patch
+0005-feat-add-markdown-preview-toggle-in-diff-view-for-.m.patch
+0006-feat-fix-standalone-workspace-ownership-for-multi-us.patch
+0007-feat-show-workspace-creator-avatar-in-sidebar.patch
+0008-feat-add-GitLab-merge-request-integration-via-glab-C.patch
+0009-feat-rewrite-terminal-localhost-links-via-VSCODE_PRO.patch
+0010-feat-support-VSCODE_PROXY_URI-in-preview-iframe.patch
+0011-feat-add-Zoho-sign-in-button-to-OAuth-dialog.patch
+0012-feat-remote-use-R2-for-attachment-storage.patch
+0013-update-loops-template-ids.patch
+0014-fix-remote-add-attachment-upload-relay-for-legacy-cl.patch
+0015-fix-relay-docker-build-with-stale-lockfile.patch
+0016-fix-relay-install-perl-and-make-for-vendored-openssl.patch

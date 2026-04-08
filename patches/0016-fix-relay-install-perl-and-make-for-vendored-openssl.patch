@@ -8,11 +8,11 @@ Subject: [PATCH] fix(relay): install perl and make for vendored openssl build
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/crates/relay-tunnel/Dockerfile b/crates/relay-tunnel/Dockerfile
-index 0c7e1e445..806eaec8b 100644
+index 566b26845..5dcfa12da 100644
 --- a/crates/relay-tunnel/Dockerfile
 +++ b/crates/relay-tunnel/Dockerfile
-@@ -3,7 +3,7 @@
- FROM rust:1.93-slim-bookworm AS builder
+@@ -6,7 +6,7 @@ ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
+ ENV CARGO_TARGET_DIR=/app/target
  
  RUN apt-get update \
 -  && apt-get install -y --no-install-recommends pkg-config libssl-dev ca-certificates \
@@ -22,4 +22,3 @@ index 0c7e1e445..806eaec8b 100644
  WORKDIR /app
 -- 
 2.50.1
-
