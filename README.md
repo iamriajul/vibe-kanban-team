@@ -2,16 +2,27 @@
 
 Open source team deployment and release layer for [Vibe Kanban](https://github.com/BloopAI/vibe-kanban).
 
-`Vibe Kanban Team` is the name of this distribution because the project is centered on shared team environments rather than a single-user local setup. This repo packages the upstream app, the downstream patch stack, the public Helm chart, and the release automation needed to run a collaborative installation.
+Vibe Kanban itself already supports team collaboration through a shared remote server. `Vibe Kanban Team` is the name of this distribution because it goes beyond the standard "each developer runs their own frontend installation" model and packages a team-ready, multi-user frontend setup on top of the upstream system. This repo bundles the upstream app, the downstream patch stack, the public Helm chart, and the release automation needed to run that shared installation.
 
 ## Overview
 
 This repository provides a deployment and integration layer for Vibe Kanban with:
 
 - **Helm Chart**: Deploys Vibe Kanban remote server, optional relay server, and ElectricSQL
+- **Multi-User Frontend Runtime**: Adds a shared frontend/workspace model for simultaneous browser-based use
 - **Linear Patch Stack**: One ordered downstream patch series applied to every build
 - **Environment-Agnostic Images**: Build once, deploy anywhere
 - **External Database**: Bring your own PostgreSQL (CloudNativePG, RDS, etc.)
+
+## What This Adds
+
+The upstream architecture already allows many frontend installations to connect to one central remote server. `Vibe Kanban Team` keeps that central shared backend model and adds a different frontend operating model:
+
+- a central installation that developers can open directly in the browser without installing the stack locally
+- team-ready frontend workspaces that can be used by multiple developers at the same time
+- shared environments that make pair AI engineering and collaborative debugging practical
+
+In other words, this repo is not claiming that upstream Vibe Kanban is not collaborative. It is packaging a stronger shared-workspace mode for teams that want a centrally managed setup.
 
 ## Architecture
 
@@ -320,11 +331,15 @@ For stable releases, the image workflow also updates the `latest` tag. Prereleas
 
 The upstream project is still Vibe Kanban. `Vibe Kanban Team` names this public distribution layer:
 
-- it ships the collaborative deployment shape rather than just the upstream app source
-- it keeps a downstream patch stack tuned for shared environments
-- it publishes a team-facing npm entrypoint, container images, and a Helm chart under one public name
+- it keeps the upstream shared remote server model, but adds a team-ready frontend/workspace deployment shape
+- it lets developers use the platform without installing the full stack on their own machines
+- it lets developers share live workspaces for pair AI engineering, review, and debugging
+- it gives teams a reproducible central environment instead of many drifting local installs
+- it shortens onboarding because a new developer can start from a browser session instead of a full local setup
+- it makes support, upgrades, and operational policy easier because the environment is managed centrally
+- it publishes the npm entrypoint, container images, and Helm chart under one public name
 
-The goal is to make the “run Vibe Kanban for a team” path obvious and easy to adopt.
+The goal is to make the “run Vibe Kanban for a team with shared workspaces” path obvious and easy to adopt.
 
 ## Release Tracking (Upstream Vibe Kanban)
 
