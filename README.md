@@ -1,13 +1,13 @@
 # Vibe Kanban Cloud
 
-Helm chart and CI/CD pipeline for deploying [Vibe Kanban](https://github.com/BloopAI/vibe-kanban) to Kubernetes.
+Helm chart and downstream patch stack for deploying [Vibe Kanban](https://github.com/BloopAI/vibe-kanban) to Kubernetes.
 
 ## Overview
 
-This repository provides a production-ready deployment solution for Vibe Kanban Cloud with:
+This repository provides a deployment and integration layer for Vibe Kanban with:
 
 - **Helm Chart**: Deploys Vibe Kanban remote server, optional relay server, and ElectricSQL
-- **GitLab CI/CD**: Automated image build pipeline
+- **Linear Patch Stack**: One ordered downstream patch series applied to every build
 - **Environment-Agnostic Images**: Build once, deploy anywhere
 - **External Database**: Bring your own PostgreSQL (CloudNativePG, RDS, etc.)
 
@@ -110,61 +110,16 @@ Cloudflare token minimum permissions:
 - `Zone:Read`
 - `DNS:Edit`
 
-## CNPG (Optional)
+## Installation
 
-If you want to run PostgreSQL in-cluster with CloudNativePG, use the manifests in `k8s/cnpg/`.
-
-```bash
-kubectl apply -f k8s/namespace.yaml
-kubectl apply -f k8s/cnpg/
-```
-
-Copy the example secrets, then update the `CHANGEME_*` values before applying:
+Clone the public repository and install from the local chart path:
 
 ```bash
-cp k8s/cnpg/examples/01-secrets.yaml k8s/cnpg/01-secrets.yaml
-cp k8s/cnpg/examples/02-initdb-secret.yaml k8s/cnpg/02-initdb-secret.yaml
-```
-
-## Installation (Private Repo)
-
-This chart is stored in a private GitLab repository and is not published to a public Helm repository. Install it by cloning the repo (requires access):
-
-```bash
-git clone ssh://git@gitlab.example.com:2222/community-infra/vibe-kanban-cloud.git
+git clone git@github.com:iamriajul/vibe-kanban-team.git
 cd vibe-kanban-cloud
 ```
 
 You can then install from the local path `./helm/vibe-kanban-cloud` (see Quick Start below). If you use GitOps (Argo CD / Flux), point your HelmRelease to the `helm/vibe-kanban-cloud` path in this repo.
-
-### Versioned Chart Installs (Helm Registry)
-
-When we publish chart releases, you can choose a specific version at install/upgrade time (similar to Coder). This uses the GitLab Helm Package Registry for this project.
-
-```bash
-helm repo add vibe-kanban-cloud \
-  --username "<gitlab-username>" \
-  --password "<gitlab-token>" \
-  "https://gitlab.example.com/api/v4/projects/<project_id>/packages/helm/stable"
-
-helm repo update
-
-helm install vibe-kanban vibe-kanban-cloud/vibe-kanban-cloud \
-  --namespace vibe-kanban-cloud \
-  --create-namespace \
-  --version 1.2.3 \
-  -f values-production.yaml
-```
-
-If you install from the repo directly, you can still pin a chart version by checking out the tag first:
-
-```bash
-git checkout v1.2.3
-helm upgrade --install vibe-kanban ./helm/vibe-kanban-cloud \
-  --namespace vibe-kanban-cloud \
-  --create-namespace \
-  -f values-production.yaml
-```
 
 ## Quick Start
 
@@ -209,14 +164,14 @@ kubectl create secret generic vibe-kanban-oauth \
 
 ### 3. (If Needed) Create Image Pull Secret
 
-If your GitLab registry is private, create a pull secret and reference it in `imagePullSecrets`:
+If your image registry is private, create a pull secret and reference it in `imagePullSecrets`:
 
 ```bash
-kubectl create secret docker-registry gitlab-registry-secret \
+kubectl create secret docker-registry registry-credentials \
   --namespace vibe-kanban-cloud \
-  --docker-server=registry.gitlab.example.com \
-  --docker-username='your-gitlab-username' \
-  --docker-password='your-gitlab-token' \
+  --docker-server='your-registry.example.com' \
+  --docker-username='your-registry-username' \
+  --docker-password='your-registry-token' \
   --docker-email='your-email@example.com'
 ```
 
@@ -224,8 +179,7 @@ kubectl create secret docker-registry gitlab-registry-secret \
 
 ```bash
 cp helm/vibe-kanban-cloud/values-example.yaml values-production.yaml
-# Edit values-production.yaml with your secret names
-# If your registry host differs, update image.repository accordingly.
+# Edit values-production.yaml with your secret names and image repositories.
 ```
 
 ### 5. Deploy
@@ -237,7 +191,7 @@ helm upgrade --install vibe-kanban ./helm/vibe-kanban-cloud \
   -f values-production.yaml
 ```
 
-If you want to pin a specific image tag (recommended), use:
+If you want to pin a specific image tag, use:
 
 ```bash
 scripts/deploy.sh <commit-sha>
@@ -245,7 +199,7 @@ scripts/deploy.sh <commit-sha>
 
 ## Configuration
 
-This chart follows the same pattern as the [Coder Helm chart](https://coder.com/docs/install/kubernetes) - you reference your own Kubernetes secrets via `secretKeyRef`.
+This chart follows the same pattern as the [Coder Helm chart](https://coder.com/docs/install/kubernetes): reference your own Kubernetes secrets via `secretKeyRef`.
 
 ### Example values.yaml
 
@@ -352,23 +306,14 @@ If you use the CNPG manifests, the role is created by the init SQL secret.
    - Authorized redirect URIs: `https://your-domain.com/v1/oauth/callback/google`
 3. Copy Client ID and Client Secret
 
-## CI/CD Pipeline
+## Release Automation
 
-The CI/CD pipeline builds the Docker image and pushes it to the GitLab registry.
+Checked-in GitLab CI has been removed from the public tree. GitHub Actions are planned next, but are not part of the repository yet.
 
-### Pipeline Stages
-
-1. **Build**: Builds Docker image and pushes to GitLab registry
-2. **Release**: On tags, publishes versioned images and the Helm chart package
-3. **Notify**: Sends Discord notification (optional)
-
-### Image Output
-
-After a successful remote-image build:
-- `$CI_REGISTRY_IMAGE/vibe-kanban-remote:<release-version>`
-- `$CI_REGISTRY_IMAGE/vibe-kanban-remote:latest`
-
-The Helm chart defaults to the chart `appVersion` (which is `latest` on main). To pin a specific build, set `image.tag` or install a chart release with `--version`.
+For now:
+- build images manually when you need them
+- push to the registry you control
+- pin the resulting tags in the Helm values you deploy
 
 ## Release Tracking (Upstream Vibe Kanban)
 
@@ -376,13 +321,13 @@ We track upstream releases from the Vibe Kanban GitHub repo and bump the shared 
 
 1. Watch for new upstream releases (GitHub Releases/notifications).
 2. Decide the version to adopt (e.g. `v1.4.0`).
-3. Update the shared submodule and open a merge request.
-4. Merge → CI builds a new image.
+3. Update the shared submodule and patch stack.
+4. Build the artifact you need manually.
 5. Deploy by pinning the image tag.
 
 ## Patch Stack (Downstream Changes)
 
-We keep downstream changes as a small patch stack in `patches/` (similar to quilt). CI applies these patches before building.
+We keep downstream changes as a small patch stack in `patches/` (similar to quilt). Apply them before local builds or future CI runs.
 
 ### Creating a Patch
 

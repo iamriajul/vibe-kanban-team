@@ -19,10 +19,10 @@ vibe-kanban-cloud/
 ├── scripts/
 │   ├── apply-patches.sh      # apply-patches.sh [repo]
 │   ├── update-vibe-kanban.sh # Update the shared submodule
-│   └── nightly-check-release.sh
-└── .gitlab/ci/
-    ├── npm-publish.yml
-    └── image-build.yml
+│   ├── deploy.sh
+│   └── publish-npm.sh
+└── helm/vibe-kanban-cloud/
+    └── ...
 ```
 
 ## Patch Stack
@@ -46,14 +46,14 @@ That script walks `patches/series` from top to bottom.
 - Source ref: `vibe-kanban/`
 - Patch stack: full ordered stack
 - Release tag: `v<upstream-semver>-<YYYYMMDDHHmmss>`
-- Pipeline: `.gitlab/ci/npm-publish.yml`
+- Workflow status: GitHub Actions not added yet
 
 ### Remote / Relay
 
 - Source ref: `vibe-kanban/`
 - Patch stack: full ordered stack
 - Release tag: `remote-v<upstream-semver>`
-- Pipeline: `.gitlab/ci/image-build.yml`
+- Workflow status: GitHub Actions not added yet
 
 ## Update Flow
 
@@ -86,6 +86,5 @@ git submodule update --init vibe-kanban
 ## Why This Model
 
 - One git reference to review, bump, and resolve during merges.
-- CI builds both release channels from the same checkout layout.
-- There is one patch application path to maintain in CI and local workflows.
+- There is one patch application path to maintain across local and future CI workflows.
 - Removing the duplicate submodule eliminates drift where the same upstream repo could be pinned twice to different commits.

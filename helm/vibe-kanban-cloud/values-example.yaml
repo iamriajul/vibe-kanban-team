@@ -9,7 +9,7 @@ image:
 
 # Image pull secrets for private registry
 imagePullSecrets:
-  - name: gitlab-registry-secret
+  - name: registry-credentials
 
 # Ingress configuration
 ingress:
