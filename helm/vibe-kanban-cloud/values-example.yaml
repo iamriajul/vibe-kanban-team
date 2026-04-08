@@ -217,7 +217,7 @@ frontend:
 
   app:
     port: 13500
-    command: "npx --yes @iamriajul/vibe-kanban-fork"
+    command: "npx --yes vibe-kanban-team"
     workingDirectory: "/home/coder"
 
   service:

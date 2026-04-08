@@ -29,7 +29,7 @@ Optional Docker Hub mirrors:
 ## NPM Release
 
 Artifacts:
-- npm package published by `scripts/publish-npm.sh`
+- npm package `vibe-kanban-team` published by `scripts/publish-npm.sh`
 - binaries uploaded through the existing R2-based publish flow
 
 Required secrets and variables:
@@ -47,6 +47,8 @@ Required secrets and variables:
 2. Apply and verify the downstream patch stack with `scripts/apply-patches.sh`.
 3. Commit and push the submodule or patch changes.
 4. Push the release tag for the workflow you want to run.
+
+Manual workflow dispatch is supported for existing release refs only. Pass `git_ref`, let the workflow derive the version from that ref, and avoid free-form version-only publishes.
 
 ## Future Additions
 

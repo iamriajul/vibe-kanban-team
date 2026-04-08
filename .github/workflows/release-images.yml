@@ -6,8 +6,8 @@ on:
       - "remote-v*"
   workflow_dispatch:
     inputs:
-      release_version:
-        description: "Release version without the remote-v prefix"
+      git_ref:
+        description: "Existing release tag or ref to build from (for example remote-v1.2.3)"
         required: true
         type: string
 
@@ -29,18 +29,29 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.git_ref || github.ref }}
           submodules: recursive
 
-      - name: Determine release version
-        id: version
+      - name: Determine release inputs
+        id: release
         shell: bash
         run: |
           set -euo pipefail
           if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
-            version="${{ inputs.release_version }}"
+            raw_ref="${{ inputs.git_ref }}"
           else
-            version="${GITHUB_REF_NAME#remote-v}"
+            raw_ref="${GITHUB_REF_NAME}"
           fi
+
+          ref_name="${raw_ref#refs/tags/}"
+          ref_name="${ref_name#refs/heads/}"
+
+          if [[ ! "$ref_name" =~ ^remote-v[0-9]+\.[0-9]+\.[0-9]+([-.].*)?$ ]]; then
+            echo "Expected a remote release tag like remote-v1.2.3, got: $raw_ref"
+            exit 1
+          fi
+
+          version="${ref_name#remote-v}"
 
           if [ -z "$version" ]; then
             echo "Release version is empty"
@@ -53,8 +64,19 @@ jobs:
             stable=false
           fi
 
+          dockerhub_enabled=false
+          if [ -n "${DOCKERHUB_REMOTE_IMAGE_NAME:-}" ] || [ -n "${DOCKERHUB_RELAY_IMAGE_NAME:-}" ]; then
+            if [ -z "${{ secrets.DOCKERHUB_USERNAME }}" ] || [ -z "${{ secrets.DOCKERHUB_TOKEN }}" ]; then
+              echo "Docker Hub image names are configured but DOCKERHUB_USERNAME or DOCKERHUB_TOKEN is missing"
+              exit 1
+            fi
+            dockerhub_enabled=true
+          fi
+
+          echo "ref_name=$ref_name" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "stable=$stable" >> "$GITHUB_OUTPUT"
+          echo "dockerhub_enabled=$dockerhub_enabled" >> "$GITHUB_OUTPUT"
 
       - name: Apply downstream patches
         shell: bash
@@ -74,7 +96,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Log in to Docker Hub
-        if: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}
+        if: ${{ steps.release.outputs.dockerhub_enabled == 'true' }}
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -83,8 +105,9 @@ jobs:
       - name: Build and push remote image
         shell: bash
         env:
-          VERSION: ${{ steps.version.outputs.version }}
-          STABLE: ${{ steps.version.outputs.stable }}
+          VERSION: ${{ steps.release.outputs.version }}
+          STABLE: ${{ steps.release.outputs.stable }}
+          DOCKERHUB_ENABLED: ${{ steps.release.outputs.dockerhub_enabled }}
         run: |
           set -euo pipefail
 
@@ -95,7 +118,7 @@ jobs:
             tags+=(--tag "${ghcr_image}:latest")
           fi
 
-          if [ -n "${DOCKERHUB_REMOTE_IMAGE_NAME:-}" ]; then
+          if [ "$DOCKERHUB_ENABLED" = "true" ] && [ -n "${DOCKERHUB_REMOTE_IMAGE_NAME:-}" ]; then
             tags+=(--tag "${DOCKERHUB_REMOTE_IMAGE_NAME}:${VERSION}")
             if [ "$STABLE" = "true" ]; then
               tags+=(--tag "${DOCKERHUB_REMOTE_IMAGE_NAME}:latest")
@@ -115,8 +138,9 @@ jobs:
       - name: Build and push relay image
         shell: bash
         env:
-          VERSION: ${{ steps.version.outputs.version }}
-          STABLE: ${{ steps.version.outputs.stable }}
+          VERSION: ${{ steps.release.outputs.version }}
+          STABLE: ${{ steps.release.outputs.stable }}
+          DOCKERHUB_ENABLED: ${{ steps.release.outputs.dockerhub_enabled }}
         run: |
           set -euo pipefail
 
@@ -127,7 +151,7 @@ jobs:
             tags+=(--tag "${ghcr_image}:latest")
           fi
 
-          if [ -n "${DOCKERHUB_RELAY_IMAGE_NAME:-}" ]; then
+          if [ "$DOCKERHUB_ENABLED" = "true" ] && [ -n "${DOCKERHUB_RELAY_IMAGE_NAME:-}" ]; then
             tags+=(--tag "${DOCKERHUB_RELAY_IMAGE_NAME}:${VERSION}")
             if [ "$STABLE" = "true" ]; then
               tags+=(--tag "${DOCKERHUB_RELAY_IMAGE_NAME}:latest")
@@ -154,7 +178,7 @@ jobs:
       - name: Package and publish Helm chart
         shell: bash
         env:
-          VERSION: ${{ steps.version.outputs.version }}
+          VERSION: ${{ steps.release.outputs.version }}
         run: |
           set -euo pipefail
           mkdir -p dist

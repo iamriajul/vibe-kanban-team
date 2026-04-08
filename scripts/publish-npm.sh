@@ -374,11 +374,11 @@ ${NODE_CMD} -e "
   const fs = require('fs');
   const path = '${VIBE_DIR}/npx-cli/package.json';
   const pkg = JSON.parse(fs.readFileSync(path, 'utf8'));
-  pkg.name = '@iamriajul/vibe-kanban-fork';
+  pkg.name = 'vibe-kanban-team';
   pkg.version = '${VERSION}';
   pkg.publishConfig = { access: 'public' };
   pkg.author = 'iamriajul';
-  pkg.repository = { type: 'git', url: 'https://github.com/iamriajul/vibe-kanban' };
+  pkg.repository = { type: 'git', url: 'https://github.com/iamriajul/vibe-kanban-team' };
   fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + '\\n');
 "
 
@@ -386,7 +386,7 @@ ${NODE_CMD} -e "
   const fs = require('fs');
   const path = '${VIBE_DIR}/npx-cli/README.md';
   let data = fs.readFileSync(path, 'utf8');
-  data = data.replace(/npx vibe-kanban/g, 'npx @iamriajul/vibe-kanban-fork');
+  data = data.replace(/npx vibe-kanban/g, 'npx vibe-kanban-team');
   fs.writeFileSync(path, data);
 "
 
@@ -645,7 +645,7 @@ NPMRC_BAK="${TMP_DIR}/.npmrc"
 umask 077
 printf "//registry.npmjs.org/:_authToken=%s\n" "${NPM_TOKEN}" > "${NPMRC_BAK}"
 
-if (cd "${VIBE_DIR}/npx-cli" && npm --userconfig "${NPMRC_BAK}" view "@iamriajul/vibe-kanban-fork@${VERSION}" version >/dev/null 2>&1); then
+if (cd "${VIBE_DIR}/npx-cli" && npm --userconfig "${NPMRC_BAK}" view "vibe-kanban-team@${VERSION}" version >/dev/null 2>&1); then
   echo "npm version ${VERSION} already exists; skipping publish."
 else
   echo "Publishing to npm with dist-tag: ${NPM_TAG}"

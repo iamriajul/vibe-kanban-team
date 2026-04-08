@@ -292,7 +292,7 @@ data:
     {{- end }}
     Environment=PATH=$NVM_BIN:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
     EnvironmentFile=-/etc/default/vibe-kanban-env
-    ExecStart=$NPX_PATH --yes @iamriajul/vibe-kanban-fork
+    ExecStart=$NPX_PATH --yes vibe-kanban-team
     Restart=always
     RestartSec=5
 

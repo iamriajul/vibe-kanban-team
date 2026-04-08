@@ -6,8 +6,8 @@ on:
       - "v*"
   workflow_dispatch:
     inputs:
-      release_version:
-        description: "Release version without the leading v"
+      git_ref:
+        description: "Existing release tag or ref to publish from (for example v1.2.3-20260408120000)"
         required: true
         type: string
       npm_tag:
@@ -37,6 +37,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.git_ref || github.ref }}
           submodules: recursive
 
       - name: Set up Node.js
@@ -75,10 +76,23 @@ jobs:
           set -euo pipefail
 
           if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
-            version="${{ inputs.release_version }}"
+            raw_ref="${{ inputs.git_ref }}"
             npm_tag="${{ inputs.npm_tag }}"
           else
-            version="${GITHUB_REF_NAME#v}"
+            raw_ref="${GITHUB_REF_NAME}"
+          fi
+
+          ref_name="${raw_ref#refs/tags/}"
+          ref_name="${ref_name#refs/heads/}"
+
+          if [[ ! "$ref_name" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-.].*)?$ ]]; then
+            echo "Expected an npm release tag like v1.2.3 or v1.2.3-20260408120000, got: $raw_ref"
+            exit 1
+          fi
+
+          version="${ref_name#v}"
+
+          if [ "${GITHUB_EVENT_NAME}" != "workflow_dispatch" ]; then
             if [[ "$version" == *-* ]]; then
               npm_tag="next"
             else

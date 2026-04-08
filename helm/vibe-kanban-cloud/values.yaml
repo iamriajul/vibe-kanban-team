@@ -368,7 +368,7 @@ frontend:
   app:
     port: 13500
     # Command to start the frontend (run as coder user via systemd)
-    command: "npx --yes @iamriajul/vibe-kanban-fork"
+    command: "npx --yes vibe-kanban-team"
     # Working directory for the frontend process
     workingDirectory: "/home/coder"
     # Shared API base URL for the remote server

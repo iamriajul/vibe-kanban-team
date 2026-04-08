@@ -30,7 +30,8 @@ Downstream deployment and integration layer for Vibe Kanban. Owns the Helm chart
 
 - GitHub Actions own the checked-in release automation.
 - `remote-v*` tags build Remote and Relay images, publish them to GHCR, optionally mirror them to Docker Hub, and publish the Helm chart to GHCR as an OCI artifact.
-- `v*` tags publish the npm package via `scripts/publish-npm.sh`.
+- `v*` tags publish the `vibe-kanban-team` npm package via `scripts/publish-npm.sh`.
+- Manual workflow dispatch must target an existing `git_ref`; versions are derived from that ref.
 - Keep tag naming stable:
   - frontend/npm: `v<upstream-semver>-<YYYYMMDDHHmmss>`
   - remote/relay: `remote-v<upstream-semver>`

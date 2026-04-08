@@ -1,6 +1,8 @@
-# Vibe Kanban Cloud
+# Vibe Kanban Team
 
-Helm chart and downstream patch stack for deploying [Vibe Kanban](https://github.com/BloopAI/vibe-kanban) to Kubernetes.
+Open source team deployment and release layer for [Vibe Kanban](https://github.com/BloopAI/vibe-kanban).
+
+`Vibe Kanban Team` is the name of this distribution because the project is centered on shared team environments rather than a single-user local setup. This repo packages the upstream app, the downstream patch stack, the public Helm chart, and the release automation needed to run a collaborative installation.
 
 ## Overview
 
@@ -116,7 +118,7 @@ Clone the public repository and install from the local chart path:
 
 ```bash
 git clone git@github.com:iamriajul/vibe-kanban-team.git
-cd vibe-kanban-cloud
+cd vibe-kanban-team
 ```
 
 You can then install from the local path `./helm/vibe-kanban-cloud` (see Quick Start below). If you use GitOps (Argo CD / Flux), point your HelmRelease to the `helm/vibe-kanban-cloud` path in this repo.
@@ -310,9 +312,19 @@ If you use the CNPG manifests, the role is created by the init SQL secret.
 
 GitHub Actions now handle the checked-in release flows:
 - `remote-v*` tags build Remote and Relay images, push to GHCR, optionally mirror to Docker Hub, and publish the Helm chart to GHCR as an OCI artifact
-- `v*` tags publish the npm package through `scripts/publish-npm.sh`
+- `v*` tags publish the `vibe-kanban-team` npm package through `scripts/publish-npm.sh`
 
 For stable releases, the image workflow also updates the `latest` tag. Prereleases publish only their version tag.
+
+## Why "Team"
+
+The upstream project is still Vibe Kanban. `Vibe Kanban Team` names this public distribution layer:
+
+- it ships the collaborative deployment shape rather than just the upstream app source
+- it keeps a downstream patch stack tuned for shared environments
+- it publishes a team-facing npm entrypoint, container images, and a Helm chart under one public name
+
+The goal is to make the “run Vibe Kanban for a team” path obvious and easy to adopt.
 
 ## Release Tracking (Upstream Vibe Kanban)
 
