@@ -110,7 +110,7 @@ Sysbox container with systemd PID 1. Runs code-server + Vibe Kanban + Claude Cod
 
 Committed values should reference secrets via `secretKeyRef`. Real credentials belong in untracked overlays or deployment-time secret creation steps.
 
-Exception: [publish-credentials.bashrc](scripts/publish-credentials.bashrc) contains local publish credentials and should stay untracked in normal use.
+Local publish credentials should stay in an untracked file outside committed history.
 
 **Gitignore** (do not modify): `values-production.yaml`, `*-secrets.yaml`, `*-secret.yaml`, `.env*`
 
