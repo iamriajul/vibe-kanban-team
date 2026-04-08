@@ -1,4 +1,4 @@
-Vibe Kanban Cloud has been deployed!
+Vibe Kanban Team has been deployed!
 
 {{- if .Values.ingress.enabled }}
 1. Access the application at:

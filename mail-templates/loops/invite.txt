@@ -1,8 +1,8 @@
-Subject: You're invited to join {org_name} on Vibe Kanban Cloud
+Subject: You're invited to join {org_name} on Vibe Kanban Team
 
 Hi,
 
-{invited_by} invited you to join the organization "{org_name}" on Vibe Kanban Cloud.
+{invited_by} invited you to join the organization "{org_name}" on Vibe Kanban Team.
 
 Accept your invitation:
 {accept_url}
@@ -10,4 +10,4 @@ Accept your invitation:
 If you did not expect this invitation, you can safely ignore this email.
 
 Thanks,
-Vibe Kanban Cloud
+Vibe Kanban Team

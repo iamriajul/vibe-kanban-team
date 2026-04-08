@@ -8,4 +8,4 @@ Open the review:
 {review_url}
 
 Thanks,
-Vibe Kanban Cloud
+Vibe Kanban Team
