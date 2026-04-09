@@ -8,7 +8,7 @@
 replicaCount: 1
 
 image:
-  repository: registry.example.com/community-infra/vibe-kanban-team/vibe-kanban-remote
+  repository: registry.example.com/community-infra/vibe-kanban-team/vibe-kanban-team-remote
   pullPolicy: IfNotPresent
   tag: ""  # Defaults to chart appVersion (latest in repo; release packages set appVersion to version)
 
@@ -186,7 +186,7 @@ relay:
   replicaCount: 1
 
   image:
-    repository: registry.example.com/community-infra/vibe-kanban-team/vibe-kanban-relay
+    repository: registry.example.com/community-infra/vibe-kanban-team/vibe-kanban-team-relay
     pullPolicy: IfNotPresent
     tag: ""  # Defaults to chart appVersion
 

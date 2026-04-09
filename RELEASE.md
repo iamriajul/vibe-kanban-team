@@ -17,8 +17,8 @@ This repository uses GitHub Actions for checked-in release automation.
 ## Remote / Relay Release
 
 Artifacts:
-- `ghcr.io/<owner>/vibe-kanban-remote:<version>`
-- `ghcr.io/<owner>/vibe-kanban-relay:<version>`
+- `ghcr.io/<owner>/vibe-kanban-team-remote:<version>`
+- `ghcr.io/<owner>/vibe-kanban-team-relay:<version>`
 - `oci://ghcr.io/<owner>/helm-charts/vibe-kanban-team:<version>`
 
 Optional Docker Hub mirrors:
