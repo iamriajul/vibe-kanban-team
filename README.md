@@ -191,7 +191,9 @@ kubectl create secret docker-registry registry-credentials \
 ### 4. Create Values File
 
 ```bash
-helm show values "${CHART_REF}" --version "${CHART_VERSION}" > values-production.yaml
+curl -fsSL \
+  https://raw.githubusercontent.com/iamriajul/vibe-kanban-team/main/helm/vibe-kanban-team/values-example.yaml \
+  -o values-production.yaml
 # Edit values-production.yaml with your secret names and image repositories.
 ```
 
@@ -203,6 +205,12 @@ helm upgrade --install vibe-kanban "${CHART_REF}" \
   --namespace vibe-kanban-team \
   --create-namespace \
   -f values-production.yaml
+```
+
+If you want the chart's complete raw defaults for reference, you can still inspect them with:
+
+```bash
+helm show values "${CHART_REF}" --version "${CHART_VERSION}"
 ```
 
 If you want to pin a specific image tag, use:
