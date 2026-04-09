@@ -127,6 +127,8 @@ jobs:
 
           docker buildx build \
             --push \
+            --cache-from "type=gha,scope=vibe-kanban-team-remote" \
+            --cache-to "type=gha,mode=max,scope=vibe-kanban-team-remote" \
             "${tags[@]}" \
             -f vibe-kanban/crates/remote/Dockerfile \
             --build-arg FEATURES="${FEATURES:-}" \
@@ -160,6 +162,8 @@ jobs:
 
           docker buildx build \
             --push \
+            --cache-from "type=gha,scope=vibe-kanban-team-relay" \
+            --cache-to "type=gha,mode=max,scope=vibe-kanban-team-relay" \
             "${tags[@]}" \
             -f vibe-kanban/crates/relay-tunnel/Dockerfile \
             ./vibe-kanban
