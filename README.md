@@ -125,14 +125,14 @@ Cloudflare token minimum permissions:
 
 ## Installation
 
-Clone the public repository and install from the local chart path:
+Install from the published OCI Helm chart:
 
 ```bash
-git clone git@github.com:iamriajul/vibe-kanban-team.git
-cd vibe-kanban-team
+export CHART_REF="oci://ghcr.io/iamriajul/helm-charts/vibe-kanban-team"
+export CHART_VERSION="<version>"
 ```
 
-You can then install from the local path `./helm/vibe-kanban-team` (see Quick Start below). If you use GitOps (Argo CD / Flux), point your HelmRelease to the `helm/vibe-kanban-team` path in this repo.
+If you prefer GitOps from source, you can still reference the chart in this repository. For normal installs, the OCI chart is the primary path.
 
 ## Quick Start
 
@@ -191,14 +191,15 @@ kubectl create secret docker-registry registry-credentials \
 ### 4. Create Values File
 
 ```bash
-cp helm/vibe-kanban-team/values-example.yaml values-production.yaml
+helm show values "${CHART_REF}" --version "${CHART_VERSION}" > values-production.yaml
 # Edit values-production.yaml with your secret names and image repositories.
 ```
 
 ### 5. Deploy
 
 ```bash
-helm upgrade --install vibe-kanban ./helm/vibe-kanban-team \
+helm upgrade --install vibe-kanban "${CHART_REF}" \
+  --version "${CHART_VERSION}" \
   --namespace vibe-kanban-team \
   --create-namespace \
   -f values-production.yaml
