@@ -79,3 +79,165 @@ Frontend fullname
 {{- define "vibe-kanban-team.frontend.fullname" -}}
 {{- printf "%s-frontend" (include "vibe-kanban-team.fullname" .) | trunc 63 | trimSuffix "-" }}
 {{- end }}
+
+{{- define "vibe-kanban-team.ingress.className" -}}
+{{- $className := .className | default "" -}}
+{{- if $className -}}
+{{- $className -}}
+{{- else -}}
+{{- .root.Values.global.ingressClassName | default "" -}}
+{{- end -}}
+{{- end }}
+
+{{- define "vibe-kanban-team.ingress.annotations" -}}
+{{- $annotations := dict -}}
+{{- with .root.Values.global.ingress.annotations }}
+{{- $annotations = mergeOverwrite $annotations . -}}
+{{- end }}
+{{- with .annotations }}
+{{- $annotations = mergeOverwrite $annotations . -}}
+{{- end }}
+{{- $clusterIssuer := .root.Values.global.tls.clusterIssuer | default "" -}}
+{{- if $clusterIssuer }}
+{{- $_ := set $annotations "cert-manager.io/cluster-issuer" $clusterIssuer -}}
+{{- end }}
+{{- if $annotations }}
+{{- toYaml $annotations -}}
+{{- end }}
+{{- end }}
+
+{{- define "vibe-kanban-team.remote.host" -}}
+{{- $domain := .Values.global.domain | default "" -}}
+{{- if and $domain .Values.frontend.enabled -}}
+{{- printf "remote.%s" $domain -}}
+{{- else -}}
+{{- $domain -}}
+{{- end -}}
+{{- end }}
+
+{{- define "vibe-kanban-team.remote.publicBaseUrl" -}}
+{{- $host := include "vibe-kanban-team.remote.host" . -}}
+{{- if $host -}}{{ printf "https://%s" $host }}{{- end -}}
+{{- end }}
+
+{{- define "vibe-kanban-team.relay.host" -}}
+{{- $domain := .Values.global.domain | default "" -}}
+{{- if $domain -}}{{ printf "relay.%s" $domain }}{{- end -}}
+{{- end }}
+
+{{- define "vibe-kanban-team.frontend.host" -}}
+{{- $domain := .Values.global.domain | default "" -}}
+{{- if $domain -}}{{ $domain }}{{- end -}}
+{{- end }}
+
+{{- define "vibe-kanban-team.codeServer.host" -}}
+{{- $domain := .Values.global.domain | default "" -}}
+{{- if $domain -}}{{ printf "code.%s" $domain }}{{- end -}}
+{{- end }}
+
+{{- define "vibe-kanban-team.codeServer.proxyHost" -}}
+{{- $domain := .Values.global.domain | default "" -}}
+{{- if $domain -}}{{ printf "*.%s" $domain }}{{- end -}}
+{{- end }}
+
+{{- define "vibe-kanban-team.auth.host" -}}
+{{- $domain := .Values.global.domain | default "" -}}
+{{- if $domain -}}{{ printf "auth.%s" $domain }}{{- end -}}
+{{- end }}
+
+{{- define "vibe-kanban-team.frontend.cookieDomain" -}}
+{{- $domain := .Values.global.domain | default "" -}}
+{{- if $domain -}}{{ printf ".%s" $domain }}{{- end -}}
+{{- end }}
+
+{{- define "vibe-kanban-team.frontend.proxyDomain" -}}
+{{- $codeServerHost := include "vibe-kanban-team.codeServer.host" . -}}
+{{- if and .Values.frontend.codeServerIngress.enabled $codeServerHost -}}{{ printf "{{port}}-%s" $codeServerHost }}{{- end -}}
+{{- end }}
+
+{{- define "vibe-kanban-team.remote.ingressEnabled" -}}
+{{- if or .Values.ingress.enabled (ne (include "vibe-kanban-team.remote.host" .) "") -}}true{{- end -}}
+{{- end }}
+
+{{- define "vibe-kanban-team.relay.ingressEnabled" -}}
+{{- if and .Values.relay.enabled (or .Values.relay.ingress.enabled (ne (include "vibe-kanban-team.relay.host" .) "")) -}}true{{- end -}}
+{{- end }}
+
+{{- define "vibe-kanban-team.frontend.ingressEnabled" -}}
+{{- if and .Values.frontend.enabled (or .Values.frontend.ingress.enabled (ne (include "vibe-kanban-team.frontend.host" .) "")) -}}true{{- end -}}
+{{- end }}
+
+{{- define "vibe-kanban-team.frontend.codeServerIngressEnabled" -}}
+{{- if and .Values.frontend.enabled .Values.frontend.codeServerIngress.enabled -}}true{{- end -}}
+{{- end }}
+
+{{- define "vibe-kanban-team.frontend.authIngressEnabled" -}}
+{{- if and .Values.frontend.enabled .Values.frontend.auth.enabled (or (ne (.Values.frontend.auth.host | default "") "") (ne (include "vibe-kanban-team.auth.host" .) "")) -}}true{{- end -}}
+{{- end }}
+
+{{- define "vibe-kanban-team.remote.structuredEnv" -}}
+{{- $database := .Values.config.existingSecrets.database -}}
+{{- $app := .Values.config.existingSecrets.app -}}
+{{- $oauth := .Values.config.existingSecrets.oauth -}}
+{{- if $database.name }}
+- name: SERVER_DATABASE_URL
+  valueFrom:
+    secretKeyRef:
+      name: {{ $database.name }}
+      key: {{ $database.urlKey }}
+{{- end }}
+{{- if $app.name }}
+- name: VIBEKANBAN_REMOTE_JWT_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ $app.name }}
+      key: {{ $app.jwtSecretKey }}
+- name: ELECTRIC_ROLE_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: {{ $app.name }}
+      key: {{ $app.electricRolePasswordKey }}
+{{- end }}
+{{- if $oauth.name }}
+- name: GITHUB_OAUTH_CLIENT_ID
+  valueFrom:
+    secretKeyRef:
+      name: {{ $oauth.name }}
+      key: {{ $oauth.githubClientIdKey }}
+- name: GITHUB_OAUTH_CLIENT_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ $oauth.name }}
+      key: {{ $oauth.githubClientSecretKey }}
+{{- end }}
+{{- end }}
+
+{{- define "vibe-kanban-team.relay.structuredEnv" -}}
+{{- $database := .Values.config.existingSecrets.database -}}
+{{- $app := .Values.config.existingSecrets.app -}}
+{{- if $database.name }}
+- name: SERVER_DATABASE_URL
+  valueFrom:
+    secretKeyRef:
+      name: {{ $database.name }}
+      key: {{ $database.urlKey }}
+{{- end }}
+{{- if $app.name }}
+- name: VIBEKANBAN_REMOTE_JWT_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ $app.name }}
+      key: {{ $app.jwtSecretKey }}
+{{- end }}
+{{- end }}
+
+{{- define "vibe-kanban-team.electric.structuredEnv" -}}
+{{- $database := .Values.config.existingSecrets.database -}}
+{{- if $database.name }}
+- name: DATABASE_URL
+  valueFrom:
+    secretKeyRef:
+      name: {{ $database.name }}
+      key: {{ $database.electricUrlKey }}
+{{- end }}
+{{- end }}

@@ -1,34 +1,44 @@
-{{- if .Values.ingress.enabled -}}
+{{- if include "vibe-kanban-team.remote.ingressEnabled" . -}}
 {{- $fullName := include "vibe-kanban-team.fullname" . -}}
 {{- $svcPort := .Values.service.port -}}
 {{- $relayName := include "vibe-kanban-team.relay.fullname" . -}}
 {{- $relaySvcPort := .Values.relay.service.port -}}
 {{- $proxyRelayViaRemote := and .Values.relay.enabled .Values.relay.proxyUnderRemoteIngress.enabled -}}
+{{- $annotations := include "vibe-kanban-team.ingress.annotations" (dict "root" . "annotations" .Values.ingress.annotations) -}}
+{{- $className := include "vibe-kanban-team.ingress.className" (dict "root" . "className" .Values.ingress.className) -}}
+{{- $derivedHost := include "vibe-kanban-team.remote.host" . -}}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: {{ $fullName }}
   labels:
     {{- include "vibe-kanban-team.labels" . | nindent 4 }}
-  {{- with .Values.ingress.annotations }}
+  {{- if ne (trim $annotations) "" }}
   annotations:
-    {{- toYaml . | nindent 4 }}
+    {{- $annotations | nindent 4 }}
   {{- end }}
 spec:
-  {{- if .Values.ingress.className }}
-  ingressClassName: {{ .Values.ingress.className }}
+  {{- if $className }}
+  ingressClassName: {{ $className }}
   {{- end }}
-  {{- if .Values.ingress.tls }}
+  {{- if or .Values.ingress.tls (and .Values.global.tls.enabled $derivedHost) }}
   tls:
+    {{- if .Values.ingress.tls }}
     {{- range .Values.ingress.tls }}
     - hosts:
         {{- range .hosts }}
         - {{ . | quote }}
-        {{- end }}
+      {{- end }}
       secretName: {{ .secretName }}
+    {{- end }}
+    {{- else }}
+    - hosts:
+        - {{ $derivedHost | quote }}
+      secretName: {{ printf "%sremote-tls" (.Values.global.tls.secretNamePrefix | default "") }}
     {{- end }}
   {{- end }}
   rules:
+    {{- if and .Values.ingress.enabled .Values.ingress.hosts }}
     {{- range .Values.ingress.hosts }}
     - host: {{ .host | quote }}
       http:
@@ -53,5 +63,28 @@ spec:
                 port:
                   number: {{ $svcPort }}
           {{- end }}
+    {{- end }}
+    {{- else if $derivedHost }}
+    - host: {{ $derivedHost | quote }}
+      http:
+        paths:
+          {{- if $proxyRelayViaRemote }}
+          {{- range $.Values.relay.proxyUnderRemoteIngress.paths }}
+          - path: {{ .path }}
+            pathType: {{ .pathType }}
+            backend:
+              service:
+                name: {{ $relayName }}
+                port:
+                  number: {{ $relaySvcPort }}
+          {{- end }}
+          {{- end }}
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $fullName }}
+                port:
+                  number: {{ $svcPort }}
     {{- end }}
 {{- end }}

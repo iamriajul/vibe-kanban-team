@@ -59,6 +59,7 @@ spec:
               value: "65432"
             - name: LOGICAL_PUBLISHER_HOST
               value: "{{ include "vibe-kanban-team.electric.fullname" . }}"
+            {{- include "vibe-kanban-team.electric.structuredEnv" . | nindent 12 }}
             {{- with .Values.electric.env }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
