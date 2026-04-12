@@ -1,7 +1,14 @@
 {{- if include "vibe-kanban-team.frontend.codeServerIngressEnabled" . -}}
+{{- if and (not .Values.frontend.auth.enabled) (not .Values.frontend.codeServerIngress.allowUnauthenticated) -}}
+{{- fail "frontend.codeServerIngress exposes code-server with --auth none. Set frontend.auth.enabled=true, or explicitly set frontend.codeServerIngress.allowUnauthenticated=true if this ingress is otherwise protected." -}}
+{{- end -}}
 {{- $frontendName := include "vibe-kanban-team.frontend.fullname" . -}}
 {{- $codeServerPort := .Values.frontend.codeServer.port -}}
 {{- $annotations := include "vibe-kanban-team.ingress.annotations" (dict "root" . "annotations" .Values.frontend.codeServerIngress.annotations) -}}
+{{- $authAnnotations := include "vibe-kanban-team.frontend.authAnnotations" . -}}
+{{- if and .Values.frontend.auth.enabled (eq (trim $authAnnotations) "") -}}
+{{- fail "frontend.auth.enabled=true but no protected ingress annotations could be derived. Set global.ingressClassName to nginx, or set frontend.auth.createTraefikMiddleware=true with a traefik ingress class, or provide frontend.auth.protectedIngressAnnotations." -}}
+{{- end -}}
 {{- $className := include "vibe-kanban-team.ingress.className" (dict "root" . "className" .Values.frontend.codeServerIngress.className) -}}
 {{- $derivedHost := include "vibe-kanban-team.codeServer.host" . -}}
 {{- $derivedProxyHost := include "vibe-kanban-team.codeServer.proxyHost" . -}}
@@ -12,13 +19,13 @@ metadata:
   labels:
     {{- include "vibe-kanban-team.labels" . | nindent 4 }}
     app.kubernetes.io/component: frontend
-  {{- if or (ne (trim $annotations) "") (and .Values.frontend.auth.enabled .Values.frontend.auth.protectedIngressAnnotations) }}
+  {{- if or (ne (trim $annotations) "") (ne (trim $authAnnotations) "") }}
   annotations:
     {{- if ne (trim $annotations) "" }}
     {{- $annotations | nindent 4 }}
     {{- end }}
-    {{- if and .Values.frontend.auth.enabled .Values.frontend.auth.protectedIngressAnnotations }}
-    {{- toYaml .Values.frontend.auth.protectedIngressAnnotations | nindent 4 }}
+    {{- if ne (trim $authAnnotations) "" }}
+    {{- $authAnnotations | nindent 4 }}
     {{- end }}
   {{- end }}
 spec:

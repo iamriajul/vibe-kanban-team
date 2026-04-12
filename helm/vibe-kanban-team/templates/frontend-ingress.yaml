@@ -2,6 +2,7 @@
 {{- $frontendName := include "vibe-kanban-team.frontend.fullname" . -}}
 {{- $frontendPort := .Values.frontend.app.port -}}
 {{- $annotations := include "vibe-kanban-team.ingress.annotations" (dict "root" . "annotations" .Values.frontend.ingress.annotations) -}}
+{{- $authAnnotations := include "vibe-kanban-team.frontend.authAnnotations" . -}}
 {{- $className := include "vibe-kanban-team.ingress.className" (dict "root" . "className" .Values.frontend.ingress.className) -}}
 {{- $derivedHost := include "vibe-kanban-team.frontend.host" . -}}
 apiVersion: networking.k8s.io/v1
@@ -11,13 +12,13 @@ metadata:
   labels:
     {{- include "vibe-kanban-team.labels" . | nindent 4 }}
     app.kubernetes.io/component: frontend
-  {{- if or (ne (trim $annotations) "") (and .Values.frontend.auth.enabled .Values.frontend.auth.protectedIngressAnnotations) }}
+  {{- if or (ne (trim $annotations) "") (and .Values.frontend.auth.protectFrontend (ne (trim $authAnnotations) "")) }}
   annotations:
     {{- if ne (trim $annotations) "" }}
     {{- $annotations | nindent 4 }}
     {{- end }}
-    {{- if and .Values.frontend.auth.enabled .Values.frontend.auth.protectedIngressAnnotations }}
-    {{- toYaml .Values.frontend.auth.protectedIngressAnnotations | nindent 4 }}
+    {{- if and .Values.frontend.auth.protectFrontend (ne (trim $authAnnotations) "") }}
+    {{- $authAnnotations | nindent 4 }}
     {{- end }}
   {{- end }}
 spec:

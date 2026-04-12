@@ -217,6 +217,13 @@ port proxy:  <port>-code.vk.example.com
 
 The wildcard is for derived service subdomains and code-server port proxying. Relay uses path-based routing on `relay.<domain>` and does not need `*.relay.<domain>`.
 
+code-server runs with its own auth disabled because ingress auth owns access control. If `frontend.codeServerIngress.enabled=true`, the chart now requires either:
+
+- `frontend.auth.enabled=true` with a supported ingress configuration
+- `frontend.codeServerIngress.allowUnauthenticated=true` when another layer already protects the ingress
+
+For nginx, auth annotations are derived automatically when `global.ingressClassName` contains `nginx`. For Traefik, set `frontend.auth.createTraefikMiddleware=true` with a Traefik ingress class, or provide `frontend.auth.protectedIngressAnnotations`.
+
 ### 5. Deploy
 
 ```bash

@@ -331,6 +331,9 @@ frontend:
   # Defaults to code.<global.domain> and *.<global.domain>.
   codeServerIngress:
     enabled: false
+    # code-server runs with --auth none, so public ingress requires frontend.auth
+    # unless this is explicitly acknowledged.
+    allowUnauthenticated: false
     className: ""
     annotations: {}
     hosts: []
@@ -393,10 +396,17 @@ frontend:
     host: ""
     # Cookie domain (must cover code-server and wildcard subdomains)
     cookieDomain: ""
+    # Code-server is protected when auth.enabled=true. Set this to also protect
+    # the frontend app on global.domain.
+    protectFrontend: false
     # Name of the K8s secret with keys: client-id, client-secret, cookie-secret
     secretName: ""
 
-    # Annotations added to protected ingresses (frontend + code-server).
+    # Extra/override annotations added to protected ingresses.
+    # For nginx, auth-url/auth-signin/auth-response-headers are derived
+    # automatically when global.ingressClassName contains nginx.
+    # For Traefik, router.middlewares is derived when createTraefikMiddleware=true
+    # and global.ingressClassName contains traefik.
     # Set these per-environment based on the ingress controller:
     #   nginx:   nginx.ingress.kubernetes.io/auth-url, auth-signin, auth-response-headers
     #   traefik: traefik.ingress.kubernetes.io/router.middlewares

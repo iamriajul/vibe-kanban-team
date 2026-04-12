@@ -155,6 +155,24 @@ Frontend fullname
 {{- if and .Values.frontend.codeServerIngress.enabled $codeServerHost -}}{{ printf "{{port}}-%s" $codeServerHost }}{{- end -}}
 {{- end }}
 
+{{- define "vibe-kanban-team.frontend.authAnnotations" -}}
+{{- $annotations := dict -}}
+{{- with .Values.frontend.auth.protectedIngressAnnotations }}
+{{- $annotations = mergeOverwrite $annotations . -}}
+{{- end }}
+{{- $ingressClassName := .Values.global.ingressClassName | default "" -}}
+{{- if and .Values.frontend.auth.enabled (contains "nginx" $ingressClassName) (include "vibe-kanban-team.auth.host" .) -}}
+{{- $_ := set $annotations "nginx.ingress.kubernetes.io/auth-url" (printf "https://%s/oauth2/auth" (include "vibe-kanban-team.auth.host" .)) -}}
+{{- $_ := set $annotations "nginx.ingress.kubernetes.io/auth-signin" (printf "https://%s/oauth2/start?rd=$scheme://$host$request_uri" (include "vibe-kanban-team.auth.host" .)) -}}
+{{- $_ := set $annotations "nginx.ingress.kubernetes.io/auth-response-headers" "X-Auth-Request-User,X-Auth-Request-Email,Authorization" -}}
+{{- else if and .Values.frontend.auth.enabled .Values.frontend.auth.createTraefikMiddleware (contains "traefik" $ingressClassName) -}}
+{{- $_ := set $annotations "traefik.ingress.kubernetes.io/router.middlewares" (printf "%s-%s-oauth2-proxy@kubernetescrd" .Release.Namespace (include "vibe-kanban-team.frontend.fullname" .)) -}}
+{{- end }}
+{{- if $annotations }}
+{{- toYaml $annotations -}}
+{{- end }}
+{{- end }}
+
 {{- define "vibe-kanban-team.remote.ingressEnabled" -}}
 {{- if or .Values.ingress.enabled (ne (include "vibe-kanban-team.remote.host" .) "") -}}true{{- end -}}
 {{- end }}

@@ -1,4 +1,7 @@
 {{- if and .Values.frontend.enabled .Values.frontend.auth.enabled }}
+{{- if eq (.Values.frontend.auth.secretName | default "") "" -}}
+{{- fail "frontend.auth.enabled=true requires frontend.auth.secretName with client-id, client-secret, and cookie-secret keys." -}}
+{{- end -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:

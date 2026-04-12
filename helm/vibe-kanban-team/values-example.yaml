@@ -156,6 +156,13 @@ frontend:
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
 
+  # code-server runs with --auth none. If codeServerIngress.enabled=true, also
+  # enable this auth block or explicitly set codeServerIngress.allowUnauthenticated=true.
+  auth:
+    enabled: false
+    emailDomain: "community.example.com"
+    secretName: "vibe-kanban-code-server-oauth"
+
   persistence:
     enabled: true
     storageClass: ""
