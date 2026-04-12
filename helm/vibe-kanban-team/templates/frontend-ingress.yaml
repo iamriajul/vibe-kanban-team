@@ -12,12 +12,12 @@ metadata:
   labels:
     {{- include "vibe-kanban-team.labels" . | nindent 4 }}
     app.kubernetes.io/component: frontend
-  {{- if or (ne (trim $annotations) "") (and .Values.frontend.auth.protectFrontend (ne (trim $authAnnotations) "")) }}
+  {{- if or (ne (trim $annotations) "") (and .Values.frontend.auth.enabled (ne (trim $authAnnotations) "")) }}
   annotations:
     {{- if ne (trim $annotations) "" }}
     {{- $annotations | nindent 4 }}
     {{- end }}
-    {{- if and .Values.frontend.auth.protectFrontend (ne (trim $authAnnotations) "") }}
+    {{- if and .Values.frontend.auth.enabled (ne (trim $authAnnotations) "") }}
     {{- $authAnnotations | nindent 4 }}
     {{- end }}
   {{- end }}

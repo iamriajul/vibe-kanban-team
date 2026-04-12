@@ -1,7 +1,4 @@
 {{- if include "vibe-kanban-team.frontend.codeServerIngressEnabled" . -}}
-{{- if and (not .Values.frontend.auth.enabled) (not .Values.frontend.codeServerIngress.allowUnauthenticated) -}}
-{{- fail "frontend.codeServerIngress exposes code-server with --auth none. Set frontend.auth.enabled=true, or explicitly set frontend.codeServerIngress.allowUnauthenticated=true if this ingress is otherwise protected." -}}
-{{- end -}}
 {{- $frontendName := include "vibe-kanban-team.frontend.fullname" . -}}
 {{- $codeServerPort := .Values.frontend.codeServer.port -}}
 {{- $annotations := include "vibe-kanban-team.ingress.annotations" (dict "root" . "annotations" .Values.frontend.codeServerIngress.annotations) -}}

@@ -331,9 +331,6 @@ frontend:
   # Defaults to code.<global.domain> and *.<global.domain>.
   codeServerIngress:
     enabled: false
-    # code-server runs with --auth none, so public ingress requires frontend.auth
-    # unless this is explicitly acknowledged.
-    allowUnauthenticated: false
     className: ""
     annotations: {}
     hosts: []
@@ -373,32 +370,60 @@ frontend:
   extraEnv: []
 
   # ===========================================================================
-  # Google OAuth2 protection for code-server ingress (optional)
+  # Ingress-layer authentication (oauth2-proxy) — for public deployments
   # ===========================================================================
-  # Deploys oauth2-proxy in front of the code-server ingress.
-  # Only users with an email matching emailDomain can access code-server.
+  # TWO SCENARIOS:
   #
-  # Prerequisites:
-  # 1. Create a Google OAuth2 Web Application at:
-  #    https://console.cloud.google.com/apis/credentials
-  #    Authorized redirect URI: https://<auth.host>/oauth2/callback
+  # Private/local network (DNS → local IP):
+  #   auth.enabled: false   ← default; VK's built-in auth is sufficient.
+  #   code-server ingress is unauthenticated — the network boundary is the guard.
   #
-  # 2. Create a Kubernetes secret:
-  #    kubectl create secret generic <secretName> \
-  #      --from-literal=client-id='your-google-client-id' \
-  #      --from-literal=client-secret='your-google-client-secret' \
-  #      --from-literal=cookie-secret="$(openssl rand -base64 32 | head -c 32)"
+  # Public internet (DNS → public IP):
+  #   auth.enabled: true    ← oauth2-proxy gates all frontend services.
+  #   code-server has no auth of its own; ingress auth is required.
+  #
+  # Prerequisites (when enabled=true):
+  #   kubectl create secret generic <secretName> \
+  #     --from-literal=client-id='...' \
+  #     --from-literal=client-secret='...' \
+  #     --from-literal=cookie-secret="$(openssl rand -base64 32 | head -c 32)"
+  #
+  # Google OAuth app: https://console.cloud.google.com/apis/credentials
+  #   Authorized redirect URI: https://<auth.host>/oauth2/callback
+  # GitHub OAuth app: https://github.com/settings/developers
+  #   Authorization callback URL: https://<auth.host>/oauth2/callback
   auth:
     enabled: false
-    # Restrict sign-in to this email domain
-    emailDomain: "community.example.com"
-    # Hostname for the OAuth2 proxy callback endpoint
+
+    # OAuth provider: google | github
+    provider: google
+
+    # -------------------------------------------------------------------------
+    # Access restrictions — at least one required when enabled=true
+    # -------------------------------------------------------------------------
+    # emailDomains: restrict by email domain.
+    #   Google examples:
+    #     ["*"]                   → any Google account (personal Gmail + Workspace)
+    #     ["gmail.com"]           → personal Gmail only
+    #     ["mycompany.com"]       → Google Workspace org (or any @mycompany.com)
+    #     ["a.com", "b.com"]     → multiple domains
+    #   GitHub: not used — use githubOrg / githubTeam instead.
+    emailDomains: []
+
+    # allowedEmails: allowlist specific addresses regardless of domain (any provider).
+    #   Example: ["alice@gmail.com", "bob@mycompany.com"]
+    #   Combined with emailDomains using OR logic — either match grants access.
+    allowedEmails: []
+
+    # GitHub-specific: restrict to org or team members (provider: github only)
+    githubOrg: ""    # e.g. "myorg"
+    githubTeam: ""   # e.g. "myorg/backend-team"
+
+    # Hostname for the OAuth2 proxy callback endpoint (auth.<global.domain> if blank)
     host: ""
-    # Cookie domain (must cover code-server and wildcard subdomains)
+    # Cookie domain covering all protected subdomains (derived from global.domain if blank)
     cookieDomain: ""
-    # Code-server is protected when auth.enabled=true. Set this to also protect
-    # the frontend app on global.domain.
-    protectFrontend: false
+
     # Name of the K8s secret with keys: client-id, client-secret, cookie-secret
     secretName: ""
 
@@ -407,13 +432,9 @@ frontend:
     # automatically when global.ingressClassName contains nginx.
     # For Traefik, router.middlewares is derived when createTraefikMiddleware=true
     # and global.ingressClassName contains traefik.
-    # Set these per-environment based on the ingress controller:
-    #   nginx:   nginx.ingress.kubernetes.io/auth-url, auth-signin, auth-response-headers
-    #   traefik: traefik.ingress.kubernetes.io/router.middlewares
     protectedIngressAnnotations: {}
 
     # Set to true on Traefik clusters to create a Traefik Middleware CRD for forwardAuth.
-    # Set to false on nginx clusters (Traefik CRDs don't exist).
     createTraefikMiddleware: false
 
     image:

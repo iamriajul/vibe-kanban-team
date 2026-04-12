@@ -2,6 +2,10 @@
 {{- if eq (.Values.frontend.auth.secretName | default "") "" -}}
 {{- fail "frontend.auth.enabled=true requires frontend.auth.secretName with client-id, client-secret, and cookie-secret keys." -}}
 {{- end -}}
+{{- $hasRestriction := or (gt (len .Values.frontend.auth.emailDomains) 0) (gt (len .Values.frontend.auth.allowedEmails) 0) (ne (.Values.frontend.auth.githubOrg | default "") "") (ne (.Values.frontend.auth.githubTeam | default "") "") -}}
+{{- if not $hasRestriction -}}
+{{- fail "frontend.auth.enabled=true requires at least one access restriction: emailDomains, allowedEmails, githubOrg, or githubTeam." -}}
+{{- end -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -34,8 +38,19 @@ spec:
           image: "{{ .Values.frontend.auth.image.repository }}:{{ .Values.frontend.auth.image.tag }}"
           imagePullPolicy: {{ .Values.frontend.auth.image.pullPolicy }}
           args:
-            - --provider=google
-            - --email-domain={{ .Values.frontend.auth.emailDomain }}
+            - --provider={{ .Values.frontend.auth.provider | default "google" }}
+            {{- range .Values.frontend.auth.emailDomains }}
+            - --email-domain={{ . }}
+            {{- end }}
+            {{- range .Values.frontend.auth.allowedEmails }}
+            - --allowed-email-list={{ . }}
+            {{- end }}
+            {{- if .Values.frontend.auth.githubOrg }}
+            - --github-org={{ .Values.frontend.auth.githubOrg }}
+            {{- end }}
+            {{- if .Values.frontend.auth.githubTeam }}
+            - --github-team={{ .Values.frontend.auth.githubTeam }}
+            {{- end }}
             - --upstream=static://200
             - --http-address=0.0.0.0:4180
             - --reverse-proxy=true
