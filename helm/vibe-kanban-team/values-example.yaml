@@ -36,7 +36,7 @@ config:
       name: vibe-kanban-oauth
 
 # Relay tunnel (optional)
-# NOTE: Tunnel users need relay ingress + wildcard TLS.
+# NOTE: Tunnel users need relay ingress. Relay uses path-based routing on one host.
 # NOTE: relay.proxyUnderRemoteIngress keeps remote image reusable without
 #       requiring VITE_RELAY_API_BASE_URL at build time.
 relay:
@@ -125,7 +125,7 @@ extraEnv:
 #
 # DNS requirements:
 #   - vk.community.example.com  -> frontend app
-#   - *.vk.community.example.com -> remote, code-server, and port proxy hosts
+#   - *.vk.community.example.com -> remote, relay, code-server, and port proxy hosts
 
 frontend:
   enabled: false

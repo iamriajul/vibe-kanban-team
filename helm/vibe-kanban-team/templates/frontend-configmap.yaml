@@ -155,7 +155,7 @@ data:
     Run `port-url <port>` to get the URL the user can open:
     ```
     $ port-url 5173
-    https://5173.code.vk.community.example.com/
+    https://5173-code.vk.community.example.com/
     ```
     Always present this URL to the user — never `localhost` or `127.0.0.1`.
     ## Requirements

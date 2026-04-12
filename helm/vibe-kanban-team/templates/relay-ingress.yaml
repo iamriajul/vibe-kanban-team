@@ -32,7 +32,6 @@ spec:
     {{- else }}
     - hosts:
         - {{ $derivedHost | quote }}
-        - {{ printf "*.%s" $derivedHost | quote }}
       secretName: {{ printf "%srelay-tls" (.Values.global.tls.secretNamePrefix | default "") }}
     {{- end }}
   {{- end }}
@@ -54,16 +53,6 @@ spec:
     {{- end }}
     {{- else if $derivedHost }}
     - host: {{ $derivedHost | quote }}
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: {{ $relayName }}
-                port:
-                  number: {{ $relaySvcPort }}
-    - host: {{ printf "*.%s" $derivedHost | quote }}
       http:
         paths:
           - path: /
