@@ -15,3 +15,4 @@
 0014-fix-remote-add-attachment-upload-relay-for-legacy-cl.patch
 0015-fix-relay-docker-build-with-stale-lockfile.patch
 0016-fix-relay-install-perl-and-make-for-vendored-openssl.patch
+0017-fix-add-30s-WebSocket-ping-keepalive-to-all-long-liv.patch
