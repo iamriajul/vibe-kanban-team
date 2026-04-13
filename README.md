@@ -93,7 +93,7 @@ kubectl -n cert-manager rollout status deploy/cert-manager-webhook --timeout=180
 kubectl -n cert-manager rollout status deploy/cert-manager-cainjector --timeout=180s
 ```
 
-Create a ClusterIssuer (Cloudflare DNS-01 example, supports wildcard relay hosts):
+Create a ClusterIssuer (Cloudflare DNS-01 example, supports wildcard code-server port proxy hosts):
 
 ```bash
 kubectl -n cert-manager create secret generic cloudflare-dns-api-token \
@@ -197,6 +197,33 @@ curl -fsSL \
 # Edit values-production.yaml with your secret names and image repositories.
 ```
 
+Set `global.domain` to the exact frontend hostname users should open, for example `vk.example.com`.
+For a full frontend install with remote, relay, and code-server port proxying, configure two DNS records to your ingress controller:
+
+```text
+vk.example.com   -> ingress
+*.vk.example.com -> ingress
+```
+
+The chart derives service hosts from that domain:
+
+```text
+frontend:    vk.example.com
+remote API:  remote.vk.example.com
+relay:       relay.vk.example.com
+code-server: code.vk.example.com
+port proxy:  <port>-code.vk.example.com
+```
+
+The wildcard is for derived service subdomains and code-server port proxying. Relay uses path-based routing on `relay.<domain>` and does not need `*.relay.<domain>`.
+
+code-server runs with its own auth disabled because ingress auth owns access control. If `frontend.codeServerIngress.enabled=true`, the chart now requires either:
+
+- `frontend.auth.enabled=true` with a supported ingress configuration
+- `frontend.codeServerIngress.allowUnauthenticated=true` when another layer already protects the ingress
+
+For nginx, auth annotations are derived automatically when `global.ingressClassName` contains `nginx`. For Traefik, set `frontend.auth.createTraefikMiddleware=true` with a Traefik ingress class, or provide `frontend.auth.protectedIngressAnnotations`.
+
 ### 5. Deploy
 
 ```bash
@@ -289,8 +316,7 @@ To support tunnel/relay features, enable the `relay` section in values and confi
 
 - `relay.enabled: true`
 - `relay.env` with `SERVER_DATABASE_URL` and `VIBEKANBAN_REMOTE_JWT_SECRET` (same DB/JWT as remote)
-- `relay.ingress` with both relay base host and wildcard host (for example `relay.example.com` and `*.relay.example.com`)
-- use a DNS-01 capable ClusterIssuer for wildcard relay hosts (for example `cert-manager-global` above)
+- `relay.ingress` or `global.domain` so the chart exposes one relay host (for example `relay.example.com`)
 - keep `relay.proxyUnderRemoteIngress.enabled: true` so relay endpoints are available under the main remote API host (`/v1/relay` and `/relay/h`) for reusable frontend images
 
 `scripts/deploy.sh` now sets both `image.tag` and `relay.image.tag` to the requested release tag.

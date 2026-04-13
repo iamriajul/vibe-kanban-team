@@ -7,6 +7,20 @@
 
 replicaCount: 1
 
+global:
+  # Public app domain, e.g. vk.example.com or vk-gibberish.example.com.
+  # When frontend.enabled=true, the frontend uses this exact domain and
+  # other services derive as subdomains like remote.<domain> and code.<domain>.
+  # When frontend.enabled=false, the remote server uses this domain directly.
+  domain: ""
+  ingressClassName: ""
+  ingress:
+    annotations: {}
+  tls:
+    enabled: false
+    clusterIssuer: ""
+    secretNamePrefix: ""
+
 image:
   repository: ghcr.io/iamriajul/vibe-kanban-team-remote
   pullPolicy: IfNotPresent
@@ -40,13 +54,9 @@ service:
 
 ingress:
   enabled: false
-  className: "nginx"
+  className: ""
   annotations: {}
-  hosts:
-    - host: vibe-kanban.example.com
-      paths:
-        - path: /
-          pathType: Prefix
+  hosts: []
   tls: []
 
 resources:
@@ -85,90 +95,39 @@ nodeSelector: {}
 tolerations: []
 affinity: {}
 
+config:
+  existingSecrets:
+    database:
+      name: ""
+      urlKey: url
+      electricUrlKey: electric-url
+    app:
+      name: ""
+      jwtSecretKey: jwt-secret
+      electricRolePasswordKey: electric-role-password
+    oauth:
+      name: ""
+      githubClientIdKey: github-client-id
+      githubClientSecretKey: github-client-secret
+
 # =============================================================================
 # Environment Variables
 # =============================================================================
-# Pass configuration via environment variables, referencing your own secrets.
-# This follows the same pattern as the Coder Helm chart.
-#
+# Prefer config.existingSecrets for the common install path.
+# Use env / relay.env / electric.env only for manual overrides or uncommon keys.
+# 
 # Example:
-#   env:
-#     - name: SERVER_DATABASE_URL
-#       valueFrom:
-#         secretKeyRef:
-#           name: vibe-kanban-db
-#           key: url
-#     - name: VIBEKANBAN_REMOTE_JWT_SECRET
-#       valueFrom:
-#         secretKeyRef:
-#           name: vibe-kanban-secrets
-#           key: jwt-secret
+#   config:
+#     existingSecrets:
+#       database:
+#         name: vibe-kanban-db
+#       app:
+#         name: vibe-kanban-secrets
+#       oauth:
+#         name: vibe-kanban-oauth
 # =============================================================================
 
-env:
-  # REQUIRED: PostgreSQL connection URL
-  # Database must have wal_level=logical for ElectricSQL
-  # Example: postgres://user:pass@host:5432/dbname
-  - name: SERVER_DATABASE_URL
-    valueFrom:
-      secretKeyRef:
-        name: ""  # Your database secret name
-        key: url  # Key containing the connection URL
-
-  # REQUIRED: JWT secret for authentication
-  # Generate with: openssl rand -base64 32
-  - name: VIBEKANBAN_REMOTE_JWT_SECRET
-    valueFrom:
-      secretKeyRef:
-        name: ""  # Your secrets name
-        key: jwt-secret
-
-  # REQUIRED: ElectricSQL database role password
-  # This role needs REPLICATION privilege
-  - name: ELECTRIC_ROLE_PASSWORD
-    valueFrom:
-      secretKeyRef:
-        name: ""  # Your secrets name
-        key: electric-role-password
-
-  # REQUIRED (at least one): OAuth provider credentials
-  # GitHub OAuth
-  - name: GITHUB_OAUTH_CLIENT_ID
-    valueFrom:
-      secretKeyRef:
-        name: ""  # Your OAuth secret name
-        key: github-client-id
-  - name: GITHUB_OAUTH_CLIENT_SECRET
-    valueFrom:
-      secretKeyRef:
-        name: ""  # Your OAuth secret name
-        key: github-client-secret
-
-  # OR Google OAuth
-  # - name: GOOGLE_OAUTH_CLIENT_ID
-  #   valueFrom:
-  #     secretKeyRef:
-  #       name: ""
-  #       key: google-client-id
-  # - name: GOOGLE_OAUTH_CLIENT_SECRET
-  #   valueFrom:
-  #     secretKeyRef:
-  #       name: ""
-  #       key: google-client-secret
-
-  # OR Zoho OAuth
-  # - name: ZOHO_OAUTH_CLIENT_ID
-  #   valueFrom:
-  #     secretKeyRef:
-  #       name: ""
-  #       key: zoho-client-id
-  # - name: ZOHO_OAUTH_CLIENT_SECRET
-  #   valueFrom:
-  #     secretKeyRef:
-  #       name: ""
-  #       key: zoho-client-secret
-  # - name: ZOHO_ACCOUNTS_URL  # Optional, defaults to https://accounts.zoho.com
-  #   value: ""
+env: []
 
 # Additional environment variables (non-secret)
 extraEnv:
@@ -196,17 +155,9 @@ relay:
 
   ingress:
     enabled: false
-    className: "nginx"
+    className: ""
     annotations: {}
-    hosts:
-      - host: relay.vibe-kanban.example.com
-        paths:
-          - path: /
-            pathType: Prefix
-      - host: "*.relay.vibe-kanban.example.com"
-        paths:
-          - path: /
-            pathType: Prefix
+    hosts: []
     tls: []
 
   # Also expose relay API/proxy paths under the main remote ingress host.
@@ -249,17 +200,7 @@ relay:
   # REQUIRED for relay:
   # - SERVER_DATABASE_URL (same database as remote server)
   # - VIBEKANBAN_REMOTE_JWT_SECRET (same JWT secret as remote server)
-  env:
-    - name: SERVER_DATABASE_URL
-      valueFrom:
-        secretKeyRef:
-          name: ""  # Your database secret name
-          key: url
-    - name: VIBEKANBAN_REMOTE_JWT_SECRET
-      valueFrom:
-        secretKeyRef:
-          name: ""  # Your secrets name
-          key: jwt-secret
+  env: []
 
   extraEnv:
     - name: RUST_LOG
@@ -360,7 +301,7 @@ frontend:
     # Proxy domain for exposing internal ports via code-server.
     # code-server extracts the port from the hostname and proxies to localhost:<port>.
     # Also auto-sets VSCODE_PROXY_URI for the VS Code Ports panel.
-    # Example: "{{port}}-code-server.vk.community.example.dev"
+    # Example: "{{port}}-code.<global.domain>"
     proxyDomain: ""
 
   # Frontend application
@@ -378,33 +319,21 @@ frontend:
   service:
     type: ClusterIP
 
-  # Frontend app ingress (e.g., vk.community.example.dev)
+  # Frontend app ingress. Defaults to global.domain.
   ingress:
     enabled: false
-    className: "nginx"
+    className: ""
     annotations: {}
-    hosts:
-      - host: vk.example.com
-        paths:
-          - path: /
-            pathType: Prefix
+    hosts: []
     tls: []
 
-  # Code-server ingress (includes wildcard for port proxying)
-  # e.g., code-server.vk.community.example.dev and *.code-server.vk.community.example.dev
+  # Code-server ingress (includes wildcard for port proxying).
+  # Defaults to code.<global.domain> and *.<global.domain>.
   codeServerIngress:
     enabled: false
-    className: "nginx"
+    className: ""
     annotations: {}
-    hosts:
-      - host: code-server.vk.example.com
-        paths:
-          - path: /
-            pathType: Prefix
-      - host: "*.code-server.vk.example.com"
-        paths:
-          - path: /
-            pathType: Prefix
+    hosts: []
     tls: []
 
   # Persistent home directory for the coder user
@@ -441,40 +370,71 @@ frontend:
   extraEnv: []
 
   # ===========================================================================
-  # Google OAuth2 protection for code-server ingress (optional)
+  # Ingress-layer authentication (oauth2-proxy) — for public deployments
   # ===========================================================================
-  # Deploys oauth2-proxy in front of the code-server ingress.
-  # Only users with an email matching emailDomain can access code-server.
+  # TWO SCENARIOS:
   #
-  # Prerequisites:
-  # 1. Create a Google OAuth2 Web Application at:
-  #    https://console.cloud.google.com/apis/credentials
-  #    Authorized redirect URI: https://<auth.host>/oauth2/callback
+  # Private/local network (DNS → local IP):
+  #   auth.enabled: false   ← default; VK's built-in auth is sufficient.
+  #   code-server ingress is unauthenticated — the network boundary is the guard.
   #
-  # 2. Create a Kubernetes secret:
-  #    kubectl create secret generic <secretName> \
-  #      --from-literal=client-id='your-google-client-id' \
-  #      --from-literal=client-secret='your-google-client-secret' \
-  #      --from-literal=cookie-secret="$(openssl rand -base64 32 | head -c 32)"
+  # Public internet (DNS → public IP):
+  #   auth.enabled: true    ← oauth2-proxy gates all frontend services.
+  #   code-server has no auth of its own; ingress auth is required.
+  #
+  # Prerequisites (when enabled=true):
+  #   kubectl create secret generic <secretName> \
+  #     --from-literal=client-id='...' \
+  #     --from-literal=client-secret='...' \
+  #     --from-literal=cookie-secret="$(openssl rand -base64 32 | head -c 32)"
+  #
+  # Google OAuth app: https://console.cloud.google.com/apis/credentials
+  #   Authorized redirect URI: https://<auth.host>/oauth2/callback
+  # GitHub OAuth app: https://github.com/settings/developers
+  #   Authorization callback URL: https://<auth.host>/oauth2/callback
   auth:
     enabled: false
-    # Restrict sign-in to this email domain
-    emailDomain: "community.example.com"
-    # Hostname for the OAuth2 proxy callback endpoint
-    host: "auth.vk.example.com"
-    # Cookie domain (must cover code-server and wildcard subdomains)
-    cookieDomain: ".vk.example.com"
+
+    # OAuth provider: google | github
+    provider: google
+
+    # -------------------------------------------------------------------------
+    # Access restrictions — at least one required when enabled=true
+    # -------------------------------------------------------------------------
+    # emailDomains: restrict by email domain.
+    #   Google examples:
+    #     ["*"]                   → any Google account (personal Gmail + Workspace)
+    #     ["gmail.com"]           → personal Gmail only
+    #     ["mycompany.com"]       → Google Workspace org (or any @mycompany.com)
+    #     ["a.com", "b.com"]     → multiple domains
+    #   GitHub: not used — use githubOrg / githubTeam instead.
+    emailDomains: []
+
+    # allowedEmails: allowlist specific addresses regardless of domain (any provider).
+    #   Example: ["alice@gmail.com", "bob@mycompany.com"]
+    #   Combined with emailDomains using OR logic — either match grants access.
+    allowedEmails: []
+
+    # GitHub-specific: restrict to org or team members (provider: github only)
+    githubOrg: ""    # e.g. "myorg"
+    githubTeam: ""   # e.g. "myorg/backend-team"
+
+    # Hostname for the OAuth2 proxy callback endpoint (auth.<global.domain> if blank)
+    host: ""
+    # Cookie domain covering all protected subdomains (derived from global.domain if blank)
+    cookieDomain: ""
+
     # Name of the K8s secret with keys: client-id, client-secret, cookie-secret
     secretName: ""
 
-    # Annotations added to protected ingresses (frontend + code-server).
-    # Set these per-environment based on the ingress controller:
-    #   nginx:   nginx.ingress.kubernetes.io/auth-url, auth-signin, auth-response-headers
-    #   traefik: traefik.ingress.kubernetes.io/router.middlewares
+    # Extra/override annotations added to protected ingresses.
+    # For nginx, auth-url/auth-signin/auth-response-headers are derived
+    # automatically when global.ingressClassName contains nginx.
+    # For Traefik, router.middlewares is derived when createTraefikMiddleware=true
+    # and global.ingressClassName contains traefik.
     protectedIngressAnnotations: {}
 
     # Set to true on Traefik clusters to create a Traefik Middleware CRD for forwardAuth.
-    # Set to false on nginx clusters (Traefik CRDs don't exist).
     createTraefikMiddleware: false
 
     image:
@@ -483,7 +443,7 @@ frontend:
       pullPolicy: IfNotPresent
 
     ingress:
-      className: "nginx"
+      className: ""
       annotations: {}
       tls: []
 
@@ -527,14 +487,7 @@ electric:
 
   # ElectricSQL environment variables
   # The DATABASE_URL will be constructed from the same secret as the server
-  env:
-    # REQUIRED: Database URL for ElectricSQL (uses electric_sync role)
-    # Example: postgresql://electric_sync:pass@host:5432/dbname?sslmode=disable
-    - name: DATABASE_URL
-      valueFrom:
-        secretKeyRef:
-          name: ""  # Your database secret name
-          key: electric-url  # Key containing ElectricSQL connection URL
+  env: []
 
   # Additional ElectricSQL environment variables
   extraEnv:

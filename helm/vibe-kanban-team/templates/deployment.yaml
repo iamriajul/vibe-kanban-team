@@ -1,5 +1,11 @@
 apiVersion: apps/v1
 kind: Deployment
+{{- $serverPublicBaseUrlSet := false -}}
+{{- range .Values.env }}
+{{- if eq .name "SERVER_PUBLIC_BASE_URL" }}
+{{- $serverPublicBaseUrlSet = true -}}
+{{- end }}
+{{- end }}
 metadata:
   name: {{ include "vibe-kanban-team.fullname" . }}
   labels:
@@ -47,6 +53,11 @@ spec:
             - name: ELECTRIC_URL
               value: "http://{{ include "vibe-kanban-team.electric.fullname" . }}:{{ .Values.electric.service.port }}"
             {{- end }}
+            {{- if and (include "vibe-kanban-team.remote.publicBaseUrl" .) (not $serverPublicBaseUrlSet) }}
+            - name: SERVER_PUBLIC_BASE_URL
+              value: {{ include "vibe-kanban-team.remote.publicBaseUrl" . | quote }}
+            {{- end }}
+            {{- include "vibe-kanban-team.remote.structuredEnv" . | nindent 12 }}
             {{- with .Values.env }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

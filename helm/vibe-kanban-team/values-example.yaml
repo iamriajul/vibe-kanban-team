@@ -1,6 +1,19 @@
 # Example values for Vibe Kanban Team
 # This follows the same pattern as the Coder Helm chart
 
+global:
+  # Use the exact frontend hostname users should open. Other services derive
+  # below it, such as remote.vk.community.example.com and code.vk.community.example.com.
+  domain: "vk.community.example.com"
+  ingressClassName: "nginx"
+  ingress:
+    annotations:
+      nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+      # proxy-read-timeout and proxy-send-timeout are injected automatically for nginx
+  tls:
+    enabled: true
+    clusterIssuer: "letsencrypt-prod"
+
 # Image configuration
 image:
   repository: ghcr.io/iamriajul/vibe-kanban-team-remote
@@ -11,27 +24,18 @@ image:
 imagePullSecrets:
   - name: registry-credentials
 
-# Ingress configuration
-ingress:
-  enabled: true
-  className: "nginx"
-  annotations:
-    cert-manager.io/cluster-issuer: "letsencrypt-prod"
-    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
-    nginx.ingress.kubernetes.io/proxy-read-timeout: "86400"
-    nginx.ingress.kubernetes.io/proxy-send-timeout: "86400"
-  hosts:
-    - host: vibe-kanban.example.com
-      paths:
-        - path: /
-          pathType: Prefix
-  tls:
-    - secretName: vibe-kanban-tls
-      hosts:
-        - vibe-kanban.example.com
+# Shared secret references for the common install path.
+config:
+  existingSecrets:
+    database:
+      name: vibe-kanban-db
+    app:
+      name: vibe-kanban-secrets
+    oauth:
+      name: vibe-kanban-oauth
 
 # Relay tunnel (optional)
-# NOTE: Tunnel users need relay ingress + wildcard TLS.
+# NOTE: Tunnel users need relay ingress. Relay uses path-based routing on one host.
 # NOTE: relay.proxyUnderRemoteIngress keeps remote image reusable without
 #       requiring VITE_RELAY_API_BASE_URL at build time.
 relay:
@@ -46,26 +50,6 @@ relay:
     type: ClusterIP
     port: 8082
 
-  ingress:
-    enabled: true
-    className: "nginx"
-    annotations:
-      cert-manager.io/cluster-issuer: "letsencrypt-prod"
-    hosts:
-      - host: relay.vibe-kanban.example.com
-        paths:
-          - path: /
-            pathType: Prefix
-      - host: "*.relay.vibe-kanban.example.com"
-        paths:
-          - path: /
-            pathType: Prefix
-    tls:
-      - secretName: relay-vibe-kanban-tls
-        hosts:
-          - relay.vibe-kanban.example.com
-          - "*.relay.vibe-kanban.example.com"
-
   # Proxy relay paths under the main remote ingress host so the frontend can
   # use remote API base URL at runtime.
   proxyUnderRemoteIngress:
@@ -75,18 +59,6 @@ relay:
         pathType: Prefix
       - path: /relay/h
         pathType: Prefix
-
-  env:
-    - name: SERVER_DATABASE_URL
-      valueFrom:
-        secretKeyRef:
-          name: vibe-kanban-db
-          key: url
-    - name: VIBEKANBAN_REMOTE_JWT_SECRET
-      valueFrom:
-        secretKeyRef:
-          name: vibe-kanban-secrets
-          key: jwt-secret
 
   extraEnv:
     - name: RUST_LOG
@@ -127,52 +99,6 @@ resources:
 #
 # =============================================================================
 
-env:
-  # Database connection
-  - name: SERVER_DATABASE_URL
-    valueFrom:
-      secretKeyRef:
-        name: vibe-kanban-db
-        key: url
-
-  # JWT secret
-  - name: VIBEKANBAN_REMOTE_JWT_SECRET
-    valueFrom:
-      secretKeyRef:
-        name: vibe-kanban-secrets
-        key: jwt-secret
-
-  # ElectricSQL role password
-  - name: ELECTRIC_ROLE_PASSWORD
-    valueFrom:
-      secretKeyRef:
-        name: vibe-kanban-secrets
-        key: electric-role-password
-
-  # GitHub OAuth
-  - name: GITHUB_OAUTH_CLIENT_ID
-    valueFrom:
-      secretKeyRef:
-        name: vibe-kanban-oauth
-        key: github-client-id
-  - name: GITHUB_OAUTH_CLIENT_SECRET
-    valueFrom:
-      secretKeyRef:
-        name: vibe-kanban-oauth
-        key: github-client-secret
-
-  # Optional: Google OAuth (uncomment if using)
-  # - name: GOOGLE_OAUTH_CLIENT_ID
-  #   valueFrom:
-  #     secretKeyRef:
-  #       name: vibe-kanban-oauth
-  #       key: google-client-id
-  # - name: GOOGLE_OAUTH_CLIENT_SECRET
-  #   valueFrom:
-  #     secretKeyRef:
-  #       name: vibe-kanban-oauth
-  #       key: google-client-secret
-
 # Non-secret environment variables
 extraEnv:
   - name: RUST_LOG
@@ -194,12 +120,11 @@ extraEnv:
 #   - Vibe Kanban frontend on port 3000
 #   - --proxy-domain on code-server enables port proxying:
 #     any app on localhost:<port> is accessible at
-#     https://<port>-code-server.vk.example.com
+#     https://<port>-code.vk.community.example.com
 #
 # DNS requirements:
-#   - vk.example.com            -> frontend app
-#   - code-server.vk.example.com -> code-server editor
-#   - *.code-server.vk.example.com -> code-server port proxy (wildcard)
+#   - vk.community.example.com  -> frontend app
+#   - *.vk.community.example.com -> remote, relay, code-server, and port proxy hosts
 
 frontend:
   enabled: false
@@ -213,7 +138,6 @@ frontend:
 
   codeServer:
     port: 13337
-    proxyDomain: "{{port}}-code-server.vk.example.com"
 
   app:
     port: 13500
@@ -223,51 +147,20 @@ frontend:
   service:
     type: ClusterIP
 
-  ingress:
-    enabled: true
-    className: "nginx"
-    annotations:
-      cert-manager.io/cluster-issuer: "letsencrypt-prod"
-      nginx.ingress.kubernetes.io/proxy-body-size: "50m"
-      nginx.ingress.kubernetes.io/proxy-read-timeout: "86400"
-      nginx.ingress.kubernetes.io/proxy-send-timeout: "86400"
-    hosts:
-      - host: vk.example.com
-        paths:
-          - path: /
-            pathType: Prefix
-    tls:
-      - secretName: vk-frontend-tls
-        hosts:
-          - vk.example.com
-
   codeServerIngress:
-    enabled: true
-    className: "nginx"
     annotations:
-      cert-manager.io/cluster-issuer: "letsencrypt-prod"
-      nginx.ingress.kubernetes.io/proxy-body-size: "50m"
-      nginx.ingress.kubernetes.io/proxy-read-timeout: "86400"
-      nginx.ingress.kubernetes.io/proxy-send-timeout: "86400"
       # WebSocket support for code-server
       nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
       nginx.ingress.kubernetes.io/configuration-snippet: |
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
-    hosts:
-      - host: code-server.vk.example.com
-        paths:
-          - path: /
-            pathType: Prefix
-      - host: "*.code-server.vk.example.com"
-        paths:
-          - path: /
-            pathType: Prefix
-    tls:
-      - secretName: code-server-vk-tls
-        hosts:
-          - code-server.vk.example.com
-          - "*.code-server.vk.example.com"
+
+  # code-server runs with --auth none. If codeServerIngress.enabled=true, also
+  # enable this auth block or explicitly set codeServerIngress.allowUnauthenticated=true.
+  auth:
+    enabled: false
+    emailDomain: "community.example.com"
+    secretName: "vibe-kanban-code-server-oauth"
 
   persistence:
     enabled: true
@@ -298,14 +191,6 @@ electric:
     requests:
       cpu: 200m
       memory: 256Mi
-
-  # ElectricSQL database connection
-  env:
-    - name: DATABASE_URL
-      valueFrom:
-        secretKeyRef:
-          name: vibe-kanban-db
-          key: electric-url
 
   extraEnv:
     - name: AUTH_MODE

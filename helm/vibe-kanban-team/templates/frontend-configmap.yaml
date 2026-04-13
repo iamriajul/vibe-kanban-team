@@ -1,4 +1,6 @@
 {{- if .Values.frontend.enabled }}
+{{- $proxyDomain := .Values.frontend.codeServer.proxyDomain | default (include "vibe-kanban-team.frontend.proxyDomain" .) }}
+{{- $sharedApiBase := .Values.frontend.app.sharedApiBase | default (include "vibe-kanban-team.remote.publicBaseUrl" .) }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -120,7 +122,7 @@ data:
       chown coder:coder "$CLAUDE_JSON"
     fi
 
-    {{- if .Values.frontend.codeServer.proxyDomain }}
+    {{- if $proxyDomain }}
     # =========================================================================
     # port-url script + AI agent skills
     # =========================================================================
@@ -153,7 +155,7 @@ data:
     Run `port-url <port>` to get the URL the user can open:
     ```
     $ port-url 5173
-    https://5173.code.vk.community.example.com/
+    https://5173-code.vk.community.example.com/
     ```
     Always present this URL to the user — never `localhost` or `127.0.0.1`.
     ## Requirements
@@ -210,8 +212,8 @@ data:
     if [ -n "${ZAI_API_KEY:-}" ]; then
       echo "ZAI_API_KEY=${ZAI_API_KEY}" >> /etc/default/vibe-kanban-env
     fi
-    {{- if .Values.frontend.codeServer.proxyDomain }}
-    echo "VSCODE_PROXY_URI=https://{{ .Values.frontend.codeServer.proxyDomain }}/" >> /etc/default/vibe-kanban-env
+    {{- if $proxyDomain }}
+    echo "VSCODE_PROXY_URI=https://{{ $proxyDomain }}/" >> /etc/default/vibe-kanban-env
     {{- end }}
     chmod 600 /etc/default/vibe-kanban-env
 
@@ -227,8 +229,8 @@ data:
       if [ -n "${ZAI_API_KEY:-}" ]; then
         echo "export ZAI_API_KEY=\"${ZAI_API_KEY}\"" >> "$RC_DIR/80-container-env.sh"
       fi
-      {{- if .Values.frontend.codeServer.proxyDomain }}
-      echo 'export VSCODE_PROXY_URI="https://{{ .Values.frontend.codeServer.proxyDomain }}/"' >> "$RC_DIR/80-container-env.sh"
+      {{- if $proxyDomain }}
+      echo 'export VSCODE_PROXY_URI="https://{{ $proxyDomain }}/"' >> "$RC_DIR/80-container-env.sh"
       {{- end }}
       chown -R coder:coder "$RC_DIR"
     done
@@ -248,8 +250,8 @@ data:
     # Build code-server arguments
     # =========================================================================
     CS_ARGS="--auth none --port {{ .Values.frontend.codeServer.port }} --bind-addr 0.0.0.0:{{ .Values.frontend.codeServer.port }}"
-    {{- if .Values.frontend.codeServer.proxyDomain }}
-    CS_ARGS="$CS_ARGS --proxy-domain {{ .Values.frontend.codeServer.proxyDomain }}"
+    {{- if $proxyDomain }}
+    CS_ARGS="$CS_ARGS --proxy-domain {{ $proxyDomain }}"
     {{- end }}
 
     # =========================================================================
@@ -287,8 +289,8 @@ data:
     WorkingDirectory={{ .Values.frontend.app.workingDirectory }}
     Environment=HOST=0.0.0.0
     Environment=PORT={{ .Values.frontend.app.port }}
-    {{- if .Values.frontend.app.sharedApiBase }}
-    Environment=VK_SHARED_API_BASE={{ .Values.frontend.app.sharedApiBase }}
+    {{- if $sharedApiBase }}
+    Environment=VK_SHARED_API_BASE={{ $sharedApiBase }}
     {{- end }}
     Environment=PATH=$NVM_BIN:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
     EnvironmentFile=-/etc/default/vibe-kanban-env

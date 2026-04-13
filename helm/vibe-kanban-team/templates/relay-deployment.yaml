@@ -43,6 +43,7 @@ spec:
               containerPort: {{ .Values.relay.service.port }}
               protocol: TCP
           env:
+            {{- include "vibe-kanban-team.relay.structuredEnv" . | nindent 12 }}
             {{- with .Values.relay.env }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
