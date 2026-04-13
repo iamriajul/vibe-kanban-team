@@ -101,6 +101,11 @@ Frontend fullname
 {{- if $clusterIssuer }}
 {{- $_ := set $annotations "cert-manager.io/cluster-issuer" $clusterIssuer -}}
 {{- end }}
+{{- $ingressClassName := .root.Values.global.ingressClassName | default "" -}}
+{{- if contains "nginx" $ingressClassName }}
+{{- $_ := set $annotations "nginx.ingress.kubernetes.io/proxy-read-timeout" "86400" -}}
+{{- $_ := set $annotations "nginx.ingress.kubernetes.io/proxy-send-timeout" "86400" -}}
+{{- end }}
 {{- if $annotations }}
 {{- toYaml $annotations -}}
 {{- end }}
