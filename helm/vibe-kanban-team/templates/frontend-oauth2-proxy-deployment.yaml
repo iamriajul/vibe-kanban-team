@@ -42,8 +42,8 @@ spec:
             {{- range .Values.frontend.auth.emailDomains }}
             - --email-domain={{ . }}
             {{- end }}
-            {{- range .Values.frontend.auth.allowedEmails }}
-            - --allowed-email-list={{ . }}
+            {{- if gt (len .Values.frontend.auth.allowedEmails) 0 }}
+            - --authenticated-emails-file=/etc/oauth2-proxy/emails
             {{- end }}
             {{- if .Values.frontend.auth.githubOrg }}
             - --github-org={{ .Values.frontend.auth.githubOrg }}
@@ -99,4 +99,16 @@ spec:
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
+          {{- if gt (len .Values.frontend.auth.allowedEmails) 0 }}
+          volumeMounts:
+            - name: emails
+              mountPath: /etc/oauth2-proxy
+              readOnly: true
+          {{- end }}
+      {{- if gt (len .Values.frontend.auth.allowedEmails) 0 }}
+      volumes:
+        - name: emails
+          configMap:
+            name: {{ include "vibe-kanban-team.frontend.fullname" . }}-oauth2-proxy-emails
+      {{- end }}
 {{- end }}
