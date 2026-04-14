@@ -1,17 +1,12 @@
-From 81a6c5c05b773c287cf581d98a9b5ff3be2c92b2 Mon Sep 17 00:00:00 2001
-From: Riajul Islam <opensource@example.com>
-Date: Sat, 21 Mar 2026 12:13:25 +0000
-Subject: [PATCH] fix(remote): add attachment upload relay for legacy clients
+From bcb7b4d588f37f63117340972d2bfaae0e75cb15 Mon Sep 17 00:00:00 2001
+From: Riajul Islam <riajul@kahf.co>
+Date: Tue, 14 Apr 2026 06:27:05 +0000
+Subject: [PATCH 14/17] downstream:
+ 0014-fix-remote-add-attachment-upload-relay-for-legacy-cl
 
----
- crates/remote/Cargo.toml                |  2 +-
- crates/remote/src/r2.rs                 | 33 ++++++++----
- crates/remote/src/routes/attachments.rs | 67 +++++++++++++++++++++----
- crates/remote/src/routes/mod.rs         |  1 +
- 4 files changed, 83 insertions(+), 20 deletions(-)
 
 diff --git a/crates/remote/Cargo.toml b/crates/remote/Cargo.toml
-index 4dd086353..79f788b6f 100644
+index 29d8c8634..2e7bc4177 100644
 --- a/crates/remote/Cargo.toml
 +++ b/crates/remote/Cargo.toml
 @@ -57,7 +57,7 @@ hex = "0.4"
@@ -257,10 +252,10 @@ index 440764d45..fe5655871 100644
          if props.content_length > MAX_FILE_SIZE {
              let _ = r2.delete_blob(blob_path).await;
 diff --git a/crates/remote/src/routes/mod.rs b/crates/remote/src/routes/mod.rs
-index 7db94df24..584cdefe6 100644
+index 834b0f4cf..ae4f590dd 100644
 --- a/crates/remote/src/routes/mod.rs
 +++ b/crates/remote/src/routes/mod.rs
-@@ -104,6 +104,7 @@ pub fn router(state: AppState) -> Router {
+@@ -105,6 +105,7 @@ pub fn router(state: AppState) -> Router {
          .merge(oauth::public_router())
          .merge(organization_members::public_router())
          .merge(tokens::public_router())

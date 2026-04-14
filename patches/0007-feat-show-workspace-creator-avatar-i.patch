@@ -1,18 +1,9 @@
-From 97c62854352501f807c854a2ceaf857e0508bcfb Mon Sep 17 00:00:00 2001
-From: Riajul Islam <opensource@example.com>
-Date: Thu, 19 Mar 2026 11:56:12 +0000
-Subject: [PATCH] feat: show workspace creator avatar in sidebar
+From af313d2c963078f63b85b4003e492a1285fd4d99 Mon Sep 17 00:00:00 2001
+From: Riajul Islam <riajul@kahf.co>
+Date: Tue, 14 Apr 2026 06:27:05 +0000
+Subject: [PATCH 07/17] downstream:
+ 0007-feat-show-workspace-creator-avatar-in-sidebar
 
-Display the creator's profile picture next to workspace names when
-viewing workspaces from other users (All/specific user filter).
-Uses existing UserAvatar component and useOrganizationMembers hook.
-Also improves creator filter dropdown to show real names instead of
-truncated UUIDs.
----
- .../ui/src/components/WorkspaceSummary.tsx    | 11 ++++-
- .../ui/src/components/WorkspacesSidebar.tsx   |  5 ++
- .../workspaces/WorkspacesSidebarContainer.tsx | 49 +++++++++++++++++--
- 3 files changed, 58 insertions(+), 7 deletions(-)
 
 diff --git a/packages/ui/src/components/WorkspaceSummary.tsx b/packages/ui/src/components/WorkspaceSummary.tsx
 index 9ec0e2c0c..ce8923b55 100644

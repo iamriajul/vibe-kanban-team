@@ -1,25 +1,9 @@
-From 954119de1ff4350b53f585818ed641767ec351a7 Mon Sep 17 00:00:00 2001
-From: Riajul Islam <opensource@example.com>
-Date: Tue, 17 Mar 2026 05:00:28 +0000
-Subject: [PATCH] feat: support browser-scoped auth sessions and per-user git
- identity
+From d549d12a7d325c3814b9778db941102da30da122 Mon Sep 17 00:00:00 2001
+From: Riajul Islam <riajul@kahf.co>
+Date: Tue, 14 Apr 2026 06:27:04 +0000
+Subject: [PATCH 02/17] downstream:
+ 0002-feat-support-browser-scoped-auth-sessions-and-per-us
 
----
- crates/git/src/cli.rs                         |  30 ++++
- crates/git/src/lib.rs                         |  23 +++
- crates/local-deployment/src/container.rs      | 143 +++++++++++++++--
- crates/local-deployment/src/lib.rs            |  79 +++++++--
- crates/local-deployment/src/pty.rs            |   7 +
- crates/server/src/middleware/auth_session.rs  |  86 ++++++++++
- crates/server/src/middleware/mod.rs           |   2 +
- crates/server/src/routes/mod.rs               |   4 +
- crates/server/src/routes/oauth.rs             |   5 +-
- crates/server/src/routes/terminal.rs          |  14 +-
- crates/services/src/services/auth.rs          | 151 ++++++++++++++++--
- .../src/services/oauth_credentials.rs         |   4 +
- crates/services/src/services/remote_client.rs |  24 ++-
- 13 files changed, 520 insertions(+), 52 deletions(-)
- create mode 100644 crates/server/src/middleware/auth_session.rs
 
 diff --git a/crates/git/src/cli.rs b/crates/git/src/cli.rs
 index 0c8a80cf7..e612610d7 100644
@@ -63,10 +47,10 @@ index 0c8a80cf7..e612610d7 100644
      pub fn fetch_with_refspec(
          &self,
 diff --git a/crates/git/src/lib.rs b/crates/git/src/lib.rs
-index c27599162..ccab38ddd 100644
+index be9849b04..e176af70f 100644
 --- a/crates/git/src/lib.rs
 +++ b/crates/git/src/lib.rs
-@@ -321,6 +321,29 @@ impl GitService {
+@@ -323,6 +323,29 @@ impl GitService {
          Ok(true)
      }
  
@@ -93,11 +77,11 @@ index c27599162..ccab38ddd 100644
 +        Ok(true)
 +    }
 +
-     /// Get diffs between branches or worktree changes
+     /// Get worktree diffs against a base commit
      pub fn get_diffs(
          &self,
 diff --git a/crates/local-deployment/src/container.rs b/crates/local-deployment/src/container.rs
-index e1f944c8b..3856d94be 100644
+index d3fe28c72..093182f21 100644
 --- a/crates/local-deployment/src/container.rs
 +++ b/crates/local-deployment/src/container.rs
 @@ -42,6 +42,7 @@ use serde_json::json;
@@ -224,7 +208,7 @@ index e1f944c8b..3856d94be 100644
 +        self.git_identity_for_auth_session(auth_session_id).await
 +    }
 +
-     pub async fn cleanup_workspace(&self, workspace: &Workspace) {
+     async fn cleanup_workspace(&self, workspace: &Workspace) {
          let Some(container_ref) = &workspace.container_ref else {
              return;
 @@ -448,7 +522,12 @@ impl LocalContainerService {
@@ -319,15 +303,15 @@ index e1f944c8b..3856d94be 100644
                      let workspace_id = ctx.workspace.id;
                      let archived = ctx.workspace.archived;
                      tokio::spawn(async move {
-@@ -803,6 +910,7 @@ impl LocalContainerService {
- 
-             // Cleanup child handle
+@@ -809,6 +916,7 @@ impl LocalContainerService {
+                 let _ = child.start_kill();
+             }
              child_store.write().await.remove(&exec_id);
 +            let _ = container.take_execution_auth_session(&exec_id).await;
          })
      }
  
-@@ -1355,6 +1463,17 @@ impl ContainerService for LocalContainerService {
+@@ -1361,6 +1469,17 @@ impl ContainerService for LocalContainerService {
          // Always inject workspace/session context
          env.insert("VK_WORKSPACE_ID", workspace.id.to_string());
          env.insert("VK_WORKSPACE_BRANCH", &workspace.branch);
@@ -345,7 +329,7 @@ index e1f944c8b..3856d94be 100644
  
          // Create the child and stream, add to execution tracker with timeout
          let mut spawned = tokio::time::timeout(
-@@ -1380,6 +1499,9 @@ impl ContainerService for LocalContainerService {
+@@ -1386,6 +1505,9 @@ impl ContainerService for LocalContainerService {
                  .await;
          }
  
@@ -355,7 +339,7 @@ index e1f944c8b..3856d94be 100644
          // Spawn unified exit monitor: watches OS exit and optional executor signal
          let hn = self.spawn_exit_monitor(&execution_process.id, spawned.exit_signal);
          self.add_exit_monitor_handle(execution_process.id, hn).await;
-@@ -1559,7 +1681,8 @@ impl ContainerService for LocalContainerService {
+@@ -1565,7 +1687,8 @@ impl ContainerService for LocalContainerService {
              return Ok(false);
          }
  
@@ -366,18 +350,19 @@ index e1f944c8b..3856d94be 100644
  
      /// Copy files from the original project directory to the worktree.
 diff --git a/crates/local-deployment/src/lib.rs b/crates/local-deployment/src/lib.rs
-index 6e695c46e..149ec29ef 100644
+index 50e3f2c62..ce74a57ee 100644
 --- a/crates/local-deployment/src/lib.rs
 +++ b/crates/local-deployment/src/lib.rs
-@@ -1,6 +1,6 @@
- use std::{collections::HashMap, sync::Arc};
+@@ -3,7 +3,7 @@ use std::{
+     sync::{Arc, OnceLock},
+ };
  
 -use api_types::LoginStatus;
 +use api_types::{LoginStatus, ProfileResponse};
  use async_trait::async_trait;
  use client_info::ClientInfo;
  use db::DBService;
-@@ -22,7 +22,6 @@ use services::services::{
+@@ -25,7 +25,6 @@ use services::services::{
      file::FileService,
      file_search::FileSearchCache,
      filesystem::FilesystemService,
@@ -385,7 +370,7 @@ index 6e695c46e..149ec29ef 100644
      pr_monitor::PrMonitorService,
      queued_message::QueuedMessageService,
      remote_client::{RemoteClient, RemoteClientError},
-@@ -79,6 +78,7 @@ pub struct LocalDeployment {
+@@ -85,6 +84,7 @@ pub struct LocalDeployment {
  struct PendingHandoff {
      provider: String,
      app_verifier: String,
@@ -393,7 +378,7 @@ index 6e695c46e..149ec29ef 100644
  }
  
  #[async_trait]
-@@ -154,13 +154,7 @@ impl Deployment for LocalDeployment {
+@@ -160,13 +160,7 @@ impl Deployment for LocalDeployment {
          let approvals = Approvals::new();
          let queued_message_service = QueuedMessageService::new();
  
@@ -408,7 +393,7 @@ index 6e695c46e..149ec29ef 100644
  
          let api_base = std::env::var("VK_SHARED_API_BASE")
              .ok()
-@@ -224,6 +218,7 @@ impl Deployment for LocalDeployment {
+@@ -230,6 +224,7 @@ impl Deployment for LocalDeployment {
              analytics_ctx,
              approvals.clone(),
              queued_message_service.clone(),
@@ -416,7 +401,7 @@ index 6e695c46e..149ec29ef 100644
              remote_client.clone().ok(),
          )
          .await;
-@@ -379,7 +374,10 @@ impl LocalDeployment {
+@@ -399,7 +394,10 @@ impl LocalDeployment {
      }
  
      pub fn remote_client(&self) -> Result<RemoteClient, RemoteClientNotConfigured> {
@@ -428,7 +413,7 @@ index 6e695c46e..149ec29ef 100644
      }
  
      pub async fn get_login_status(&self) -> LoginStatus {
-@@ -418,23 +416,78 @@ impl LocalDeployment {
+@@ -457,23 +455,78 @@ impl LocalDeployment {
          provider: String,
          app_verifier: String,
      ) {
@@ -511,7 +496,7 @@ index 6e695c46e..149ec29ef 100644
          &self.pty
      }
 diff --git a/crates/local-deployment/src/pty.rs b/crates/local-deployment/src/pty.rs
-index 12ee29416..82d21d037 100644
+index de1b2f53a..de8e808a6 100644
 --- a/crates/local-deployment/src/pty.rs
 +++ b/crates/local-deployment/src/pty.rs
 @@ -50,6 +50,7 @@ impl PtyService {
@@ -644,7 +629,7 @@ index 7526320cc..c910a44b4 100644
  pub use model_loaders::*;
  pub use origin::*;
 diff --git a/crates/server/src/routes/mod.rs b/crates/server/src/routes/mod.rs
-index c3c85090b..accd66deb 100644
+index decec5ead..cab8276c7 100644
 --- a/crates/server/src/routes/mod.rs
 +++ b/crates/server/src/routes/mod.rs
 @@ -71,6 +71,10 @@ pub fn router(deployment: DeploymentImpl) -> IntoMakeService<Router> {
@@ -658,27 +643,11 @@ index c3c85090b..accd66deb 100644
          .layer(ValidateRequestHeaderLayer::custom(
              middleware::validate_origin,
          ))
-diff --git a/crates/server/src/routes/oauth.rs b/crates/server/src/routes/oauth.rs
-index ecb45c534..e0a63153d 100644
---- a/crates/server/src/routes/oauth.rs
-+++ b/crates/server/src/routes/oauth.rs
-@@ -273,10 +273,7 @@ async fn handoff_complete(
-     }
- 
-     // Start relay if enabled
--    let relay_deployment = deployment.clone();
--    tokio::spawn(async move {
--        relay_registration::spawn_relay(&relay_deployment).await;
--    });
-+    relay_registration::spawn_relay(&deployment).await;
- 
-     let is_desktop = query.source.as_deref() == Some("desktop");
-     Ok(close_window_response(
 diff --git a/crates/server/src/routes/terminal.rs b/crates/server/src/routes/terminal.rs
-index 9074e497e..1addf27b3 100644
+index ed1d64d1a..596de4d96 100644
 --- a/crates/server/src/routes/terminal.rs
 +++ b/crates/server/src/routes/terminal.rs
-@@ -87,8 +87,17 @@ pub async fn terminal_ws(
+@@ -87,8 +87,17 @@ async fn terminal_ws(
          }
      }
  
@@ -711,10 +680,10 @@ index 9074e497e..1addf27b3 100644
      {
          Ok(result) => result,
 diff --git a/crates/services/src/services/auth.rs b/crates/services/src/services/auth.rs
-index b8b940fdf..00bbd0bcf 100644
+index ef73e99d9..53a06443e 100644
 --- a/crates/services/src/services/auth.rs
 +++ b/crates/services/src/services/auth.rs
-@@ -1,54 +1,173 @@
+@@ -1,41 +1,83 @@
 -use std::sync::Arc;
 +use std::{
 +    collections::HashMap,
@@ -738,6 +707,7 @@ index b8b940fdf..00bbd0bcf 100644
 +struct SessionState {
      oauth: Arc<OAuthCredentials>,
      profile: Arc<RwLock<Option<ProfileResponse>>>,
+     remote_auth_degraded_slug: Arc<RwLock<Option<String>>>,
      refresh_lock: Arc<TokioMutex<()>>,
  }
  
@@ -756,6 +726,7 @@ index b8b940fdf..00bbd0bcf 100644
          Self {
 -            oauth,
 -            profile,
+-            remote_auth_degraded_slug: Arc::new(RwLock::new(None)),
 -            refresh_lock: Arc::new(TokioMutex::new(())),
 +            base_credentials_path: Arc::new(base_credentials_path),
 +            session_states: Arc::new(RwLock::new(HashMap::new())),
@@ -806,6 +777,10 @@ index b8b940fdf..00bbd0bcf 100644
 +
 +    pub async fn clear_credentials_for(&self, session_id: Option<&str>) -> std::io::Result<()> {
 +        self.session_state_for(session_id).await.oauth.clear().await
+     }
+ 
+     pub async fn remote_auth_degraded_slug(&self) -> Option<String> {
+@@ -51,18 +93,94 @@ impl AuthContext {
      }
  
      pub async fn cached_profile(&self) -> Option<ProfileResponse> {
@@ -920,10 +895,10 @@ index c5dee0fbf..13ae3391b 100644
  
          let file = {
 diff --git a/crates/services/src/services/remote_client.rs b/crates/services/src/services/remote_client.rs
-index 602383ab7..8c2c767a0 100644
+index d98718c35..174470ac6 100644
 --- a/crates/services/src/services/remote_client.rs
 +++ b/crates/services/src/services/remote_client.rs
-@@ -108,6 +108,7 @@ pub struct RemoteClient {
+@@ -143,6 +143,7 @@ pub struct RemoteClient {
      base: Url,
      http: Client,
      auth_context: AuthContext,
@@ -931,7 +906,7 @@ index 602383ab7..8c2c767a0 100644
  }
  
  impl std::fmt::Debug for RemoteClient {
-@@ -126,6 +127,7 @@ impl Clone for RemoteClient {
+@@ -161,6 +162,7 @@ impl Clone for RemoteClient {
              base: self.base.clone(),
              http: self.http.clone(),
              auth_context: self.auth_context.clone(),
@@ -939,7 +914,7 @@ index 602383ab7..8c2c767a0 100644
          }
      }
  }
-@@ -153,9 +155,15 @@ impl RemoteClient {
+@@ -187,9 +189,15 @@ impl RemoteClient {
              base,
              http,
              auth_context,
@@ -955,7 +930,7 @@ index 602383ab7..8c2c767a0 100644
      /// Returns a valid access token, refreshing when it's about to expire.
      fn require_token(
          &self,
-@@ -163,10 +171,11 @@ impl RemoteClient {
+@@ -197,10 +205,11 @@ impl RemoteClient {
          Box<dyn std::future::Future<Output = Result<String, RemoteClientError>> + Send + '_>,
      > {
          Box::pin(async move {
@@ -968,7 +943,7 @@ index 602383ab7..8c2c767a0 100644
                  .await
                  .ok_or(RemoteClientError::Auth)?;
  
-@@ -177,10 +186,10 @@ impl RemoteClient {
+@@ -211,10 +220,10 @@ impl RemoteClient {
              }
  
              let refreshed = {
@@ -981,7 +956,7 @@ index 602383ab7..8c2c767a0 100644
                      .await
                      .ok_or(RemoteClientError::Auth)?;
                  if let Some(token) = latest.access_token.as_ref()
-@@ -189,13 +198,13 @@ impl RemoteClient {
+@@ -224,24 +233,22 @@ impl RemoteClient {
                      return Ok(token.clone());
                  }
  
@@ -990,23 +965,35 @@ index 602383ab7..8c2c767a0 100644
              };
  
              match refreshed {
-                 Ok(updated) => updated.access_token.ok_or(RemoteClientError::Auth),
-                 Err(RemoteClientError::Auth) => {
+-                Ok(updated) => {
+-                    self.auth_context.clear_remote_auth_degraded_slug().await;
+-                    updated.access_token.ok_or(RemoteClientError::Auth)
+-                }
+-                Err(err) if err.is_definitive_auth_failure() => {
 -                    let _ = self.auth_context.clear_credentials().await;
+-                    self.auth_context.clear_remote_auth_degraded_slug().await;
+-                    Err(err)
++                Ok(updated) => updated.access_token.ok_or(RemoteClientError::Auth),
++                Err(RemoteClientError::Auth) => {
 +                    let _ = self.auth_context.clear_credentials_for(session_id).await;
-                     Err(RemoteClientError::Auth)
++                    Err(RemoteClientError::Auth)
                  }
-                 Err(RemoteClientError::TokenRefreshTimeout) => {
-@@ -203,7 +212,7 @@ impl RemoteClient {
-                         "Refresh token request timed out after {} minutes. Discarding the refresh token and forcing re-login.",
-                         Self::TOKEN_REFRESH_REQUEST_TIMEOUT.as_secs() / 60
-                     );
--                    let _ = self.auth_context.clear_credentials().await;
+-                Err(err) => {
+-                    if let Some(slug) = err.degraded_slug() {
+-                        self.auth_context.set_remote_auth_degraded_slug(slug).await;
+-                    }
+-                    Err(err)
++                Err(RemoteClientError::TokenRefreshTimeout) => {
++                    tracing::error!(
++                        "Refresh token request timed out after {} minutes. Discarding the refresh token and forcing re-login.",
++                        Self::TOKEN_REFRESH_REQUEST_TIMEOUT.as_secs() / 60
++                    );
 +                    let _ = self.auth_context.clear_credentials_for(session_id).await;
-                     Err(RemoteClientError::TokenRefreshTimeout)
++                    Err(RemoteClientError::TokenRefreshTimeout)
                  }
-                 Err(err) => Err(err),
-@@ -213,6 +222,7 @@ impl RemoteClient {
+             }
+         })
+@@ -249,6 +256,7 @@ impl RemoteClient {
  
      async fn refresh_credentials(
          &self,
@@ -1014,7 +1001,7 @@ index 602383ab7..8c2c767a0 100644
          creds: &Credentials,
      ) -> Result<Credentials, RemoteClientError> {
          let response = self.refresh_token_request(&creds.refresh_token).await?;
-@@ -226,7 +236,7 @@ impl RemoteClient {
+@@ -262,7 +270,7 @@ impl RemoteClient {
              expires_at: Some(expires_at),
          };
          self.auth_context
@@ -1022,7 +1009,7 @@ index 602383ab7..8c2c767a0 100644
 +            .save_credentials_for(session_id, &new_creds)
              .await
              .map_err(|e| RemoteClientError::Storage(e.to_string()))?;
-         Ok(new_creds)
+         self.auth_context.clear_remote_auth_degraded_slug().await;
 -- 
 2.50.1
 

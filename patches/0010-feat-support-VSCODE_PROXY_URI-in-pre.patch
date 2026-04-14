@@ -1,36 +1,9 @@
-From d2cde7ba6b76d0dfb5046db2680ca39b44c4c9b0 Mon Sep 17 00:00:00 2001
-From: Riajul Islam <opensource@example.com>
-Date: Wed, 25 Mar 2026 06:19:27 +0000
-Subject: [PATCH] feat: support VSCODE_PROXY_URI in preview iframe
+From b97011554c356e7a5565c21a5eedea938e54178c Mon Sep 17 00:00:00 2001
+From: Riajul Islam <riajul@kahf.co>
+Date: Tue, 14 Apr 2026 06:27:05 +0000
+Subject: [PATCH 10/17] downstream:
+ 0010-feat-support-VSCODE_PROXY_URI-in-preview-iframe
 
-Route the preview iframe through the Rust preview proxy when
-VSCODE_PROXY_URI is available, preserving all proxy features (script
-injection, CSP/X-Frame-Options stripping, redirect rewriting, WebSocket
-protocol handling).
-
-The frontend passes the target dev-server port via a __vk_port query
-parameter. The proxy persists it in a vk_preview_target cookie so that
-subsequent sub-resource requests (CSS, JS, images, fetch) are routed to
-the correct dev server without needing the query parameter.
-
-When the Host header subdomain matches the proxy's own port (as happens
-with code-server forwarding), subdomain routing is skipped and the proxy
-falls through to cookie/query-based routing.
-
-Also fixes app-port detection and log URL detection: in VSCODE_PROXY_URI
-mode the app port is extracted from the hostname subdomain so the preview
-correctly filters out the app's own port. Dev server log output
-containing VSCODE_PROXY_URI URLs (e.g. https://3000.code.vk.community.example.com/)
-is now recognized alongside traditional localhost URLs.
-
-Falls back to direct VSCODE_PROXY_URI bypass when previewProxyPort is
-unavailable, and to subdomain routing for local (non-cloud) mode.
----
- crates/preview-proxy/src/devtools_script.js   |   1 +
- crates/preview-proxy/src/lib.rs               | 238 ++++++++++-
- .../workspaces/PreviewBrowserContainer.tsx    | 378 ++++++++++++++----
- .../src/shared/hooks/usePreviewUrl.ts         |  58 ++-
- 4 files changed, 583 insertions(+), 92 deletions(-)
 
 diff --git a/crates/preview-proxy/src/devtools_script.js b/crates/preview-proxy/src/devtools_script.js
 index ca1c3d3af..4314377f4 100644
@@ -45,7 +18,7 @@ index ca1c3d3af..4314377f4 100644
      } catch (e) {
        return url;
 diff --git a/crates/preview-proxy/src/lib.rs b/crates/preview-proxy/src/lib.rs
-index 3081db220..9de71f9f1 100644
+index 7200cdd34..ccc730780 100644
 --- a/crates/preview-proxy/src/lib.rs
 +++ b/crates/preview-proxy/src/lib.rs
 @@ -6,6 +6,12 @@
@@ -59,9 +32,9 @@ index 3081db220..9de71f9f1 100644
 +//! a `vk_preview_target` cookie so subsequent sub-resource requests (CSS, JS,
 +//! images, fetch) are routed to the correct dev server.
  
- use axum::{
-     body::Body,
-@@ -358,6 +364,149 @@ fn rewrite_redirect_like_headers(
+ use std::net::SocketAddr;
+ 
+@@ -363,6 +369,149 @@ fn rewrite_redirect_like_headers(
      }
  }
  
@@ -211,7 +184,7 @@ index 3081db220..9de71f9f1 100644
  fn extract_target_from_host(headers: &HeaderMap) -> Option<PreviewTarget> {
      let host = headers.get(header::HOST)?.to_str().ok()?;
      let subdomain = host.split('.').next()?;
-@@ -382,16 +531,45 @@ pub async fn proxy_subdomain_request(
+@@ -387,16 +536,45 @@ pub async fn proxy_subdomain_request(
      proxy_port: u16,
      request: Request,
  ) -> Response {
@@ -250,10 +223,10 @@ index 3081db220..9de71f9f1 100644
  
      let path = normalized_proxy_path(request.uri().path()).to_string();
  
--    proxy_impl(service, backend_port, proxy_port, target, path, request).await
+-    proxy_impl(service, backend_addr, proxy_port, target, path, request).await
 +    proxy_impl(
 +        service,
-+        backend_port,
++        backend_addr,
 +        proxy_port,
 +        target,
 +        path,
@@ -264,7 +237,7 @@ index 3081db220..9de71f9f1 100644
  }
  
  async fn proxy_impl(
-@@ -400,6 +578,7 @@ async fn proxy_impl(
+@@ -405,6 +583,7 @@ async fn proxy_impl(
      proxy_port: u16,
      target: PreviewTarget,
      path_str: String,
@@ -272,7 +245,7 @@ index 3081db220..9de71f9f1 100644
      request: Request,
  ) -> Response {
      let (mut parts, body) = request.into_parts();
-@@ -407,7 +586,14 @@ async fn proxy_impl(
+@@ -412,7 +591,14 @@ async fn proxy_impl(
      // Extract query string and subprotocols before WebSocket upgrade.
      // Both are required: Vite 6+ needs ?token= for auth, and checks
      // Sec-WebSocket-Protocol: vite-hmr before accepting the upgrade.
@@ -288,16 +261,16 @@ index 3081db220..9de71f9f1 100644
      let ws_protocols: Option<String> = extract_ws_protocols(&parts.headers);
  
      if let Ok(ws) = WebSocketUpgrade::from_request_parts(&mut parts, &()).await {
-@@ -444,7 +630,7 @@ async fn proxy_impl(
+@@ -449,7 +635,7 @@ async fn proxy_impl(
      }
  
      let request = Request::from_parts(parts, body);
--    http_proxy_handler(service, backend_port, proxy_port, target, path_str, request).await
-+    http_proxy_handler(service, backend_port, proxy_port, target, path_str, use_relative_redirects, request).await
+-    http_proxy_handler(service, backend_addr, proxy_port, target, path_str, request).await
++    http_proxy_handler(service, backend_addr, proxy_port, target, path_str, use_relative_redirects, request).await
  }
  
  async fn http_proxy_handler(
-@@ -453,6 +639,7 @@ async fn http_proxy_handler(
+@@ -458,6 +644,7 @@ async fn http_proxy_handler(
      proxy_port: u16,
      target: PreviewTarget,
      path_str: String,
@@ -305,7 +278,7 @@ index 3081db220..9de71f9f1 100644
      request: Request,
  ) -> Response {
      let (parts, body) = request.into_parts();
-@@ -460,7 +647,12 @@ async fn http_proxy_handler(
+@@ -465,7 +652,12 @@ async fn http_proxy_handler(
      let headers = parts.headers;
      let original_uri = parts.uri;
  
@@ -319,7 +292,7 @@ index 3081db220..9de71f9f1 100644
      let normalized_path = normalized_proxy_path(&path_str);
  
      let is_rsc_request = headers.contains_key(header::HeaderName::from_static("rsc"));
-@@ -539,12 +731,26 @@ async fn http_proxy_handler(
+@@ -544,12 +736,26 @@ async fn http_proxy_handler(
      let is_html = content_type.contains("text/html");
  
      let mut response_headers = collect_response_headers(response.headers(), is_html);
@@ -353,10 +326,10 @@ index 3081db220..9de71f9f1 100644
      let status = StatusCode::from_u16(response.status().as_u16()).unwrap_or(StatusCode::OK);
  
 diff --git a/packages/web-core/src/pages/workspaces/PreviewBrowserContainer.tsx b/packages/web-core/src/pages/workspaces/PreviewBrowserContainer.tsx
-index cf0ed825c..84ce09f88 100644
+index 9bc3273f5..2f116c170 100644
 --- a/packages/web-core/src/pages/workspaces/PreviewBrowserContainer.tsx
 +++ b/packages/web-core/src/pages/workspaces/PreviewBrowserContainer.tsx
-@@ -77,60 +77,178 @@ function normalizePreviewUrl(rawUrl: string, baseUrl?: string): string | null {
+@@ -94,60 +94,178 @@ function normalizePreviewUrl(rawUrl: string, baseUrl?: string): string | null {
    return parsePreviewUrl(rawUrl, baseUrl)?.toString() ?? null;
  }
  
@@ -558,7 +531,7 @@ index cf0ed825c..84ce09f88 100644
    const hostnameParts = url.hostname.split('.');
    const hasLocalhostSuffix =
      hostnameParts.length >= 2 &&
-@@ -146,9 +264,89 @@ function getTargetDevPort(url: URL, previewProxyPort?: number): string {
+@@ -163,9 +281,89 @@ function getTargetDevPort(url: URL, previewProxyPort?: number): string {
      }
    }
  
@@ -648,7 +621,7 @@ index cf0ed825c..84ce09f88 100644
  interface PreviewBrowserContainerProps {
    workspaceId: string;
    className: string;
-@@ -169,7 +367,7 @@ export function PreviewBrowserContainer({
+@@ -186,7 +384,7 @@ export function PreviewBrowserContainer({
      (s) => s.triggerPreviewRefresh
    );
    const { repos, workspaceId: activeWorkspaceId } = useWorkspaceContext();
@@ -657,7 +630,7 @@ index cf0ed825c..84ce09f88 100644
    const hostId = useHostId();
  
    const {
-@@ -192,7 +390,11 @@ export function PreviewBrowserContainer({
+@@ -209,7 +407,11 @@ export function PreviewBrowserContainer({
      );
    }, [runningDevServers]);
    const { logs } = useLogStream(primaryDevServer?.id ?? '');
@@ -670,20 +643,17 @@ index cf0ed825c..84ce09f88 100644
  
    // Detect failed dev server process (failed status or completed with non-zero exit code)
    const failedDevServerProcess = devServerProcesses.find(
-@@ -241,17 +443,24 @@ export function PreviewBrowserContainer({
-     );
-   }, [hasOverride, urlInfo?.port, effectiveParsedUrl]);
+@@ -269,6 +471,7 @@ export function PreviewBrowserContainer({
+     return LOOPBACK_HOSTS.has(effectiveParsedUrl.hostname);
+   }, [effectiveParsedUrl]);
  
--  // Builds the subdomain-based proxy URL loaded by the iframe.
--  //   Dev server at localhost:4000 → iframe loads http://4000.localhost:{proxyPort}/path
--  //   The proxy extracts the target port from the subdomain and forwards to the dev server.
--  //   _refresh query param forces iframe reload on refresh button click.
 +  // Builds the proxy URL loaded by the iframe.
    const iframeUrl = useMemo(() => {
--    if (!effectiveParsedUrl || !previewProxyPort || !devServerPort) {
-+    if (!effectiveParsedUrl || !devServerPort) {
+     if (!effectiveParsedUrl || !devServerPort) {
        return undefined;
-     }
+@@ -286,8 +489,18 @@ export function PreviewBrowserContainer({
+     // Loopback URLs need the preview proxy for origin isolation
+     if (!previewProxyPort) return undefined;
  
 -    // Don't proxy to Vibe Kanban's own ports (would create infinite loop)
 -    const vibeKanbanPort = window.location.port || '80';
@@ -702,7 +672,7 @@ index cf0ed825c..84ce09f88 100644
      if (devServerPort === vibeKanbanPort) {
        console.warn(
          `[Preview] Ignoring dev server URL with same port as Vibe Kanban (${devServerPort}). ` +
-@@ -260,38 +469,40 @@ export function PreviewBrowserContainer({
+@@ -296,25 +509,33 @@ export function PreviewBrowserContainer({
        return undefined;
      }
  
@@ -718,17 +688,6 @@ index cf0ed825c..84ce09f88 100644
        return undefined;
      }
  
--    // Warn if not on localhost (subdomain routing requires localhost)
--    if (!['localhost', '127.0.0.1'].includes(window.location.hostname)) {
-+    if (
-+      !vsCodeProxyUri &&
-+      !['localhost', '127.0.0.1'].includes(window.location.hostname)
-+    ) {
-       console.warn(
-         '[Preview] Preview proxy subdomain routing may not work on non-localhost hostname'
-       );
-     }
- 
 -    const path = effectiveParsedUrl.pathname + effectiveParsedUrl.search;
 -
 -    // Subdomain-based routing: the proxy extracts the port from the Host header
@@ -738,7 +697,15 @@ index cf0ed825c..84ce09f88 100644
 -      `http://${hostToken}.localhost:${previewProxyPort}${path}`
 -    );
 -    proxyUrl.searchParams.set('_refresh', String(previewRefreshKey));
--
++    if (
++      !vsCodeProxyUri &&
++      !['localhost', '127.0.0.1'].includes(window.location.hostname)
++    ) {
++      console.warn(
++        '[Preview] Preview proxy subdomain routing may not work on non-localhost hostname'
++      );
++    }
+ 
 -    return proxyUrl.toString();
 +    return buildPreviewProxyUrl({
 +      devServerPort,
@@ -751,14 +718,15 @@ index cf0ed825c..84ce09f88 100644
    }, [
      devServerPort,
      effectiveParsedUrl,
-     hostId,
+@@ -322,6 +543,7 @@ export function PreviewBrowserContainer({
+     isLoopbackPreview,
      previewProxyPort,
      previewRefreshKey,
 +    vsCodeProxyUri,
    ]);
  
    const urlInputRef = useRef<HTMLInputElement>(null);
-@@ -336,14 +547,31 @@ export function PreviewBrowserContainer({
+@@ -366,18 +588,35 @@ export function PreviewBrowserContainer({
    } = usePreviewNavigation();
    const bridgeRef = useRef<PreviewDevToolsBridge | null>(null);
    const displayedPreviewUrl = useMemo(() => {
@@ -778,6 +746,10 @@ index cf0ed825c..84ce09f88 100644
 +    };
 +
      if (navigation?.url) {
+       // Non-loopback (direct) URLs: strip _refresh param and show as-is
+       if (!isLoopbackPreview) {
+         return stripPreviewRefreshParam(navigation.url) ?? navigation.url;
+       }
 -      if (hostId != null) {
 -        return stripPreviewRefreshParam(navigation.url) ?? navigation.url;
 +      if (hostId != null || vsCodeProxyUri != null) {
@@ -793,7 +765,7 @@ index cf0ed825c..84ce09f88 100644
          );
          if (transformed) {
            return transformed;
-@@ -351,12 +579,20 @@ export function PreviewBrowserContainer({
+@@ -385,8 +624,8 @@ export function PreviewBrowserContainer({
        }
      }
  
@@ -804,20 +776,16 @@ index cf0ed825c..84ce09f88 100644
      }
  
      return effectiveUrl ?? null;
--  }, [devServerPort, effectiveUrl, hostId, iframeUrl, navigation?.url]);
-+  }, [
-+    devServerPort,
-+    effectiveUrl,
-+    hostId,
-+    iframeUrl,
-+    navigation?.url,
+@@ -397,6 +636,8 @@ export function PreviewBrowserContainer({
+     iframeUrl,
+     isLoopbackPreview,
+     navigation?.url,
 +    previewProxyPort,
 +    vsCodeProxyUri,
-+  ]);
+   ]);
  
    const handleBridgeMessage = useCallback(
-     (message: PreviewDevToolsMessage) => {
-@@ -670,11 +906,16 @@ export function PreviewBrowserContainer({
+@@ -711,11 +952,16 @@ export function PreviewBrowserContainer({
      const normalizedInput = normalizedInputUrl.toString();
      const normalizedInputDevPort = getTargetDevPort(
        normalizedInputUrl,
@@ -837,24 +805,31 @@ index cf0ed825c..84ce09f88 100644
      const normalizedInputDevParsed = parsePreviewUrl(normalizedInputDevUrl);
      if (!normalizedInputDevParsed) {
        return;
-@@ -696,19 +937,19 @@ export function PreviewBrowserContainer({
- 
-     resetNavigation();
- 
--    if (showIframe && iframeRef.current?.contentWindow && previewProxyPort) {
-+    if (showIframe && iframeRef.current?.contentWindow) {
-       if (devServerPort != null && normalizedInputDevPort === devServerPort) {
--        const proxyPath =
--          normalizedInputDevParsed.pathname +
--          normalizedInputDevParsed.search +
--          normalizedInputDevParsed.hash;
--        const hostToken =
--          hostId != null
--            ? `${normalizedInputDevPort}--${hostId}`
--            : normalizedInputDevPort;
--        const proxyUrl = `http://${hostToken}.localhost:${previewProxyPort}${proxyPath}`;
--        bridgeRef.current?.navigateTo(proxyUrl);
--        return;
+@@ -740,25 +986,20 @@ export function PreviewBrowserContainer({
+     // Bridge SPA navigation only works when the proxy injects devtools_script.js
+     // into the iframe. Non-loopback URLs bypass the proxy entirely, so the bridge
+     // isn't available — fall through to setOverrideUrl for a full iframe reload.
+-    if (
+-      showIframe &&
+-      iframeRef.current?.contentWindow &&
+-      isLoopbackPreview &&
+-      previewProxyPort &&
+-      devServerPort != null &&
+-      normalizedInputDevPort === devServerPort
+-    ) {
+-      const proxyPath =
+-        normalizedInputDevParsed.pathname +
+-        normalizedInputDevParsed.search +
+-        normalizedInputDevParsed.hash;
+-      const hostToken =
+-        hostId != null
+-          ? `${normalizedInputDevPort}--${hostId}`
+-          : normalizedInputDevPort;
+-      const proxyUrl = `http://${hostToken}.localhost:${previewProxyPort}${proxyPath}`;
+-      bridgeRef.current?.navigateTo(proxyUrl);
+-      return;
++    if (showIframe && iframeRef.current?.contentWindow && isLoopbackPreview) {
++      if (devServerPort != null && normalizedInputDevPort === devServerPort) {
 +        const proxyUrl = buildPreviewProxyUrl({
 +          devServerPort: normalizedInputDevPort,
 +          effectiveParsedUrl: normalizedInputDevParsed,
@@ -866,10 +841,11 @@ index cf0ed825c..84ce09f88 100644
 +          bridgeRef.current?.navigateTo(proxyUrl);
 +          return;
 +        }
-       }
++      }
      }
  
-@@ -722,6 +963,7 @@ export function PreviewBrowserContainer({
+     setOverrideUrl(normalizedInputDevUrl);
+@@ -772,6 +1013,7 @@ export function PreviewBrowserContainer({
      hasOverride,
      showIframe,
      previewProxyPort,
@@ -878,7 +854,7 @@ index cf0ed825c..84ce09f88 100644
      resetNavigation,
      setOverrideUrl,
 diff --git a/packages/web-core/src/shared/hooks/usePreviewUrl.ts b/packages/web-core/src/shared/hooks/usePreviewUrl.ts
-index e0b9f91e8..92389e4e9 100644
+index e0b9f91e8..09dac0adf 100644
 --- a/packages/web-core/src/shared/hooks/usePreviewUrl.ts
 +++ b/packages/web-core/src/shared/hooks/usePreviewUrl.ts
 @@ -82,9 +82,21 @@ const isBetterPreviewUrlCandidate = (

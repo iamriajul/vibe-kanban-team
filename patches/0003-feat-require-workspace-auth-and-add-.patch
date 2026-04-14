@@ -1,18 +1,9 @@
-From 77b4a6547056de194c2fdf883f73d6b6c432ef3c Mon Sep 17 00:00:00 2001
-From: Riajul Islam <opensource@example.com>
-Date: Tue, 17 Mar 2026 05:00:38 +0000
-Subject: [PATCH] feat: require workspace auth and add admin-scoped creator
- visibility
+From 2162c4e4cd0f5d370b54c8f8af9a8baa0451cb26 Mon Sep 17 00:00:00 2001
+From: Riajul Islam <riajul@kahf.co>
+Date: Tue, 14 Apr 2026 06:27:04 +0000
+Subject: [PATCH 03/17] downstream:
+ 0003-feat-require-workspace-auth-and-add-admin-scoped-cre
 
----
- crates/server/src/routes/workspaces/mod.rs    |  31 ++-
- .../src/pages/workspaces/WorkspacesLayout.tsx |  34 ++-
- .../workspaces/WorkspacesSidebarContainer.tsx | 234 +++++++++++++++++-
- .../src/shared/hooks/useUserSystem.ts         |   2 +
- .../shared/hooks/useUserSystemController.ts   |   4 +
- .../src/shared/hooks/useWorkspaces.ts         |  27 +-
- .../shared/providers/WorkspaceProvider.tsx    |  29 ++-
- 7 files changed, 336 insertions(+), 25 deletions(-)
 
 diff --git a/crates/server/src/routes/workspaces/mod.rs b/crates/server/src/routes/workspaces/mod.rs
 index a0a3f3c39..144c749c1 100644
@@ -69,7 +60,7 @@ index a0a3f3c39..144c749c1 100644
      Router::new().nest("/workspaces", workspaces_router)
  }
 diff --git a/packages/web-core/src/pages/workspaces/WorkspacesLayout.tsx b/packages/web-core/src/pages/workspaces/WorkspacesLayout.tsx
-index 7291a1e48..5b1161e35 100644
+index 42565b86d..2eca9f6f5 100644
 --- a/packages/web-core/src/pages/workspaces/WorkspacesLayout.tsx
 +++ b/packages/web-core/src/pages/workspaces/WorkspacesLayout.tsx
 @@ -33,6 +33,8 @@ import { CreateChatBoxContainer } from '@/shared/components/CreateChatBoxContain
@@ -125,9 +116,9 @@ index 7291a1e48..5b1161e35 100644
  
    // Ensure left panels visible when right main panel hidden
    useEffect(() => {
-@@ -189,6 +201,22 @@ export function WorkspacesLayout() {
-       setRightMainPanelSize(layout['right-main']);
-   };
+@@ -204,6 +216,22 @@ export function WorkspacesLayout() {
+     [isLeftMainPanelVisible, rightMainPanelMode, setRightMainPanelSize]
+   );
  
 +  if (requiresWorkspacesAuth && (!authLoaded || systemLoading)) {
 +    return (
@@ -480,57 +471,57 @@ index 19d2bbbc9..217f7c75d 100644
          <div className="flex items-stretch">
            <IconButton
 diff --git a/packages/web-core/src/shared/hooks/useUserSystem.ts b/packages/web-core/src/shared/hooks/useUserSystem.ts
-index 7f67ce3f9..7efe222d1 100644
+index ee1118bb6..4df9fd472 100644
 --- a/packages/web-core/src/shared/hooks/useUserSystem.ts
 +++ b/packages/web-core/src/shared/hooks/useUserSystem.ts
-@@ -17,6 +17,7 @@ export interface UserSystemState {
-   capabilities: Record<string, BaseAgentCapability[]> | null;
+@@ -18,6 +18,7 @@ export interface UserSystemState {
    machineId: string | null;
    loginStatus: LoginStatus | null;
+   remoteAuthDegraded: string | null;
 +  sharedApiBase: string | null;
  }
  
  export interface UserSystemContextType {
-@@ -37,6 +38,7 @@ export interface UserSystemContextType {
-   capabilities: Record<string, BaseAgentCapability[]> | null;
+@@ -39,6 +40,7 @@ export interface UserSystemContextType {
    machineId: string | null;
    loginStatus: LoginStatus | null;
+   remoteAuthDegraded: string | null;
 +  sharedApiBase: string | null;
    setEnvironment: (env: Environment | null) => void;
    setProfiles: (profiles: Record<string, ExecutorProfile> | null) => void;
    setCapabilities: (caps: Record<string, BaseAgentCapability[]> | null) => void;
 diff --git a/packages/web-core/src/shared/hooks/useUserSystemController.ts b/packages/web-core/src/shared/hooks/useUserSystemController.ts
-index 3af151490..93a27f353 100644
+index 7f578e989..6c5152bf5 100644
 --- a/packages/web-core/src/shared/hooks/useUserSystemController.ts
 +++ b/packages/web-core/src/shared/hooks/useUserSystemController.ts
-@@ -43,6 +43,7 @@ export function useUserSystemController({
-   const environment = userSystemInfo?.environment || null;
+@@ -44,6 +44,7 @@ export function useUserSystemController({
    const machineId = userSystemInfo?.machine_id || null;
    const loginStatus = userSystemInfo?.login_status || null;
+   const remoteAuthDegraded = userSystemInfo?.remote_auth_degraded || null;
 +  const sharedApiBase = userSystemInfo?.shared_api_base || null;
    const profiles =
      (userSystemInfo?.executors as Record<string, ExecutorProfile> | null) ||
      null;
-@@ -151,6 +152,7 @@ export function useUserSystemController({
-         capabilities,
+@@ -153,6 +154,7 @@ export function useUserSystemController({
          machineId,
          loginStatus,
+         remoteAuthDegraded,
 +        sharedApiBase,
        },
        appVersion,
        previewProxyPort,
-@@ -160,6 +162,7 @@ export function useUserSystemController({
-       capabilities,
+@@ -163,6 +165,7 @@ export function useUserSystemController({
        machineId,
        loginStatus,
+       remoteAuthDegraded,
 +      sharedApiBase,
        updateConfig,
        saveConfig,
        updateAndSaveConfig,
-@@ -178,6 +181,7 @@ export function useUserSystemController({
-       loading,
+@@ -182,6 +185,7 @@ export function useUserSystemController({
        previewProxyPort,
        loginStatus,
+       remoteAuthDegraded,
 +      sharedApiBase,
        profiles,
        reloadSystem,
@@ -620,19 +611,19 @@ index 25be704a1..8d92b707e 100644
    return {
      workspaces,
 diff --git a/packages/web-core/src/shared/providers/WorkspaceProvider.tsx b/packages/web-core/src/shared/providers/WorkspaceProvider.tsx
-index 58bdafb59..99da449eb 100644
+index c7676abfb..845abff0f 100644
 --- a/packages/web-core/src/shared/providers/WorkspaceProvider.tsx
 +++ b/packages/web-core/src/shared/providers/WorkspaceProvider.tsx
-@@ -13,6 +13,8 @@ import { useDiffViewStore } from '@/shared/stores/useDiffViewStore';
+@@ -13,6 +13,8 @@ import { useWorkspaceDiffStore } from '@/shared/stores/useWorkspaceDiffStore';
  import type { DiffStats } from 'shared/types';
  import { useAppNavigation } from '@/shared/hooks/useAppNavigation';
  import { useCurrentAppDestination } from '@/shared/hooks/useCurrentAppDestination';
 +import { useAuth } from '@/shared/hooks/auth/useAuth';
 +import { useUserSystem } from '@/shared/hooks/useUserSystem';
  
- import {
-   WorkspaceContext,
-@@ -28,6 +30,12 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
+ import { WorkspaceContext } from '@/shared/hooks/useWorkspaceContext';
+ 
+@@ -25,6 +27,12 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
    const appNavigation = useAppNavigation();
    const currentDestination = useCurrentAppDestination();
    const queryClient = useQueryClient();
@@ -645,7 +636,7 @@ index 58bdafb59..99da449eb 100644
  
    const isCreateMode = currentDestination?.kind === 'workspaces-create';
  
-@@ -35,11 +43,11 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
+@@ -32,11 +40,11 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
      workspaces: activeWorkspaces,
      archivedWorkspaces,
      isLoading: isLoadingList,
@@ -659,7 +650,7 @@ index 58bdafb59..99da449eb 100644
    );
  
    const {
-@@ -51,10 +59,12 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
+@@ -48,10 +56,12 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
      isLoading: isSessionsLoading,
      isNewSessionMode,
      startNewSession,
@@ -674,7 +665,7 @@ index 58bdafb59..99da449eb 100644
    });
  
    // TODO: Support multiple repos - currently only fetches comments from the primary repo.
-@@ -77,10 +87,13 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
+@@ -74,10 +84,13 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
    } = useGitHubComments({
      workspaceId,
      repoId: primaryRepoId,
@@ -690,7 +681,7 @@ index 58bdafb59..99da449eb 100644
  
    const diffPaths = useMemo(
      () =>
-@@ -105,7 +118,7 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
+@@ -164,7 +177,7 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
    const isLoading = isLoadingList || isLoadingWorkspace;
  
    useEffect(() => {
@@ -699,7 +690,7 @@ index 58bdafb59..99da449eb 100644
  
      workspacesApi
        .markSeen(workspaceId)
-@@ -115,7 +128,7 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
+@@ -174,7 +187,7 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
        .catch((error) => {
          console.warn('Failed to mark workspace as seen:', error);
        });

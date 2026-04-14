@@ -1,0 +1,39 @@
+From 2ec010fa2c2b4405002f4c4d534cfdd540c1ebd9 Mon Sep 17 00:00:00 2001
+From: Riajul Islam <riajul@kahf.co>
+Date: Tue, 14 Apr 2026 06:27:04 +0000
+Subject: [PATCH 05/17] downstream:
+ 0005-feat-add-markdown-preview-toggle-in-diff-view-for-.m
+
+
+diff --git a/packages/web-core/package.json b/packages/web-core/package.json
+index 4c759e6eb..1e2d31774 100644
+--- a/packages/web-core/package.json
++++ b/packages/web-core/package.json
+@@ -76,6 +76,7 @@
+     "react": "^18.2.0",
+     "react-compiler-runtime": "^1.0.0",
+     "react-dom": "^18.2.0",
++    "react-markdown": "^9.0.1",
+     "react-dropzone": "^14.3.8",
+     "react-hotkeys-hook": "^5.1.0",
+     "react-i18next": "^15.7.3",
+diff --git a/packages/web-core/src/i18n/locales/en/tasks.json b/packages/web-core/src/i18n/locales/en/tasks.json
+index 2bcdde926..fc7e45215 100644
+--- a/packages/web-core/src/i18n/locales/en/tasks.json
++++ b/packages/web-core/src/i18n/locales/en/tasks.json
+@@ -83,7 +83,11 @@
+   },
+   "diff": {
+     "filesChanged_one": "{{count}} file changed",
+-    "filesChanged_other": "{{count}} files changed"
++    "filesChanged_other": "{{count}} files changed",
++    "markdownPreview": {
++      "showPreview": "Show markdown preview",
++      "showDiff": "Show code diff"
++    }
+   },
+   "processes": {
+     "noLogsAvailable": "No logs available",
+-- 
+2.50.1
+

@@ -1,26 +1,11 @@
-From cac8a1422c105afa3d2b051a83f21b90309a982e Mon Sep 17 00:00:00 2001
-From: Riajul Islam <opensource@example.com>
-Date: Sun, 5 Apr 2026 09:02:34 +0000
-Subject: [PATCH] feat: add Zoho OAuth provider support
+From 3a66dee6ad994c0c030cd096e634a4b7984fee64 Mon Sep 17 00:00:00 2001
+From: Riajul Islam <riajul@kahf.co>
+Date: Tue, 14 Apr 2026 06:27:04 +0000
+Subject: [PATCH 01/17] downstream: 0001-feat-add-Zoho-OAuth-provider-support
 
-Add ZohoOAuthProvider implementing the AuthorizationProvider trait,
-following the existing GitHub and Google provider patterns. Supports
-token exchange, user info fetching, token refresh, and multi-datacenter
-accounts URLs via ZOHO_ACCOUNTS_URL env var.
-
-Environment variables:
-- ZOHO_OAUTH_CLIENT_ID
-- ZOHO_OAUTH_CLIENT_SECRET
-- ZOHO_ACCOUNTS_URL (optional, defaults to https://accounts.zoho.com)
----
- crates/remote/src/app.rs           |  10 +-
- crates/remote/src/auth/mod.rs      |   1 +
- crates/remote/src/auth/provider.rs | 351 +++++++++++++++++++++++++++++
- crates/remote/src/config.rs        |  44 +++-
- 4 files changed, 404 insertions(+), 2 deletions(-)
 
 diff --git a/crates/remote/src/app.rs b/crates/remote/src/app.rs
-index c64c75faa..a4e5af957 100644
+index 4aa1d8206..500008497 100644
 --- a/crates/remote/src/app.rs
 +++ b/crates/remote/src/app.rs
 @@ -10,7 +10,7 @@ use crate::{
@@ -44,24 +29,24 @@ index c64c75faa..a4e5af957 100644
 +            )?);
 +        }
 +
-         if registry.is_empty() {
+         if registry.is_empty() && auth_config.local().is_none() {
              bail!("no OAuth providers configured");
          }
 diff --git a/crates/remote/src/auth/mod.rs b/crates/remote/src/auth/mod.rs
-index b5222180a..70f25f32b 100644
+index 0a964e4a9..eea303442 100644
 --- a/crates/remote/src/auth/mod.rs
 +++ b/crates/remote/src/auth/mod.rs
-@@ -10,4 +10,5 @@ pub use middleware::{RequestContext, require_session};
- pub use oauth_token_validator::{OAuthTokenValidationError, OAuthTokenValidator};
- pub use provider::{
+@@ -12,4 +12,5 @@ pub(crate) use middleware::{RequestContext, require_session};
+ pub(crate) use oauth_token_validator::{OAuthTokenValidationError, OAuthTokenValidator};
+ pub(crate) use provider::{
      GitHubOAuthProvider, GoogleOAuthProvider, ProviderRegistry, ProviderTokenDetails,
 +    ZohoOAuthProvider,
  };
 diff --git a/crates/remote/src/auth/provider.rs b/crates/remote/src/auth/provider.rs
-index 9fa753064..ebc6617ac 100644
+index 15184214b..63a5aea67 100644
 --- a/crates/remote/src/auth/provider.rs
 +++ b/crates/remote/src/auth/provider.rs
-@@ -360,6 +360,357 @@ impl AuthorizationProvider for GitHubOAuthProvider {
+@@ -366,6 +366,357 @@ impl AuthorizationProvider for GitHubOAuthProvider {
      }
  }
  
@@ -416,14 +401,14 @@ index 9fa753064..ebc6617ac 100644
 +    }
 +}
 +
- pub struct GoogleOAuthProvider {
+ pub(crate) struct GoogleOAuthProvider {
      client: Client,
      client_id: String,
 diff --git a/crates/remote/src/config.rs b/crates/remote/src/config.rs
-index a6a0a9eb2..926ab5f41 100644
+index 7ced437d7..4d341c546 100644
 --- a/crates/remote/src/config.rs
 +++ b/crates/remote/src/config.rs
-@@ -306,10 +306,31 @@ impl OAuthProviderConfig {
+@@ -366,10 +366,31 @@ impl LocalAuthConfig {
      }
  }
  
@@ -452,14 +437,13 @@ index a6a0a9eb2..926ab5f41 100644
      github: Option<OAuthProviderConfig>,
      google: Option<OAuthProviderConfig>,
 +    zoho: Option<ZohoOAuthProviderConfig>,
+     local: Option<LocalAuthConfig>,
      jwt_secret: SecretString,
      public_base_url: String,
- }
-@@ -345,7 +366,23 @@ impl AuthConfig {
+@@ -406,9 +427,25 @@ impl AuthConfig {
              _ => None,
          };
  
--        if github.is_none() && google.is_none() {
 +        let zoho = match env::var("ZOHO_OAUTH_CLIENT_ID") {
 +            Ok(client_id) if !client_id.is_empty() => {
 +                let client_secret = env::var("ZOHO_OAUTH_CLIENT_SECRET")
@@ -476,19 +460,22 @@ index a6a0a9eb2..926ab5f41 100644
 +            _ => None,
 +        };
 +
-+        if github.is_none() && google.is_none() && zoho.is_none() {
+         let local = LocalAuthConfig::from_env()?;
+ 
+-        if github.is_none() && google.is_none() && local.is_none() {
++        if github.is_none() && google.is_none() && zoho.is_none() && local.is_none() {
              return Err(ConfigError::NoOAuthProviders);
          }
  
-@@ -355,6 +392,7 @@ impl AuthConfig {
+@@ -418,6 +455,7 @@ impl AuthConfig {
          Ok(Self {
              github,
              google,
 +            zoho,
+             local,
              jwt_secret,
              public_base_url,
-         })
-@@ -368,6 +406,10 @@ impl AuthConfig {
+@@ -432,6 +470,10 @@ impl AuthConfig {
          self.google.as_ref()
      }
  
@@ -496,8 +483,8 @@ index a6a0a9eb2..926ab5f41 100644
 +        self.zoho.as_ref()
 +    }
 +
-     pub fn jwt_secret(&self) -> &SecretString {
-         &self.jwt_secret
+     pub fn local(&self) -> Option<&LocalAuthConfig> {
+         self.local.as_ref()
      }
 -- 
 2.50.1
