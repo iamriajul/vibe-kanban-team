@@ -1,9 +1,33 @@
-From 3917a49b7016b3d697500747137e32345f330eb7 Mon Sep 17 00:00:00 2001
+From caca2c79a47c637ab6b4efdd02a910c5b57d2df4 Mon Sep 17 00:00:00 2001
 From: Riajul Islam <riajul@kahf.co>
 Date: Tue, 14 Apr 2026 06:27:05 +0000
-Subject: [PATCH 06/17] downstream:
+Subject: [PATCH] downstream:
  0006-feat-fix-standalone-workspace-ownership-for-multi-us
 
+---
+ ...538cb04c1a36d8f6e78f962fce21f403bcc1.json} |  14 +-
+ ...111ffc613dae90b1c3d5179ce7ba90efd446.json} |  12 +-
+ ...23e7fb85b67c5aa8e9166c42d6a82d31cfed.json} |  14 +-
+ ...db8c36601c838306c6dddbd52265e1bd7946.json} |  14 +-
+ ...9a3093c96787bc4926876d73d1c0d8da072d.json} |  10 +-
+ ...bdde8170de2aa67e648faa3eb319c8ab216a.json} |  12 +-
+ ...682ede8465302e4f67ff72be99303315a4c2.json} |  12 +-
+ ...000000_add_owner_user_id_to_workspaces.sql |   2 +
+ crates/db/src/models/workspace.rs             |  28 ++--
+ crates/server/src/routes/workspaces/create.rs |  10 ++
+ crates/server/src/routes/workspaces/pr.rs     |   1 +
+ .../workspaces/WorkspacesSidebarContainer.tsx | 126 ++----------------
+ .../src/shared/hooks/useWorkspaces.ts         |   2 +
+ shared/types.ts                               |   4 +-
+ 14 files changed, 113 insertions(+), 148 deletions(-)
+ rename crates/db/.sqlx/{query-7410e8128e63af1c3127e833accee637e65f7efcd9111ecb891587294042129c.json => query-1da339ff150cd6af3a8a90f1a553538cb04c1a36d8f6e78f962fce21f403bcc1.json} (67%)
+ rename crates/db/.sqlx/{query-766fa107de23b7e6c579223b083d916e252d422e2908c27f6718fcbd851de2c1.json => query-304c825605da8f74b3f0134534aa111ffc613dae90b1c3d5179ce7ba90efd446.json} (86%)
+ rename crates/db/.sqlx/{query-592656b17a5f78d117365909e47afba7d3df545ac1078c307c6b968e75c8e2ba.json => query-5aeb6c1ab748cddf3114d9c882e723e7fb85b67c5aa8e9166c42d6a82d31cfed.json} (62%)
+ rename crates/db/.sqlx/{query-5154289c5a9ddbc061d42de2baf129e03a75061b8b305110921688f01d112de1.json => query-7022ab4f602d64aa2dbfe8d42edfdb8c36601c838306c6dddbd52265e1bd7946.json} (62%)
+ rename crates/db/.sqlx/{query-91810eeed4804827717a182ad1b61c641648e2659100f43ef9504fc60e5d244e.json => query-a1393d0ae8411439f7bed0c9e3bd9a3093c96787bc4926876d73d1c0d8da072d.json} (56%)
+ rename crates/db/.sqlx/{query-64f31710ab7ba14047f31cce44ad36c60a53624f9bcb03a5eaff5d61ca8cc9cf.json => query-f01fb4602cd83d441cb897e058ccbdde8170de2aa67e648faa3eb319c8ab216a.json} (83%)
+ rename crates/db/.sqlx/{query-f2dbb49b2f839e84a46fdd865d9982b758160517b93bc92d8e12060426daa05d.json => query-f2ee85153d3e9424aa0d8666be1d682ede8465302e4f67ff72be99303315a4c2.json} (85%)
+ create mode 100644 crates/db/migrations/20260318000000_add_owner_user_id_to_workspaces.sql
 
 diff --git a/crates/db/.sqlx/query-7410e8128e63af1c3127e833accee637e65f7efcd9111ecb891587294042129c.json b/crates/db/.sqlx/query-1da339ff150cd6af3a8a90f1a553538cb04c1a36d8f6e78f962fce21f403bcc1.json
 similarity index 67%

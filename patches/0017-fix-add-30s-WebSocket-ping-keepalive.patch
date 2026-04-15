@@ -1,9 +1,16 @@
-From dd4035419271553c77b146b206d5f987d2499254 Mon Sep 17 00:00:00 2001
+From fc755e5e66de7d88955690084011bdc64e3b962e Mon Sep 17 00:00:00 2001
 From: Riajul Islam <riajul@kahf.co>
 Date: Tue, 14 Apr 2026 06:27:05 +0000
-Subject: [PATCH 17/17] downstream:
+Subject: [PATCH] downstream:
  0017-fix-add-30s-WebSocket-ping-keepalive-to-all-long-liv
 
+---
+ crates/server/src/routes/approvals.rs         | 10 +++++++
+ .../server/src/routes/execution_processes.rs  | 27 +++++++++++++++++++
+ crates/server/src/routes/scratch.rs           | 10 +++++++
+ crates/server/src/routes/terminal.rs          | 10 ++++++-
+ .../server/src/routes/workspaces/streams.rs   | 18 +++++++++++++
+ 5 files changed, 74 insertions(+), 1 deletion(-)
 
 diff --git a/crates/server/src/routes/approvals.rs b/crates/server/src/routes/approvals.rs
 index 83e143598..5b3e0511e 100644

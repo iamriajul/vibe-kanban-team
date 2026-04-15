@@ -1,4 +1,4 @@
-From febbd0ec71048c5cbf1c1ceeea59c11054b2a0d0 Mon Sep 17 00:00:00 2001
+From 05e60db7fa0d26ade14bcee943a41e8d1322e841 Mon Sep 17 00:00:00 2001
 From: Riajul Islam <riajul@kahf.co>
 Date: Wed, 15 Apr 2026 08:14:30 +0000
 Subject: [PATCH] feat: add markdown preview toggle in diff view for .md/.mdx

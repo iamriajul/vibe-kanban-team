@@ -1,9 +1,15 @@
-From b97011554c356e7a5565c21a5eedea938e54178c Mon Sep 17 00:00:00 2001
+From 000d00cd80f14e542b79b7e37016f01aeb325c43 Mon Sep 17 00:00:00 2001
 From: Riajul Islam <riajul@kahf.co>
 Date: Tue, 14 Apr 2026 06:27:05 +0000
-Subject: [PATCH 10/17] downstream:
+Subject: [PATCH] downstream:
  0010-feat-support-VSCODE_PROXY_URI-in-preview-iframe
 
+---
+ crates/preview-proxy/src/devtools_script.js   |   1 +
+ crates/preview-proxy/src/lib.rs               | 238 ++++++++++-
+ .../workspaces/PreviewBrowserContainer.tsx    | 376 ++++++++++++++----
+ .../src/shared/hooks/usePreviewUrl.ts         |  58 ++-
+ 4 files changed, 582 insertions(+), 91 deletions(-)
 
 diff --git a/crates/preview-proxy/src/devtools_script.js b/crates/preview-proxy/src/devtools_script.js
 index ca1c3d3af..4314377f4 100644
@@ -326,7 +332,7 @@ index 7200cdd34..ccc730780 100644
      let status = StatusCode::from_u16(response.status().as_u16()).unwrap_or(StatusCode::OK);
  
 diff --git a/packages/web-core/src/pages/workspaces/PreviewBrowserContainer.tsx b/packages/web-core/src/pages/workspaces/PreviewBrowserContainer.tsx
-index 9bc3273f5..2f116c170 100644
+index 9bc3273f5..13cbdd7b6 100644
 --- a/packages/web-core/src/pages/workspaces/PreviewBrowserContainer.tsx
 +++ b/packages/web-core/src/pages/workspaces/PreviewBrowserContainer.tsx
 @@ -94,60 +94,178 @@ function normalizePreviewUrl(rawUrl: string, baseUrl?: string): string | null {

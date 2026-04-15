@@ -1,9 +1,18 @@
-From 2162c4e4cd0f5d370b54c8f8af9a8baa0451cb26 Mon Sep 17 00:00:00 2001
+From b6a897a42c6f768bb511f0df6120e2652999676d Mon Sep 17 00:00:00 2001
 From: Riajul Islam <riajul@kahf.co>
 Date: Tue, 14 Apr 2026 06:27:04 +0000
-Subject: [PATCH 03/17] downstream:
+Subject: [PATCH] downstream:
  0003-feat-require-workspace-auth-and-add-admin-scoped-cre
 
+---
+ crates/server/src/routes/workspaces/mod.rs    |  31 ++-
+ .../src/pages/workspaces/WorkspacesLayout.tsx |  34 ++-
+ .../workspaces/WorkspacesSidebarContainer.tsx | 234 +++++++++++++++++-
+ .../src/shared/hooks/useUserSystem.ts         |   2 +
+ .../shared/hooks/useUserSystemController.ts   |   4 +
+ .../src/shared/hooks/useWorkspaces.ts         |  27 +-
+ .../shared/providers/WorkspaceProvider.tsx    |  29 ++-
+ 7 files changed, 336 insertions(+), 25 deletions(-)
 
 diff --git a/crates/server/src/routes/workspaces/mod.rs b/crates/server/src/routes/workspaces/mod.rs
 index a0a3f3c39..144c749c1 100644
