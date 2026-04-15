@@ -27,9 +27,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       runtimeClassName: {{ .Values.frontend.runtimeClassName }}
-      {{- if .Values.frontend.hostUsers | kindIs "bool" }}
-      hostUsers: {{ .Values.frontend.hostUsers }}
-      {{- end }}
+      hostUsers: false
       # Run as root to start systemd (image defaults to USER coder)
       securityContext:
         runAsUser: 0

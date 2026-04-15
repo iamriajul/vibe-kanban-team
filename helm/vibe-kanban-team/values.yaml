@@ -230,10 +230,6 @@ frontend:
   # RuntimeClass for sysbox (enables systemd, Docker-in-Docker)
   runtimeClassName: sysbox-runc
 
-  # Set to false for containerd 2.x on Ubuntu 24.04+ (required for sysbox user namespace isolation).
-  # Omit (null) for older setups where sysbox manages user namespaces internally.
-  hostUsers: null
-
   # ===========================================================================
   # WireGuard VPN enforcement (optional)
   # ===========================================================================
