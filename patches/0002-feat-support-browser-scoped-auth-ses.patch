@@ -1,6 +1,6 @@
-From efde0e2dc3bce0f8bc42d8951c7f9e4cb98ec208 Mon Sep 17 00:00:00 2001
+From 01688b1ffae7a33d09fc710a84ffcd2bd104c1f4 Mon Sep 17 00:00:00 2001
 From: Riajul Islam <riajul@kahf.co>
-Date: Wed, 15 Apr 2026 11:33:23 +0000
+Date: Wed, 15 Apr 2026 12:01:11 +0000
 Subject: [PATCH] feat: support browser-scoped auth session
 
 ---
@@ -9,13 +9,16 @@ Subject: [PATCH] feat: support browser-scoped auth session
  crates/local-deployment/src/container.rs      | 143 +++++++++++++-
  crates/local-deployment/src/lib.rs            |  81 ++++++--
  crates/local-deployment/src/pty.rs            |   7 +
+ crates/server/src/error.rs                    |   5 +
+ crates/server/src/middleware/auth_session.rs  |  86 +++++++++
  crates/server/src/middleware/mod.rs           |   2 +
  crates/server/src/routes/mod.rs               |   4 +
  crates/server/src/routes/terminal.rs          |  14 +-
  crates/services/src/services/auth.rs          | 177 ++++++++++++++++--
  .../src/services/oauth_credentials.rs         |   4 +
  crates/services/src/services/remote_client.rs |  48 +++--
- 11 files changed, 470 insertions(+), 63 deletions(-)
+ 13 files changed, 561 insertions(+), 63 deletions(-)
+ create mode 100644 crates/server/src/middleware/auth_session.rs
 
 diff --git a/crates/git/src/cli.rs b/crates/git/src/cli.rs
 index 0c8a80cf7..e612610d7 100644
@@ -534,6 +537,114 @@ index de1b2f53a..de8e808a6 100644
  
              let child = pty_pair
                  .slave
+diff --git a/crates/server/src/error.rs b/crates/server/src/error.rs
+index 8f16d458d..bba1c4e7e 100644
+--- a/crates/server/src/error.rs
++++ b/crates/server/src/error.rs
+@@ -310,6 +310,11 @@ fn remote_client_error(err: &RemoteClientError) -> ErrorInfo {
+         RemoteClientError::Url(_) => {
+             ErrorInfo::bad_request("RemoteClientError", "Remote service URL is invalid.")
+         }
++        RemoteClientError::TokenRefreshTimeout => ErrorInfo::with_status(
++            StatusCode::GATEWAY_TIMEOUT,
++            "RemoteClientError",
++            "Token refresh timed out. Please sign in again.",
++        ),
+     }
+ }
+ 
+diff --git a/crates/server/src/middleware/auth_session.rs b/crates/server/src/middleware/auth_session.rs
+new file mode 100644
+index 000000000..5f87483f6
+--- /dev/null
++++ b/crates/server/src/middleware/auth_session.rs
+@@ -0,0 +1,86 @@
++use axum::{
++    body::Body,
++    extract::State,
++    http::{
++        HeaderMap, HeaderValue, Request,
++        header::{COOKIE, SET_COOKIE},
++    },
++    middleware::Next,
++    response::Response,
++};
++use deployment::Deployment;
++use uuid::Uuid;
++
++use crate::DeploymentImpl;
++
++const AUTH_SESSION_COOKIE_NAME: &str = "vk_auth_session";
++const AUTH_SESSION_COOKIE_MAX_AGE_SECS: u64 = 365 * 24 * 60 * 60;
++
++pub async fn bind_auth_session(
++    State(deployment): State<DeploymentImpl>,
++    request: Request<Body>,
++    next: Next,
++) -> Response {
++    let (auth_session_id, should_set_cookie) = match parse_auth_session_cookie(request.headers()) {
++        Some(value) => (value, false),
++        None => (Uuid::new_v4().to_string(), true),
++    };
++    let secure_cookie = should_use_secure_cookie(request.headers());
++
++    deployment
++        .auth_context()
++        .run_with_session(auth_session_id.clone(), async move {
++            let mut response = next.run(request).await;
++
++            if should_set_cookie
++                && let Ok(cookie_header) =
++                    build_auth_session_cookie_header(&auth_session_id, secure_cookie)
++            {
++                response.headers_mut().append(SET_COOKIE, cookie_header);
++            }
++
++            response
++        })
++        .await
++}
++
++fn parse_auth_session_cookie(headers: &HeaderMap) -> Option<String> {
++    let cookies = headers.get(COOKIE)?.to_str().ok()?;
++    for fragment in cookies.split(';') {
++        let mut parts = fragment.trim().splitn(2, '=');
++        let Some(name) = parts.next().map(str::trim) else {
++            continue;
++        };
++        if name != AUTH_SESSION_COOKIE_NAME {
++            continue;
++        }
++
++        let value = parts.next().map(str::trim).unwrap_or_default();
++        if let Ok(parsed) = Uuid::parse_str(value) {
++            return Some(parsed.to_string());
++        }
++    }
++    None
++}
++
++fn should_use_secure_cookie(headers: &HeaderMap) -> bool {
++    headers
++        .get("x-forwarded-proto")
++        .and_then(|value| value.to_str().ok())
++        .and_then(|value| value.split(',').next())
++        .map(str::trim)
++        .is_some_and(|proto| proto.eq_ignore_ascii_case("https"))
++}
++
++fn build_auth_session_cookie_header(
++    auth_session_id: &str,
++    secure: bool,
++) -> Result<HeaderValue, axum::http::header::InvalidHeaderValue> {
++    let mut cookie = format!(
++        "{AUTH_SESSION_COOKIE_NAME}={auth_session_id}; Path=/; HttpOnly; SameSite=Lax; Max-Age={AUTH_SESSION_COOKIE_MAX_AGE_SECS}",
++    );
++    if secure {
++        cookie.push_str("; Secure");
++    }
++    HeaderValue::from_str(&cookie)
++}
 diff --git a/crates/server/src/middleware/mod.rs b/crates/server/src/middleware/mod.rs
 index 7526320cc..c910a44b4 100644
 --- a/crates/server/src/middleware/mod.rs

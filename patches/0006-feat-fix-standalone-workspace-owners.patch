@@ -464,7 +464,7 @@ index 6b79466f7..2a8d6afec 100644
 +    let owner_user_id = match deployment.auth_context().cached_profile().await {
 +        Some(profile) => Some(profile.user_id.to_string()),
 +        None => match deployment.get_login_status().await {
-+            LoginStatus::LoggedIn { profile } => Some(profile.user_id.to_string()),
++            LoginStatus::LoggedIn { profile } => profile.map(|p| p.user_id.to_string()),
 +            LoginStatus::LoggedOut => None,
 +        },
 +    };

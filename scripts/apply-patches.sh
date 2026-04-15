@@ -68,7 +68,7 @@ apply_patch_series() {
     fi
 
     echo "  Applying: ${patch}"
-    if ! git -C "${TARGET_REPO}" apply --whitespace=nowarn "${PATCH_PATH}"; then
+    if ! git -C "${TARGET_REPO}" apply --whitespace=nowarn --3way "${PATCH_PATH}"; then
       echo "Error: Failed to apply patch: ${patch}"
       echo "You may need to resolve conflicts manually or update the patch for the current version."
       exit 1
