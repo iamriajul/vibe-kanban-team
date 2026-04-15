@@ -748,7 +748,8 @@ index 9bc3273f5..2f116c170 100644
      if (navigation?.url) {
        // Non-loopback (direct) URLs: strip _refresh param and show as-is
        if (!isLoopbackPreview) {
-         return stripPreviewRefreshParam(navigation.url) ?? navigation.url;
+-        return stripPreviewRefreshParam(navigation.url) ?? navigation.url;
++        return stripPreviewInternalParams(navigation.url) ?? navigation.url;
        }
 -      if (hostId != null) {
 -        return stripPreviewRefreshParam(navigation.url) ?? navigation.url;
