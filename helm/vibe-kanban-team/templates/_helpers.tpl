@@ -80,6 +80,24 @@ Frontend fullname
 {{- printf "%s-frontend" (include "vibe-kanban-team.fullname" .) | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
+{{/*
+Managed PostgreSQL (CNPG) name helpers.
+Trimmed to 59 chars so CNPG-generated suffixes (-app, -rw, -superuser) stay within 63.
+*/}}
+{{- define "vibe-kanban-team.postgres.clusterName" -}}
+{{- (.Values.postgres.clusterName | default (printf "%s-pg" (include "vibe-kanban-team.fullname" .))) | trunc 59 | trimSuffix "-" }}
+{{- end }}
+
+{{/* Secret holding auto-generated jwt-secret + electric-sync-password + electric-url. */}}
+{{- define "vibe-kanban-team.generatedSecretName" -}}
+{{- printf "%s-vk-generated" (include "vibe-kanban-team.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/* Secret with key "password" consumed by CNPG managed.roles for the electric_sync role. */}}
+{{- define "vibe-kanban-team.electricSyncSecretName" -}}
+{{- printf "%s-vk-electric-sync" (include "vibe-kanban-team.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
 {{- define "vibe-kanban-team.ingress.className" -}}
 {{- $className := .className | default "" -}}
 {{- if $className -}}
@@ -199,9 +217,26 @@ Frontend fullname
 {{- end }}
 
 {{- define "vibe-kanban-team.remote.structuredEnv" -}}
+{{- if .Values.postgres.enabled }}
+{{/* postgres.enabled: CNPG app secret for DB URL; chart-generated secret for JWT + electric password */}}
+- name: SERVER_DATABASE_URL
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "vibe-kanban-team.postgres.clusterName" . }}-app
+      key: uri
+- name: VIBEKANBAN_REMOTE_JWT_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "vibe-kanban-team.generatedSecretName" . }}
+      key: jwt-secret
+- name: ELECTRIC_ROLE_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "vibe-kanban-team.generatedSecretName" . }}
+      key: electric-sync-password
+{{- else }}
 {{- $database := .Values.config.existingSecrets.database -}}
 {{- $app := .Values.config.existingSecrets.app -}}
-{{- $oauth := .Values.config.existingSecrets.oauth -}}
 {{- if $database.name }}
 - name: SERVER_DATABASE_URL
   valueFrom:
@@ -221,6 +256,8 @@ Frontend fullname
       name: {{ $app.name }}
       key: {{ $app.electricRolePasswordKey }}
 {{- end }}
+{{- end }}
+{{- $oauth := .Values.config.existingSecrets.oauth -}}
 {{- if $oauth.name }}
 - name: GITHUB_OAUTH_CLIENT_ID
   valueFrom:
@@ -236,6 +273,19 @@ Frontend fullname
 {{- end }}
 
 {{- define "vibe-kanban-team.relay.structuredEnv" -}}
+{{- if .Values.postgres.enabled }}
+{{/* postgres.enabled: CNPG app secret for DB URL; chart-generated secret for JWT */}}
+- name: SERVER_DATABASE_URL
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "vibe-kanban-team.postgres.clusterName" . }}-app
+      key: uri
+- name: VIBEKANBAN_REMOTE_JWT_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "vibe-kanban-team.generatedSecretName" . }}
+      key: jwt-secret
+{{- else }}
 {{- $database := .Values.config.existingSecrets.database -}}
 {{- $app := .Values.config.existingSecrets.app -}}
 {{- if $database.name }}
@@ -253,8 +303,17 @@ Frontend fullname
       key: {{ $app.jwtSecretKey }}
 {{- end }}
 {{- end }}
+{{- end }}
 
 {{- define "vibe-kanban-team.electric.structuredEnv" -}}
+{{- if .Values.postgres.enabled }}
+{{/* postgres.enabled: electric-url pre-assembled at template time and stored in generated secret */}}
+- name: DATABASE_URL
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "vibe-kanban-team.generatedSecretName" . }}
+      key: electric-url
+{{- else }}
 {{- $database := .Values.config.existingSecrets.database -}}
 {{- if $database.name }}
 - name: DATABASE_URL
@@ -262,5 +321,6 @@ Frontend fullname
     secretKeyRef:
       name: {{ $database.name }}
       key: {{ $database.electricUrlKey }}
+{{- end }}
 {{- end }}
 {{- end }}

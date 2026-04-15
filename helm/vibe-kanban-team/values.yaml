@@ -95,6 +95,27 @@ nodeSelector: {}
 tolerations: []
 affinity: {}
 
+# =============================================================================
+# PostgreSQL via CloudNativePG (Built-in Database)
+# =============================================================================
+# Deploys a managed PostgreSQL cluster via CNPG. Requires the operator:
+#   kubectl apply --server-side -f \
+#     https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/main/releases/cnpg-1.25.0.yaml
+#
+# When enabled, all secrets (database URL, JWT, Electric sync password) are
+# auto-generated — no pre-existing secrets or database setup required.
+# Set postgres.enabled=false and configure config.existingSecrets to bring
+# your own PostgreSQL (RDS, CloudSQL, existing CNPG, etc.).
+# =============================================================================
+
+postgres:
+  enabled: true
+  instances: 1
+  database: vibe_kanban
+  storage:
+    size: 8Gi
+    storageClass: ""
+
 config:
   existingSecrets:
     database:
@@ -113,18 +134,9 @@ config:
 # =============================================================================
 # Environment Variables
 # =============================================================================
-# Prefer config.existingSecrets for the common install path.
-# Use env / relay.env / electric.env only for manual overrides or uncommon keys.
-# 
-# Example:
-#   config:
-#     existingSecrets:
-#       database:
-#         name: vibe-kanban-db
-#       app:
-#         name: vibe-kanban-secrets
-#       oauth:
-#         name: vibe-kanban-oauth
+# When postgres.enabled=true, all required secrets are auto-generated.
+# Use config.existingSecrets when postgres.enabled=false (bring your own DB).
+# Use env / relay.env / electric.env for additional manual overrides.
 # =============================================================================
 
 env: []

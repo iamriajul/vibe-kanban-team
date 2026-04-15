@@ -24,15 +24,33 @@ image:
 imagePullSecrets:
   - name: registry-credentials
 
-# Shared secret references for the common install path.
-config:
-  existingSecrets:
-    database:
-      name: vibe-kanban-db
-    app:
-      name: vibe-kanban-secrets
-    oauth:
-      name: vibe-kanban-oauth
+# Built-in PostgreSQL via CloudNativePG (zero-config default).
+# Requires the CNPG operator installed once per cluster:
+#   kubectl apply --server-side -f \
+#     https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/releases/download/v1.24.0/cnpg-1.24.0.yaml
+#
+# The chart auto-generates jwt-secret, electric-sync-password, and the Electric
+# DATABASE_URL. Values are stable across helm upgrades (lookup pattern).
+postgres:
+  enabled: true
+  instances: 1
+  storage:
+    size: 10Gi
+
+# To bring your own PostgreSQL instead, disable the built-in cluster and
+# supply your own secrets:
+#
+#   postgres:
+#     enabled: false
+#
+#   config:
+#     existingSecrets:
+#       database:
+#         name: vibe-kanban-db          # keys: url, electric-url
+#       app:
+#         name: vibe-kanban-secrets     # keys: jwt-secret, electric-role-password
+#       oauth:
+#         name: vibe-kanban-oauth       # keys: github-client-id, github-client-secret (optional)
 
 # Relay tunnel (optional)
 # NOTE: Tunnel users need relay ingress. Relay uses path-based routing on one host.
@@ -76,26 +94,32 @@ resources:
     memory: 512Mi
 
 # =============================================================================
-# Environment Variables - Reference your own secrets
+# Environment Variables
 # =============================================================================
 #
-# Prerequisites:
-# 1. Create a PostgreSQL database (CloudNativePG, RDS, etc.) with wal_level=logical
-# 2. Create the electric_sync role:
-#    CREATE ROLE electric_sync WITH LOGIN PASSWORD 'xxx' REPLICATION;
-# 3. Create Kubernetes secrets:
+# With postgres.enabled=true (default above):
+#   No manual secret creation needed. The chart provisions the CNPG Cluster,
+#   auto-generates jwt-secret and electric-sync-password, and wires everything
+#   automatically. Skip to "Non-secret environment variables" below.
 #
-#    kubectl create secret generic vibe-kanban-db \
-#      --from-literal=url='postgres://user:pass@host:5432/remote' \
-#      --from-literal=electric-url='postgresql://electric_sync:pass@host:5432/remote?sslmode=disable'
+# With postgres.enabled=false (BYO PostgreSQL):
+#   Prerequisites:
+#   1. PostgreSQL 14+ with wal_level=logical
+#   2. Create the electric_sync replication role:
+#      CREATE ROLE electric_sync WITH LOGIN PASSWORD 'xxx' REPLICATION;
+#   3. Create Kubernetes secrets:
 #
-#    kubectl create secret generic vibe-kanban-secrets \
-#      --from-literal=jwt-secret='your-32-byte-jwt-secret' \
-#      --from-literal=electric-role-password='electric-sync-password'
+#      kubectl create secret generic vibe-kanban-db \
+#        --from-literal=url='postgres://user:pass@host:5432/remote' \
+#        --from-literal=electric-url='postgresql://electric_sync:pass@host:5432/remote?sslmode=require'
 #
-#    kubectl create secret generic vibe-kanban-oauth \
-#      --from-literal=github-client-id='your-github-client-id' \
-#      --from-literal=github-client-secret='your-github-client-secret'
+#      kubectl create secret generic vibe-kanban-secrets \
+#        --from-literal=jwt-secret='your-32-byte-jwt-secret' \
+#        --from-literal=electric-role-password='electric-sync-password'
+#
+#      kubectl create secret generic vibe-kanban-oauth \
+#        --from-literal=github-client-id='your-github-client-id' \
+#        --from-literal=github-client-secret='your-github-client-secret'
 #
 # =============================================================================
 

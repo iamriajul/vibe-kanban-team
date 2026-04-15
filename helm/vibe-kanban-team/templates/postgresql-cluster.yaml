@@ -1,0 +1,30 @@
+{{- if .Values.postgres.enabled }}
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ include "vibe-kanban-team.postgres.clusterName" . }}
+  labels:
+    {{- include "vibe-kanban-team.labels" . | nindent 4 }}
+spec:
+  instances: {{ .Values.postgres.instances | default 1 }}
+  storage:
+    size: {{ .Values.postgres.storage.size | default "8Gi" }}
+    {{- with .Values.postgres.storage.storageClass }}
+    storageClass: {{ . }}
+    {{- end }}
+  postgresql:
+    parameters:
+      # Required for ElectricSQL logical replication
+      wal_level: "logical"
+  bootstrap:
+    initdb:
+      database: {{ .Values.postgres.database | default "vibe_kanban" }}
+      owner: {{ .Values.postgres.database | default "vibe_kanban" }}
+  managed:
+    roles:
+      - name: electric_sync
+        login: true
+        replication: true
+        passwordSecret:
+          name: {{ include "vibe-kanban-team.electricSyncSecretName" . }}
+{{- end }}
