@@ -1,9 +1,19 @@
-From 964dfe8a6b346cf358f990d97ca1b69899dbe05b Mon Sep 17 00:00:00 2001
+From f64afeffc79a5b032bdd9f333152513c31ef0a5c Mon Sep 17 00:00:00 2001
 From: Riajul Islam <riajul@kahf.co>
-Date: Tue, 14 Apr 2026 06:27:05 +0000
-Subject: [PATCH 08/17] downstream:
- 0008-feat-add-GitLab-merge-request-integration-via-glab-C
+Date: Wed, 15 Apr 2026 09:57:44 +0000
+Subject: [PATCH] feat: add GitLab merge request integration via glab CLI
 
+---
+ crates/git-host/src/detection.rs              |  57 ++-
+ crates/git-host/src/gitlab/cli.rs             | 439 ++++++++++++++++++
+ crates/git-host/src/gitlab/mod.rs             | 268 +++++++++++
+ crates/git-host/src/lib.rs                    |   5 +-
+ crates/git-host/src/types.rs                  |   2 +
+ .../dialogs/command-bar/CreatePRDialog.tsx    |   4 +-
+ shared/types.ts                               |   2 +-
+ 7 files changed, 772 insertions(+), 5 deletions(-)
+ create mode 100644 crates/git-host/src/gitlab/cli.rs
+ create mode 100644 crates/git-host/src/gitlab/mod.rs
 
 diff --git a/crates/git-host/src/detection.rs b/crates/git-host/src/detection.rs
 index 2228fa588..8a52f6921 100644
@@ -106,10 +116,10 @@ index 2228fa588..8a52f6921 100644
          assert_eq!(
 diff --git a/crates/git-host/src/gitlab/cli.rs b/crates/git-host/src/gitlab/cli.rs
 new file mode 100644
-index 000000000..8750710c4
+index 000000000..90ccf66b4
 --- /dev/null
 +++ b/crates/git-host/src/gitlab/cli.rs
-@@ -0,0 +1,414 @@
+@@ -0,0 +1,439 @@
 +//! Minimal helpers around the GitLab CLI (`glab`).
 +//!
 +//! This module provides low-level access to the GitLab CLI for merge request
@@ -122,12 +132,12 @@ index 000000000..8750710c4
 +};
 +
 +use chrono::{DateTime, Utc};
-+use db::models::merge::{MergeStatus, PullRequestInfo};
++use db::models::merge::MergeStatus;
 +use serde::Deserialize;
 +use thiserror::Error;
 +use utils::shell::resolve_executable_path_blocking;
 +
-+use crate::types::{CreatePrRequest, OpenPrInfo, UnifiedPrComment};
++use crate::types::{CreatePrRequest, PullRequestDetail, UnifiedPrComment};
 +
 +#[derive(Debug, Error)]
 +pub enum GlabCliError {
@@ -250,7 +260,7 @@ index 000000000..8750710c4
 +        &self,
 +        request: &CreatePrRequest,
 +        repo_path: &Path,
-+    ) -> Result<PullRequestInfo, GlabCliError> {
++    ) -> Result<PullRequestDetail, GlabCliError> {
 +        let body = request.body.as_deref().unwrap_or("");
 +
 +        let mut args: Vec<OsString> = Vec::with_capacity(14);
@@ -272,7 +282,7 @@ index 000000000..8750710c4
 +        }
 +
 +        let raw = self.run(args, Some(repo_path))?;
-+        Self::parse_mr_create_text(&raw)
++        Self::parse_mr_create_text(&raw, &request.title, &request.head_branch, &request.base_branch)
 +    }
 +
 +    /// View a merge request by its URL using `glab mr view`.
@@ -280,7 +290,7 @@ index 000000000..8750710c4
 +        &self,
 +        mr_id: &str,
 +        repo_path: &Path,
-+    ) -> Result<PullRequestInfo, GlabCliError> {
++    ) -> Result<PullRequestDetail, GlabCliError> {
 +        let raw = self.run(
 +            ["mr", "view", mr_id, "--output", "json"],
 +            Some(repo_path),
@@ -293,7 +303,7 @@ index 000000000..8750710c4
 +        &self,
 +        branch: &str,
 +        repo_path: &Path,
-+    ) -> Result<Vec<PullRequestInfo>, GlabCliError> {
++    ) -> Result<Vec<PullRequestDetail>, GlabCliError> {
 +        let raw = self.run(
 +            [
 +                "mr",
@@ -313,7 +323,7 @@ index 000000000..8750710c4
 +    pub fn list_open_mrs(
 +        &self,
 +        repo_path: &Path,
-+    ) -> Result<Vec<OpenPrInfo>, GlabCliError> {
++    ) -> Result<Vec<PullRequestDetail>, GlabCliError> {
 +        let raw = self.run(
 +            ["mr", "list", "--output", "json"],
 +            Some(repo_path),
@@ -342,7 +352,12 @@ index 000000000..8750710c4
 +impl GlabCli {
 +    /// Parse `glab mr create` text output to extract the MR URL.
 +    /// glab outputs a line like: `https://gitlab.com/owner/repo/-/merge_requests/123`
-+    fn parse_mr_create_text(raw: &str) -> Result<PullRequestInfo, GlabCliError> {
++    fn parse_mr_create_text(
++        raw: &str,
++        title: &str,
++        head_branch: &str,
++        base_branch: &str,
++    ) -> Result<PullRequestDetail, GlabCliError> {
 +        let mr_url = raw
 +            .lines()
 +            .rev()
@@ -373,16 +388,19 @@ index 000000000..8750710c4
 +                ))
 +            })?;
 +
-+        Ok(PullRequestInfo {
++        Ok(PullRequestDetail {
 +            number,
 +            url: mr_url,
 +            status: MergeStatus::Open,
 +            merged_at: None,
 +            merge_commit_sha: None,
++            title: title.to_string(),
++            head_branch: head_branch.to_string(),
++            base_branch: base_branch.to_string(),
 +        })
 +    }
 +
-+    fn parse_mr_view(raw: &str) -> Result<PullRequestInfo, GlabCliError> {
++    fn parse_mr_view(raw: &str) -> Result<PullRequestDetail, GlabCliError> {
 +        let mr: GlabMrResponse = serde_json::from_str(raw.trim()).map_err(|err| {
 +            GlabCliError::UnexpectedOutput(format!(
 +                "Failed to parse glab mr view response: {err}; raw: {raw}"
@@ -394,10 +412,13 @@ index 000000000..8750710c4
 +            &mr.state,
 +            mr.merged_at,
 +            mr.merge_commit_sha,
++            mr.title,
++            mr.source_branch,
++            mr.target_branch,
 +        ))
 +    }
 +
-+    fn parse_mr_list(raw: &str) -> Result<Vec<PullRequestInfo>, GlabCliError> {
++    fn parse_mr_list(raw: &str) -> Result<Vec<PullRequestDetail>, GlabCliError> {
 +        let mrs: Vec<GlabMrListItem> = serde_json::from_str(raw.trim()).map_err(|err| {
 +            GlabCliError::UnexpectedOutput(format!(
 +                "Failed to parse glab mr list response: {err}; raw: {raw}"
@@ -412,12 +433,15 @@ index 000000000..8750710c4
 +                    &mr.state,
 +                    mr.merged_at,
 +                    mr.merge_commit_sha,
++                    mr.title,
++                    mr.source_branch,
++                    mr.target_branch,
 +                )
 +            })
 +            .collect())
 +    }
 +
-+    fn parse_open_mr_list(raw: &str) -> Result<Vec<OpenPrInfo>, GlabCliError> {
++    fn parse_open_mr_list(raw: &str) -> Result<Vec<PullRequestDetail>, GlabCliError> {
 +        let mrs: Vec<GlabMrListItem> = serde_json::from_str(raw.trim()).map_err(|err| {
 +            GlabCliError::UnexpectedOutput(format!(
 +                "Failed to parse glab mr list response: {err}; raw: {raw}"
@@ -425,12 +449,17 @@ index 000000000..8750710c4
 +        })?;
 +        Ok(mrs
 +            .into_iter()
-+            .map(|mr| OpenPrInfo {
-+                number: mr.iid,
-+                url: mr.web_url,
-+                title: mr.title.unwrap_or_default(),
-+                head_branch: mr.source_branch.unwrap_or_default(),
-+                base_branch: mr.target_branch.unwrap_or_default(),
++            .map(|mr| {
++                Self::mr_response_to_info(
++                    mr.iid,
++                    &mr.web_url,
++                    &mr.state,
++                    mr.merged_at,
++                    mr.merge_commit_sha,
++                    mr.title,
++                    mr.source_branch,
++                    mr.target_branch,
++                )
 +            })
 +            .collect())
 +    }
@@ -441,13 +470,19 @@ index 000000000..8750710c4
 +        state: &str,
 +        merged_at: Option<DateTime<Utc>>,
 +        merge_commit_sha: Option<String>,
-+    ) -> PullRequestInfo {
-+        PullRequestInfo {
++        title: Option<String>,
++        head_branch: Option<String>,
++        base_branch: Option<String>,
++    ) -> PullRequestDetail {
++        PullRequestDetail {
 +            number: iid,
 +            url: web_url.to_string(),
 +            status: Self::map_gitlab_state(state),
 +            merged_at,
 +            merge_commit_sha,
++            title: title.unwrap_or_default(),
++            head_branch: head_branch.unwrap_or_default(),
++            base_branch: base_branch.unwrap_or_default(),
 +        }
 +    }
 +
@@ -526,10 +561,10 @@ index 000000000..8750710c4
 +}
 diff --git a/crates/git-host/src/gitlab/mod.rs b/crates/git-host/src/gitlab/mod.rs
 new file mode 100644
-index 000000000..d36686625
+index 000000000..2b8644cec
 --- /dev/null
 +++ b/crates/git-host/src/gitlab/mod.rs
-@@ -0,0 +1,280 @@
+@@ -0,0 +1,268 @@
 +//! GitLab hosting service implementation.
 +
 +mod cli;
@@ -540,13 +575,12 @@ index 000000000..d36686625
 +use backon::{ExponentialBuilder, Retryable};
 +pub use cli::GlabCli;
 +use cli::GlabCliError;
-+use db::models::merge::PullRequestInfo;
 +use tokio::task;
 +use tracing::info;
 +
 +use crate::{
 +    GitHostProvider,
-+    types::{CreatePrRequest, GitHostError, OpenPrInfo, ProviderKind, UnifiedPrComment},
++    types::{CreatePrRequest, GitHostError, PullRequestDetail, ProviderKind, UnifiedPrComment},
 +};
 +
 +#[derive(Debug, Clone)]
@@ -593,7 +627,7 @@ index 000000000..d36686625
 +        repo_path: &Path,
 +        _remote_url: &str,
 +        request: &CreatePrRequest,
-+    ) -> Result<PullRequestInfo, GitHostError> {
++    ) -> Result<PullRequestDetail, GitHostError> {
 +        if let Some(head_url) = &request.head_repo_url
 +            && head_url != _remote_url
 +        {
@@ -644,21 +678,10 @@ index 000000000..d36686625
 +        .await
 +    }
 +
-+    async fn get_pr_status(&self, pr_url: &str) -> Result<PullRequestInfo, GitHostError> {
-+        // Extract MR IID from URL: .../merge_requests/123
-+        let mr_id = pr_url
-+            .rsplit('/')
-+            .next()
-+            .unwrap_or("")
-+            .to_string();
-+
-+        // We need a repo path context for glab. Since we only have the URL,
-+        // try using the MR IID directly — glab can resolve it if we're in the
-+        // right repo context. For status checks, we pass the full URL to let
-+        // glab figure it out.
++    async fn get_pr_status(&self, pr_url: &str) -> Result<PullRequestDetail, GitHostError> {
++        // We pass the full MR URL to glab mr view so it can resolve the MR directly.
 +        (|| async {
 +            let cli = self.glab_cli.clone();
-+            let mr_id = mr_id.clone();
 +            let url = pr_url.to_string();
 +
 +            // glab mr view can accept the MR URL directly
@@ -699,7 +722,7 @@ index 000000000..d36686625
 +        repo_path: &Path,
 +        _remote_url: &str,
 +        branch_name: &str,
-+    ) -> Result<Vec<PullRequestInfo>, GitHostError> {
++    ) -> Result<Vec<PullRequestDetail>, GitHostError> {
 +        (|| async {
 +            let cli = self.glab_cli.clone();
 +            let branch = branch_name.to_string();
@@ -774,7 +797,7 @@ index 000000000..d36686625
 +        &self,
 +        repo_path: &Path,
 +        _remote_url: &str,
-+    ) -> Result<Vec<OpenPrInfo>, GitHostError> {
++    ) -> Result<Vec<PullRequestDetail>, GitHostError> {
 +        (|| async {
 +            let cli = self.glab_cli.clone();
 +            let repo_path = repo_path.to_path_buf();
