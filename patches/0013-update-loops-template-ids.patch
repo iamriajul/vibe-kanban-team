@@ -1,29 +1,26 @@
-From ebce8c7c4e0575e3b61581aed9d6ee1e987dab7f Mon Sep 17 00:00:00 2001
-From: Riajul Islam <opensource@example.com>
-Date: Sat, 21 Mar 2026 12:10:08 +0000
-Subject: [PATCH] update: loops template IDs
+From 3d79039d0238937125cde5c8f4dbd1555ba776bb Mon Sep 17 00:00:00 2001
+From: Riajul Islam <riajul@kahf.co>
+Date: Tue, 14 Apr 2026 06:27:05 +0000
+Subject: [PATCH 13/17] downstream: 0013-update-loops-template-ids
 
----
- crates/remote/src/mail.rs | 6 +++---
- 1 file changed, 3 insertions(+), 3 deletions(-)
 
 diff --git a/crates/remote/src/mail.rs b/crates/remote/src/mail.rs
-index d74f8a1b6..17fc126f6 100644
+index 34b10f4e7..18c1428d7 100644
 --- a/crates/remote/src/mail.rs
 +++ b/crates/remote/src/mail.rs
 @@ -6,9 +6,9 @@ use serde_json::json;
  
  use crate::digest::DigestError;
  
--const LOOPS_INVITE_TEMPLATE_ID: &str = "cmhvy2wgs3s13z70i1pxakij9";
--const LOOPS_REVIEW_READY_TEMPLATE_ID: &str = "cmj47k5ge16990iylued9by17";
--const LOOPS_REVIEW_FAILED_TEMPLATE_ID: &str = "cmj49ougk1c8s0iznavijdqpo";
-+const LOOPS_INVITE_TEMPLATE_ID: &str = "cmlb3zqwe03960i159htyb93d";
-+const LOOPS_REVIEW_READY_TEMPLATE_ID: &str = "cmlb45ki603ia0i1pdiq2ekyr";
-+const LOOPS_REVIEW_FAILED_TEMPLATE_ID: &str = "cmlb44vqe03p90i04bwkfqjv3";
+-const DEFAULT_INVITE_TEMPLATE_ID: &str = "cmhvy2wgs3s13z70i1pxakij9";
+-const DEFAULT_REVIEW_READY_TEMPLATE_ID: &str = "cmj47k5ge16990iylued9by17";
+-const DEFAULT_REVIEW_FAILED_TEMPLATE_ID: &str = "cmj49ougk1c8s0iznavijdqpo";
++const DEFAULT_INVITE_TEMPLATE_ID: &str = "cmlb3zqwe03960i159htyb93d";
++const DEFAULT_REVIEW_READY_TEMPLATE_ID: &str = "cmlb45ki603ia0i1pdiq2ekyr";
++const DEFAULT_REVIEW_FAILED_TEMPLATE_ID: &str = "cmlb44vqe03p90i04bwkfqjv3";
  
- pub const DIGEST_PREVIEW_COUNT: usize = 5;
- 
+ fn env_or(var: &str, default: &str) -> String {
+     std::env::var(var)
 -- 
 2.50.1
 

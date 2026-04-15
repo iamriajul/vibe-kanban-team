@@ -1,30 +1,15 @@
-From 7dc42e744195773ce3da3eab48b9cc12943957b8 Mon Sep 17 00:00:00 2001
-From: Riajul Islam <opensource@example.com>
-Date: Thu, 19 Mar 2026 15:47:58 +0000
-Subject: [PATCH] feat: add GitLab merge request integration via glab CLI
+From 964dfe8a6b346cf358f990d97ca1b69899dbe05b Mon Sep 17 00:00:00 2001
+From: Riajul Islam <riajul@kahf.co>
+Date: Tue, 14 Apr 2026 06:27:05 +0000
+Subject: [PATCH 08/17] downstream:
+ 0008-feat-add-GitLab-merge-request-integration-via-glab-C
 
-Add GitLab as a third git hosting provider alongside GitHub and Azure
-DevOps. Detects GitLab from remote URLs containing "gitlab." and uses
-the glab CLI for merge request operations (create, view, list, comments).
-
-Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
----
- crates/git-host/src/detection.rs              |  57 ++-
- crates/git-host/src/gitlab/cli.rs             | 414 ++++++++++++++++++
- crates/git-host/src/gitlab/mod.rs             | 280 ++++++++++++
- crates/git-host/src/lib.rs                    |   5 +-
- crates/git-host/src/types.rs                  |   2 +
- .../dialogs/command-bar/CreatePRDialog.tsx    |   4 +-
- shared/types.ts                               |   2 +-
- 7 files changed, 759 insertions(+), 5 deletions(-)
- create mode 100644 crates/git-host/src/gitlab/cli.rs
- create mode 100644 crates/git-host/src/gitlab/mod.rs
 
 diff --git a/crates/git-host/src/detection.rs b/crates/git-host/src/detection.rs
-index bba3085ce..15fab077e 100644
+index 2228fa588..8a52f6921 100644
 --- a/crates/git-host/src/detection.rs
 +++ b/crates/git-host/src/detection.rs
-@@ -33,6 +33,11 @@ pub fn detect_provider_from_url(url: &str) -> ProviderKind {
+@@ -33,6 +33,11 @@ pub(crate) fn detect_provider_from_url(url: &str) -> ProviderKind {
          return ProviderKind::GitHub;
      }
  
@@ -36,7 +21,7 @@ index bba3085ce..15fab077e 100644
      ProviderKind::Unknown
  }
  
-@@ -42,6 +47,7 @@ pub fn detect_provider_from_url(url: &str) -> ProviderKind {
+@@ -42,6 +47,7 @@ pub(crate) fn detect_provider_from_url(url: &str) -> ProviderKind {
  /// - GitHub: `https://github.com/owner/repo/pull/123`
  /// - GitHub Enterprise: `https://github.company.com/owner/repo/pull/123`
  /// - Azure DevOps: `https://dev.azure.com/org/project/_git/repo/pullrequest/123`
@@ -826,7 +811,7 @@ index 000000000..d36686625
 +    }
 +}
 diff --git a/crates/git-host/src/lib.rs b/crates/git-host/src/lib.rs
-index 6e8fa4a25..1542d50eb 100644
+index a7029784c..0a453e6d5 100644
 --- a/crates/git-host/src/lib.rs
 +++ b/crates/git-host/src/lib.rs
 @@ -3,6 +3,7 @@ mod types;
@@ -837,8 +822,8 @@ index 6e8fa4a25..1542d50eb 100644
  
  use std::path::Path;
  
-@@ -15,7 +16,7 @@ pub use types::{
-     ProviderKind, ReviewCommentUser, UnifiedPrComment,
+@@ -14,7 +15,7 @@ pub use types::{
+     PullRequestDetail, ReviewCommentUser, UnifiedPrComment,
  };
  
 -use self::{azure::AzureDevOpsProvider, github::GitHubProvider};
@@ -846,7 +831,7 @@ index 6e8fa4a25..1542d50eb 100644
  
  #[async_trait]
  #[enum_dispatch(GitHostService)]
-@@ -56,6 +57,7 @@ pub trait GitHostProvider: Send + Sync {
+@@ -55,6 +56,7 @@ pub trait GitHostProvider: Send + Sync {
  pub enum GitHostService {
      GitHub(GitHubProvider),
      AzureDevOps(AzureDevOpsProvider),
@@ -854,7 +839,7 @@ index 6e8fa4a25..1542d50eb 100644
  }
  
  impl GitHostService {
-@@ -63,6 +65,7 @@ impl GitHostService {
+@@ -62,6 +64,7 @@ impl GitHostService {
          match detect_provider_from_url(url) {
              ProviderKind::GitHub => Ok(Self::GitHub(GitHubProvider::new()?)),
              ProviderKind::AzureDevOps => Ok(Self::AzureDevOps(AzureDevOpsProvider::new()?)),
@@ -863,10 +848,10 @@ index 6e8fa4a25..1542d50eb 100644
          }
      }
 diff --git a/crates/git-host/src/types.rs b/crates/git-host/src/types.rs
-index 340b1c060..1fda65f99 100644
+index 97cf461b9..655a7e2ba 100644
 --- a/crates/git-host/src/types.rs
 +++ b/crates/git-host/src/types.rs
-@@ -8,6 +8,7 @@ use ts_rs::TS;
+@@ -9,6 +9,7 @@ use ts_rs::TS;
  pub enum ProviderKind {
      GitHub,
      AzureDevOps,
@@ -874,7 +859,7 @@ index 340b1c060..1fda65f99 100644
      Unknown,
  }
  
-@@ -16,6 +17,7 @@ impl std::fmt::Display for ProviderKind {
+@@ -17,6 +18,7 @@ impl std::fmt::Display for ProviderKind {
          match self {
              ProviderKind::GitHub => write!(f, "GitHub"),
              ProviderKind::AzureDevOps => write!(f, "Azure DevOps"),
@@ -898,17 +883,17 @@ index fcf9fd8c9..4128145dd 100644
                result.error.type === 'cli_not_installed'
                  ? 'not installed'
 diff --git a/shared/types.ts b/shared/types.ts
-index c1805ed6d..dc0bcf7b5 100644
+index f812cb4e5..840a45235 100644
 --- a/shared/types.ts
 +++ b/shared/types.ts
-@@ -410,7 +410,7 @@ export type CreateAndStartWorkspaceResponse = { workspace: Workspace, execution_
+@@ -404,7 +404,7 @@ export type CreateAndStartWorkspaceResponse = { workspace: Workspace, execution_
  
  export type UnifiedPrComment = { "comment_type": "general", id: string, author: string, author_association: string | null, body: string, created_at: string, url: string | null, } | { "comment_type": "review", id: bigint, author: string, author_association: string | null, body: string, created_at: string, url: string | null, path: string, line: bigint | null, side: string | null, diff_hunk: string | null, };
  
 -export type ProviderKind = "git_hub" | "azure_dev_ops" | "unknown";
 +export type ProviderKind = "git_hub" | "azure_dev_ops" | "git_lab" | "unknown";
  
- export type OpenPrInfo = { number: bigint, url: string, title: string, head_branch: string, base_branch: string, };
+ export type PullRequestDetail = { number: bigint, url: string, status: MergeStatus, merged_at: string | null, merge_commit_sha: string | null, title: string, base_branch: string, head_branch: string, };
  
 -- 
 2.50.1

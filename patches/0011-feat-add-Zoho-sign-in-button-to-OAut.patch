@@ -1,24 +1,9 @@
-From 96320ab6c1d57d4eb44381f5a9dc85ceb7d2cb6a Mon Sep 17 00:00:00 2001
-From: Riajul Islam <opensource@example.com>
-Date: Sun, 5 Apr 2026 09:02:26 +0000
-Subject: [PATCH] feat: add Zoho sign-in button to OAuth dialog
+From 6c7fa04a25cadc2126250c3c7159d181777d1e0c Mon Sep 17 00:00:00 2001
+From: Riajul Islam <riajul@kahf.co>
+Date: Tue, 14 Apr 2026 06:27:05 +0000
+Subject: [PATCH 11/17] downstream:
+ 0011-feat-add-Zoho-sign-in-button-to-OAuth-dialog
 
-Add ZohoLogo SVG component, extend OAuthProvider type with 'zoho',
-and add "Continue with Zoho" button to the sign-in dialog.
-Includes i18n translations for all supported locales.
----
- packages/ui/src/components/OAuthButtons.tsx   |  7 +++++-
- packages/ui/src/components/ZohoLogo.tsx       | 24 +++++++++++++++++++
- .../web-core/src/i18n/locales/en/common.json  |  1 +
- .../web-core/src/i18n/locales/es/common.json  |  1 +
- .../web-core/src/i18n/locales/fr/common.json  |  1 +
- .../web-core/src/i18n/locales/ja/common.json  |  1 +
- .../web-core/src/i18n/locales/ko/common.json  |  1 +
- .../src/i18n/locales/zh-Hans/common.json      |  1 +
- .../src/i18n/locales/zh-Hant/common.json      |  1 +
- .../src/shared/dialogs/global/OAuthDialog.tsx |  7 +++++-
- 10 files changed, 43 insertions(+), 2 deletions(-)
- create mode 100644 packages/ui/src/components/ZohoLogo.tsx
 
 diff --git a/packages/ui/src/components/OAuthButtons.tsx b/packages/ui/src/components/OAuthButtons.tsx
 index 954850895..1f4c6ed4f 100644
@@ -77,10 +62,10 @@ index 000000000..8409feddd
 +  );
 +}
 diff --git a/packages/web-core/src/i18n/locales/en/common.json b/packages/web-core/src/i18n/locales/en/common.json
-index 9bf646681..deb1dba7f 100644
+index 1e13a23ef..4816faaf2 100644
 --- a/packages/web-core/src/i18n/locales/en/common.json
 +++ b/packages/web-core/src/i18n/locales/en/common.json
-@@ -93,6 +93,7 @@
+@@ -87,6 +87,7 @@
      "description": "Sign in to join organizations and share tasks with your team",
      "continueWithGitHub": "Continue with GitHub",
      "continueWithGoogle": "Continue with Google",
@@ -89,10 +74,10 @@ index 9bf646681..deb1dba7f 100644
      "waitingDescription": "A popup window has been opened for authentication",
      "waitingForAuth": "Waiting for authentication...",
 diff --git a/packages/web-core/src/i18n/locales/es/common.json b/packages/web-core/src/i18n/locales/es/common.json
-index e471d643e..79e9f24bd 100644
+index efdf70df0..283e6b4ef 100644
 --- a/packages/web-core/src/i18n/locales/es/common.json
 +++ b/packages/web-core/src/i18n/locales/es/common.json
-@@ -89,6 +89,7 @@
+@@ -83,6 +83,7 @@
      "description": "Inicia sesión para unirte a organizaciones y compartir tareas con tu equipo",
      "continueWithGitHub": "Continuar con GitHub",
      "continueWithGoogle": "Continuar con Google",
@@ -101,10 +86,10 @@ index e471d643e..79e9f24bd 100644
      "waitingDescription": "Se ha abierto una ventana emergente para la autenticación",
      "waitingForAuth": "Esperando autenticación...",
 diff --git a/packages/web-core/src/i18n/locales/fr/common.json b/packages/web-core/src/i18n/locales/fr/common.json
-index 75c2f56c1..3c82de5a0 100644
+index e1da9e0bf..faa3707fe 100644
 --- a/packages/web-core/src/i18n/locales/fr/common.json
 +++ b/packages/web-core/src/i18n/locales/fr/common.json
-@@ -89,6 +89,7 @@
+@@ -83,6 +83,7 @@
      "description": "Connectez-vous pour rejoindre des organisations et partager des tâches avec votre équipe",
      "continueWithGitHub": "Continuer avec GitHub",
      "continueWithGoogle": "Continuer avec Google",
@@ -113,10 +98,10 @@ index 75c2f56c1..3c82de5a0 100644
      "waitingDescription": "Une fenêtre popup a été ouverte pour l'authentification",
      "waitingForAuth": "En attente de l'authentification...",
 diff --git a/packages/web-core/src/i18n/locales/ja/common.json b/packages/web-core/src/i18n/locales/ja/common.json
-index 19e27f897..6ff73f261 100644
+index d99b52171..36b94f872 100644
 --- a/packages/web-core/src/i18n/locales/ja/common.json
 +++ b/packages/web-core/src/i18n/locales/ja/common.json
-@@ -89,6 +89,7 @@
+@@ -83,6 +83,7 @@
      "description": "サインインして組織に参加し、チームとタスクを共有します",
      "continueWithGitHub": "GitHubで続行",
      "continueWithGoogle": "Googleで続行",
@@ -125,10 +110,10 @@ index 19e27f897..6ff73f261 100644
      "waitingDescription": "認証用のポップアップウィンドウが開きました",
      "waitingForAuth": "認証を待っています...",
 diff --git a/packages/web-core/src/i18n/locales/ko/common.json b/packages/web-core/src/i18n/locales/ko/common.json
-index f9a458d11..9468bcfde 100644
+index b094635e1..79a16e1dc 100644
 --- a/packages/web-core/src/i18n/locales/ko/common.json
 +++ b/packages/web-core/src/i18n/locales/ko/common.json
-@@ -89,6 +89,7 @@
+@@ -83,6 +83,7 @@
      "description": "로그인하여 조직에 참여하고 팀과 작업을 공유하세요",
      "continueWithGitHub": "GitHub로 계속",
      "continueWithGoogle": "Google로 계속",
@@ -137,10 +122,10 @@ index f9a458d11..9468bcfde 100644
      "waitingDescription": "인증을 위한 팝업 창이 열렸습니다",
      "waitingForAuth": "인증 대기 중...",
 diff --git a/packages/web-core/src/i18n/locales/zh-Hans/common.json b/packages/web-core/src/i18n/locales/zh-Hans/common.json
-index 90d4ea5cc..835978638 100644
+index 474b7566d..27776ede9 100644
 --- a/packages/web-core/src/i18n/locales/zh-Hans/common.json
 +++ b/packages/web-core/src/i18n/locales/zh-Hans/common.json
-@@ -89,6 +89,7 @@
+@@ -83,6 +83,7 @@
      "description": "登录以加入组织并与团队共享任务",
      "continueWithGitHub": "使用 GitHub 继续",
      "continueWithGoogle": "使用 Google 继续",
@@ -149,10 +134,10 @@ index 90d4ea5cc..835978638 100644
      "waitingDescription": "已打开弹出窗口进行身份验证",
      "waitingForAuth": "等待身份验证...",
 diff --git a/packages/web-core/src/i18n/locales/zh-Hant/common.json b/packages/web-core/src/i18n/locales/zh-Hant/common.json
-index 4119d11b8..a8af02e6a 100644
+index 6aa9ade62..9796ed068 100644
 --- a/packages/web-core/src/i18n/locales/zh-Hant/common.json
 +++ b/packages/web-core/src/i18n/locales/zh-Hant/common.json
-@@ -89,6 +89,7 @@
+@@ -83,6 +83,7 @@
      "description": "登入以加入組織並與團隊共享任務",
      "continueWithGitHub": "使用 GitHub 繼續",
      "continueWithGoogle": "使用 Google 繼續",
@@ -161,10 +146,10 @@ index 4119d11b8..a8af02e6a 100644
      "waitingDescription": "已開啟彈出視窗進行驗證",
      "waitingForAuth": "等待身分驗證...",
 diff --git a/packages/web-core/src/shared/dialogs/global/OAuthDialog.tsx b/packages/web-core/src/shared/dialogs/global/OAuthDialog.tsx
-index 4c11a5660..e987ee578 100644
+index 46c9a7d24..9f935b5af 100644
 --- a/packages/web-core/src/shared/dialogs/global/OAuthDialog.tsx
 +++ b/packages/web-core/src/shared/dialogs/global/OAuthDialog.tsx
-@@ -22,7 +22,7 @@ import type { ProfileResponse } from 'shared/types';
+@@ -23,7 +23,7 @@ import { oauthApi, type AuthMethodsResponse } from '@/shared/lib/api';
  import { useTranslation } from 'react-i18next';
  import { defineModal } from '@/shared/lib/modals';
  
@@ -173,15 +158,20 @@ index 4c11a5660..e987ee578 100644
  type OAuthDialogProps = { initialProvider?: OAuthProvider };
  
  type OAuthState =
-@@ -207,6 +207,11 @@ const OAuthDialogImpl = create<OAuthDialogProps>(({ initialProvider }) => {
-                 className="w-full"
-                 onClick={() => handleProviderSelect('google')}
-               />
-+              <OAuthSignInButton
-+                provider="zoho"
-+                className="w-full"
-+                onClick={() => handleProviderSelect('zoho')}
-+              />
+@@ -330,6 +330,16 @@ const OAuthDialogImpl = create<OAuthDialogProps>(({ initialProvider }) => {
+                     disabled={isSubmittingLocal}
+                   />
+                 )}
++              {!isAuthMethodsError &&
++                hasOAuthProviders &&
++                oauthProviders.includes('zoho') && (
++                  <OAuthSignInButton
++                    provider="zoho"
++                    className="w-full"
++                    onClick={() => handleProviderSelect('zoho')}
++                    disabled={isSubmittingLocal}
++                  />
++                )}
              </div>
  
              <DialogFooter>

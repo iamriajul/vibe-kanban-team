@@ -1,24 +1,11 @@
-From 85867ffe01d175fda8d9e552286389bcbbc00909 Mon Sep 17 00:00:00 2001
-From: Riajul Islam <opensource@example.com>
-Date: Tue, 17 Mar 2026 05:04:11 +0000
-Subject: [PATCH] feat: unified code-server editor flow
+From c3af0d488c907d81f9b8a1e4b508418bd09bfedb Mon Sep 17 00:00:00 2001
+From: Riajul Islam <riajul@kahf.co>
+Date: Tue, 14 Apr 2026 06:27:04 +0000
+Subject: [PATCH 04/17] downstream: 0004-feat-unified-code-server-editor-flow
 
----
- .../src/services/config/editor/mod.rs         | 159 +++++++++++++++++-
- .../features/onboarding/ui/LandingPage.tsx    |  38 ++++-
- .../src/i18n/locales/en/settings.json         |   5 +-
- packages/web-core/src/shared/actions/index.ts |   9 +-
- .../src/shared/components/IdeIcon.tsx         |   6 +-
- .../settings/GeneralSettingsSection.tsx       |  22 ++-
- .../src/shared/hooks/useOpenInEditor.ts       |   4 +
- .../web-core/src/shared/lib/editorWarnings.ts |  20 +++
- packages/web-core/src/shared/lib/ideName.ts   |   2 +
- shared/types.ts                               |   2 +-
- 10 files changed, 248 insertions(+), 19 deletions(-)
- create mode 100644 packages/web-core/src/shared/lib/editorWarnings.ts
 
 diff --git a/crates/services/src/services/config/editor/mod.rs b/crates/services/src/services/config/editor/mod.rs
-index 6f5c3a708..f9eb2ba9d 100644
+index faa1d9360..404800b1e 100644
 --- a/crates/services/src/services/config/editor/mod.rs
 +++ b/crates/services/src/services/config/editor/mod.rs
 @@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
@@ -342,10 +329,10 @@ index bb5d8958f..954cff769 100644
          "availability": {
            "checking": "Checking availability...",
 diff --git a/packages/web-core/src/shared/actions/index.ts b/packages/web-core/src/shared/actions/index.ts
-index 4ae5d409c..aeb263ca5 100644
+index 4554f4335..c1edff669 100644
 --- a/packages/web-core/src/shared/actions/index.ts
 +++ b/packages/web-core/src/shared/actions/index.ts
-@@ -66,6 +66,7 @@ import { RenameWorkspaceDialog } from '@vibe/ui/components/RenameWorkspaceDialog
+@@ -67,6 +67,7 @@ import { RenameWorkspaceDialog } from '@vibe/ui/components/RenameWorkspaceDialog
  import { ProjectsGuideDialog } from '@vibe/ui/components/ProjectsGuideDialog';
  import { CreatePRDialog } from '@/shared/dialogs/command-bar/CreatePRDialog';
  import { getIdeName } from '@/shared/lib/ideName';
@@ -353,7 +340,7 @@ index 4ae5d409c..aeb263ca5 100644
  import { EditorSelectionDialog } from '@/shared/dialogs/command-bar/EditorSelectionDialog';
  import { StartReviewDialog } from '@/shared/dialogs/command-bar/StartReviewDialog';
  import posthog from 'posthog-js';
-@@ -758,7 +759,10 @@ export const Actions = {
+@@ -759,7 +760,10 @@ export const Actions = {
          if (response.url) {
            window.open(response.url, '_blank');
          }
@@ -365,7 +352,7 @@ index 4ae5d409c..aeb263ca5 100644
          // Show editor selection dialog on failure
          EditorSelectionDialog.show({
            selectedAttemptId: ctx.currentWorkspaceId,
-@@ -1128,6 +1132,9 @@ export const Actions = {
+@@ -1129,6 +1133,9 @@ export const Actions = {
            window.open(response.url, '_blank');
          }
        } catch (err) {
@@ -502,10 +489,10 @@ index 8c634a5af..9f49b72de 100644
        return i18n.t('common:editorNames.custom');
      case EditorType.GOOGLE_ANTIGRAVITY:
 diff --git a/shared/types.ts b/shared/types.ts
-index bcfa35409..c79bdbb74 100644
+index ca336e2c2..dfd704c01 100644
 --- a/shared/types.ts
 +++ b/shared/types.ts
-@@ -500,7 +500,7 @@ export enum ThemeMode { LIGHT = "LIGHT", DARK = "DARK", SYSTEM = "SYSTEM" }
+@@ -496,7 +496,7 @@ export enum ThemeMode { LIGHT = "LIGHT", DARK = "DARK", SYSTEM = "SYSTEM" }
  
  export type EditorConfig = { editor_type: EditorType, custom_command: string | null, remote_ssh_host: string | null, remote_ssh_user: string | null, auto_install_extension: boolean, };
  

@@ -1,20 +1,15 @@
-From 18fa2af52f62388e37e6b6aca1847e18d572a9a8 Mon Sep 17 00:00:00 2001
-From: Riajul Islam <opensource@example.com>
-Date: Tue, 17 Mar 2026 05:03:59 +0000
-Subject: [PATCH] feat(remote): use R2 for attachment storage
+From 16ca00bdd3326734e9c2bf478e06a99a5dae4551 Mon Sep 17 00:00:00 2001
+From: Riajul Islam <riajul@kahf.co>
+Date: Tue, 14 Apr 2026 06:27:05 +0000
+Subject: [PATCH 12/17] downstream:
+ 0012-feat-remote-use-R2-for-attachment-storage
 
----
- crates/remote/src/app.rs                 |   8 +-
- crates/remote/src/attachments/cleanup.rs |  28 ++---
- crates/remote/src/r2.rs                  | 132 +++++++++++++++++++++++
- crates/remote/src/routes/attachments.rs  |  94 ++++++++--------
- 4 files changed, 198 insertions(+), 64 deletions(-)
 
 diff --git a/crates/remote/src/app.rs b/crates/remote/src/app.rs
-index 60bc19e3b..d13fbfa5a 100644
+index 500008497..5c31e57e2 100644
 --- a/crates/remote/src/app.rs
 +++ b/crates/remote/src/app.rs
-@@ -116,7 +116,7 @@ impl Server {
+@@ -128,7 +128,7 @@ impl Server {
              tracing::info!("R2 storage service initialized");
          } else {
              tracing::warn!(
@@ -23,7 +18,7 @@ index 60bc19e3b..d13fbfa5a 100644
              );
          }
  
-@@ -125,7 +125,7 @@ impl Server {
+@@ -137,7 +137,7 @@ impl Server {
              tracing::info!("Azure Blob storage service initialized");
          } else {
              tracing::info!(
@@ -32,7 +27,7 @@ index 60bc19e3b..d13fbfa5a 100644
              );
          }
  
-@@ -177,8 +177,8 @@ impl Server {
+@@ -189,8 +189,8 @@ impl Server {
              }
          };
  
@@ -44,7 +39,7 @@ index 60bc19e3b..d13fbfa5a 100644
  
          let digest_enabled = std::env::var("DIGEST_ENABLED")
 diff --git a/crates/remote/src/attachments/cleanup.rs b/crates/remote/src/attachments/cleanup.rs
-index d8968916e..ab3c38773 100644
+index 673c98a17..f71c5b6eb 100644
 --- a/crates/remote/src/attachments/cleanup.rs
 +++ b/crates/remote/src/attachments/cleanup.rs
 @@ -5,7 +5,7 @@ use tokio::task::JoinHandle;
@@ -60,12 +55,12 @@ index d8968916e..ab3c38773 100644
  
  /// Spawns a background task that periodically cleans up orphan attachments and
  /// expired pending uploads. Call once during server startup.
--pub fn spawn_cleanup_task(pool: PgPool, azure: AzureBlobService) -> JoinHandle<()> {
-+pub fn spawn_cleanup_task(pool: PgPool, r2: R2Service) -> JoinHandle<()> {
+-pub(crate) fn spawn_cleanup_task(pool: PgPool, azure: AzureBlobService) -> JoinHandle<()> {
++pub(crate) fn spawn_cleanup_task(pool: PgPool, r2: R2Service) -> JoinHandle<()> {
      let interval = std::env::var("ATTACHMENT_CLEANUP_INTERVAL_SECS")
          .ok()
          .and_then(|v| v.parse::<u64>().ok())
-@@ -36,18 +36,18 @@ pub fn spawn_cleanup_task(pool: PgPool, azure: AzureBlobService) -> JoinHandle<(
+@@ -36,18 +36,18 @@ pub(crate) fn spawn_cleanup_task(pool: PgPool, azure: AzureBlobService) -> JoinH
  
          loop {
              ticker.tick().await;
@@ -291,7 +286,7 @@ index d40e6674a..135f6bd36 100644
      ///
      /// Returns the folder path (e.g., "reviews/{review_id}") to store in the database.
 diff --git a/crates/remote/src/routes/attachments.rs b/crates/remote/src/routes/attachments.rs
-index 9a27d4423..4903c1f28 100644
+index 05c7533a8..440764d45 100644
 --- a/crates/remote/src/routes/attachments.rs
 +++ b/crates/remote/src/routes/attachments.rs
 @@ -21,7 +21,7 @@ use crate::{
@@ -303,7 +298,7 @@ index 9a27d4423..4903c1f28 100644
      db::{
          attachments::{AttachmentError, AttachmentRepository},
          blobs::{BlobError, BlobRepository},
-@@ -105,10 +105,10 @@ pub struct CommitAttachmentsResponse {
+@@ -100,10 +100,10 @@ pub struct CommitAttachmentsResponse {
  
  #[derive(Debug, thiserror::Error)]
  pub enum RouteError {
@@ -317,7 +312,7 @@ index 9a27d4423..4903c1f28 100644
      #[error("attachment error: {0}")]
      Attachment(#[from] AttachmentError),
      #[error("blob error: {0}")]
-@@ -136,8 +136,8 @@ impl IntoResponse for RouteError {
+@@ -131,8 +131,8 @@ impl IntoResponse for RouteError {
                  StatusCode::SERVICE_UNAVAILABLE,
                  "Attachment storage not available",
              ),
@@ -328,7 +323,7 @@ index 9a27d4423..4903c1f28 100644
                  (StatusCode::INTERNAL_SERVER_ERROR, "Storage error")
              }
              RouteError::Attachment(e) => {
-@@ -192,8 +192,8 @@ async fn init_upload(
+@@ -187,8 +187,8 @@ async fn init_upload(
      if let Some(existing) =
          BlobRepository::find_by_hash(state.pool(), payload.project_id, &payload.hash).await?
      {
@@ -339,7 +334,7 @@ index 9a27d4423..4903c1f28 100644
  
          return Ok(Json(InitUploadResponse {
              upload_url: read_url,
-@@ -204,7 +204,7 @@ async fn init_upload(
+@@ -199,7 +199,7 @@ async fn init_upload(
          }));
      }
  
@@ -348,7 +343,7 @@ index 9a27d4423..4903c1f28 100644
      let sanitized_filename = sanitize_filename(&payload.filename);
      let blob_path = format!(
          "attachments/{}/{}_{}",
-@@ -212,7 +212,7 @@ async fn init_upload(
+@@ -207,7 +207,7 @@ async fn init_upload(
          Uuid::new_v4(),
          sanitized_filename
      );
@@ -357,7 +352,7 @@ index 9a27d4423..4903c1f28 100644
  
      let pending = PendingUploadRepository::create(
          state.pool(),
-@@ -253,7 +253,7 @@ async fn confirm_upload(
+@@ -248,7 +248,7 @@ async fn confirm_upload(
              .map_err(|_| RouteError::AccessDenied)?;
      }
  
@@ -366,7 +361,7 @@ index 9a27d4423..4903c1f28 100644
  
      let blob = if let Some(existing) =
          BlobRepository::find_by_hash(state.pool(), payload.project_id, &payload.hash).await?
-@@ -266,13 +266,13 @@ async fn confirm_upload(
+@@ -261,13 +261,13 @@ async fn confirm_upload(
  
          let blob_path = &pending.blob_path;
  
@@ -383,7 +378,7 @@ index 9a27d4423..4903c1f28 100644
          let thumbnail_result =
              ThumbnailService::generate(&blob_data, payload.content_type.as_deref())
                  .map_err(|e| RouteError::ThumbnailError(e.to_string()))?;
-@@ -282,7 +282,7 @@ async fn confirm_upload(
+@@ -277,7 +277,7 @@ async fn confirm_upload(
          let (thumbnail_blob_path, width, height) = match thumbnail_result {
              Some(thumb) => {
                  let thumb_path = format!("thumbnails/{}", blob_path);
@@ -392,7 +387,7 @@ index 9a27d4423..4903c1f28 100644
                      .upload_blob(&thumb_path, thumb.bytes, thumb.mime_type)
                      .await?;
                  (
-@@ -377,18 +377,19 @@ async fn list_issue_attachments(
+@@ -372,18 +372,19 @@ async fn list_issue_attachments(
          .await
          .map_err(|_| RouteError::AccessDenied)?;
  
@@ -424,7 +419,7 @@ index 9a27d4423..4903c1f28 100644
      Ok(Json(ListAttachmentsResponse { attachments }))
  }
  
-@@ -402,18 +403,19 @@ async fn list_comment_attachments(
+@@ -397,18 +398,19 @@ async fn list_comment_attachments(
          .await
          .map_err(|_| RouteError::AccessDenied)?;
  
@@ -456,7 +451,7 @@ index 9a27d4423..4903c1f28 100644
      Ok(Json(ListAttachmentsResponse { attachments }))
  }
  
-@@ -429,8 +431,8 @@ async fn get_attachment_file(
+@@ -424,8 +426,8 @@ async fn get_attachment_file(
  
      ensure_attachment_access(&state, ctx.user.id, &attachment).await?;
  
@@ -467,7 +462,7 @@ index 9a27d4423..4903c1f28 100644
      Ok(Json(AttachmentUrlResponse { url }))
  }
  
-@@ -449,8 +451,8 @@ async fn get_attachment_thumbnail(
+@@ -444,8 +446,8 @@ async fn get_attachment_thumbnail(
      let thumbnail_path = attachment
          .thumbnail_blob_path
          .ok_or(RouteError::NoThumbnail)?;
@@ -478,7 +473,7 @@ index 9a27d4423..4903c1f28 100644
      Ok(Json(AttachmentUrlResponse { url }))
  }
  
-@@ -473,12 +475,12 @@ async fn delete_attachment(
+@@ -468,12 +470,12 @@ async fn delete_attachment(
      if remaining == 0
          && let Some(blob) = BlobRepository::delete(state.pool(), blob_id).await?
      {

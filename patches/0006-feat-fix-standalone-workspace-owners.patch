@@ -1,46 +1,9 @@
-From 8353f99949d9b98a6134997ba7ee9ae21cb26324 Mon Sep 17 00:00:00 2001
-From: Riajul Islam <opensource@example.com>
-Date: Thu, 19 Mar 2026 04:06:42 +0000
-Subject: [PATCH] feat: fix standalone workspace ownership for multi-user
- creator filter
+From 3917a49b7016b3d697500747137e32345f330eb7 Mon Sep 17 00:00:00 2001
+From: Riajul Islam <riajul@kahf.co>
+Date: Tue, 14 Apr 2026 06:27:05 +0000
+Subject: [PATCH 06/17] downstream:
+ 0006-feat-fix-standalone-workspace-ownership-for-multi-us
 
-Store owner_user_id in local SQLite at workspace creation time and use
-it for the creator filter instead of per-workspace remote API lookups.
-
-Backend:
-- Add owner_user_id column to workspaces table via migration
-- Set owner_user_id from auth context during workspace creation
-- Include owner_user_id in all workspace queries and stream data
-- Add owner_user_id default to PR workspace creation path
-
-Frontend:
-- Build ownerByLocalId map from local stream data (ownerUserId field)
-- Fall back to remote workspace data for pre-migration workspaces
-- Remove complex per-workspace remote API lookup mechanism
----
- ...538cb04c1a36d8f6e78f962fce21f403bcc1.json} |  14 +-
- ...111ffc613dae90b1c3d5179ce7ba90efd446.json} |  12 +-
- ...23e7fb85b67c5aa8e9166c42d6a82d31cfed.json} |  14 +-
- ...db8c36601c838306c6dddbd52265e1bd7946.json} |  14 +-
- ...9a3093c96787bc4926876d73d1c0d8da072d.json} |  10 +-
- ...bdde8170de2aa67e648faa3eb319c8ab216a.json} |  12 +-
- ...682ede8465302e4f67ff72be99303315a4c2.json} |  12 +-
- ...000000_add_owner_user_id_to_workspaces.sql |   2 +
- crates/db/src/models/workspace.rs             |  28 ++--
- crates/server/src/routes/workspaces/create.rs |  10 ++
- crates/server/src/routes/workspaces/pr.rs     |   1 +
- .../workspaces/WorkspacesSidebarContainer.tsx | 126 ++----------------
- .../src/shared/hooks/useWorkspaces.ts         |   2 +
- shared/types.ts                               |   4 +-
- 14 files changed, 113 insertions(+), 148 deletions(-)
- rename crates/db/.sqlx/{query-7410e8128e63af1c3127e833accee637e65f7efcd9111ecb891587294042129c.json => query-1da339ff150cd6af3a8a90f1a553538cb04c1a36d8f6e78f962fce21f403bcc1.json} (67%)
- rename crates/db/.sqlx/{query-766fa107de23b7e6c579223b083d916e252d422e2908c27f6718fcbd851de2c1.json => query-304c825605da8f74b3f0134534aa111ffc613dae90b1c3d5179ce7ba90efd446.json} (86%)
- rename crates/db/.sqlx/{query-592656b17a5f78d117365909e47afba7d3df545ac1078c307c6b968e75c8e2ba.json => query-5aeb6c1ab748cddf3114d9c882e723e7fb85b67c5aa8e9166c42d6a82d31cfed.json} (62%)
- rename crates/db/.sqlx/{query-5154289c5a9ddbc061d42de2baf129e03a75061b8b305110921688f01d112de1.json => query-7022ab4f602d64aa2dbfe8d42edfdb8c36601c838306c6dddbd52265e1bd7946.json} (62%)
- rename crates/db/.sqlx/{query-91810eeed4804827717a182ad1b61c641648e2659100f43ef9504fc60e5d244e.json => query-a1393d0ae8411439f7bed0c9e3bd9a3093c96787bc4926876d73d1c0d8da072d.json} (56%)
- rename crates/db/.sqlx/{query-64f31710ab7ba14047f31cce44ad36c60a53624f9bcb03a5eaff5d61ca8cc9cf.json => query-f01fb4602cd83d441cb897e058ccbdde8170de2aa67e648faa3eb319c8ab216a.json} (83%)
- rename crates/db/.sqlx/{query-f2dbb49b2f839e84a46fdd865d9982b758160517b93bc92d8e12060426daa05d.json => query-f2ee85153d3e9424aa0d8666be1d682ede8465302e4f67ff72be99303315a4c2.json} (85%)
- create mode 100644 crates/db/migrations/20260318000000_add_owner_user_id_to_workspaces.sql
 
 diff --git a/crates/db/.sqlx/query-7410e8128e63af1c3127e833accee637e65f7efcd9111ecb891587294042129c.json b/crates/db/.sqlx/query-1da339ff150cd6af3a8a90f1a553538cb04c1a36d8f6e78f962fce21f403bcc1.json
 similarity index 67%
@@ -346,7 +309,7 @@ index 000000000..b13cdf780
 +-- Track the user who created each workspace locally.
 +ALTER TABLE workspaces ADD COLUMN owner_user_id TEXT;
 diff --git a/crates/db/src/models/workspace.rs b/crates/db/src/models/workspace.rs
-index a42ce4a3e..8675c24f1 100644
+index c33207c8d..9f9fe2da2 100644
 --- a/crates/db/src/models/workspace.rs
 +++ b/crates/db/src/models/workspace.rs
 @@ -51,6 +51,7 @@ pub struct Workspace {
@@ -357,7 +320,7 @@ index a42ce4a3e..8675c24f1 100644
  }
  
  #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-@@ -92,6 +93,8 @@ pub struct WorkspaceContext {
+@@ -85,6 +86,8 @@ pub struct WorkspaceContext {
  pub struct CreateWorkspace {
      pub branch: String,
      pub name: Option<String>,
@@ -366,7 +329,7 @@ index a42ce4a3e..8675c24f1 100644
  }
  
  impl Workspace {
-@@ -109,7 +112,8 @@ impl Workspace {
+@@ -102,7 +105,8 @@ impl Workspace {
                            archived AS "archived!: bool",
                            pinned AS "pinned!: bool",
                            name,
@@ -376,7 +339,7 @@ index a42ce4a3e..8675c24f1 100644
                     FROM workspaces
                     ORDER BY created_at DESC"#
          )
-@@ -211,7 +215,8 @@ impl Workspace {
+@@ -204,7 +208,8 @@ impl Workspace {
                         archived          AS "archived!: bool",
                         pinned            AS "pinned!: bool",
                         name,
@@ -386,7 +349,7 @@ index a42ce4a3e..8675c24f1 100644
                 FROM    workspaces
                 WHERE   id = $1"#,
              id
-@@ -233,7 +238,8 @@ impl Workspace {
+@@ -226,7 +231,8 @@ impl Workspace {
                         archived          AS "archived!: bool",
                         pinned            AS "pinned!: bool",
                         name,
@@ -396,7 +359,7 @@ index a42ce4a3e..8675c24f1 100644
                 FROM    workspaces
                 WHERE   rowid = $1"#,
              rowid
-@@ -276,7 +282,8 @@ impl Workspace {
+@@ -269,7 +275,8 @@ impl Workspace {
                  w.archived as "archived!: bool",
                  w.pinned as "pinned!: bool",
                  w.name,
@@ -406,7 +369,7 @@ index a42ce4a3e..8675c24f1 100644
              FROM workspaces w
              LEFT JOIN sessions s ON w.id = s.workspace_id
              LEFT JOIN execution_processes ep ON s.id = ep.session_id AND ep.completed_at IS NOT NULL
-@@ -322,15 +329,16 @@ impl Workspace {
+@@ -315,15 +322,16 @@ impl Workspace {
      ) -> Result<Self, WorkspaceError> {
          Ok(sqlx::query_as!(
              Workspace,
@@ -427,7 +390,7 @@ index a42ce4a3e..8675c24f1 100644
          )
          .fetch_one(pool)
          .await?)
-@@ -540,6 +548,7 @@ impl Workspace {
+@@ -514,6 +522,7 @@ impl Workspace {
                  w.pinned AS "pinned!: bool",
                  w.name,
                  w.worktree_deleted AS "worktree_deleted!: bool",
@@ -435,7 +398,7 @@ index a42ce4a3e..8675c24f1 100644
  
                  CASE WHEN EXISTS (
                      SELECT 1
-@@ -582,6 +591,7 @@ impl Workspace {
+@@ -556,6 +565,7 @@ impl Workspace {
                      pinned: rec.pinned,
                      name: rec.name,
                      worktree_deleted: rec.worktree_deleted,
@@ -443,7 +406,7 @@ index a42ce4a3e..8675c24f1 100644
                  },
                  is_running: rec.is_running != 0,
                  is_errored: rec.is_errored != 0,
-@@ -641,6 +651,7 @@ impl Workspace {
+@@ -608,6 +618,7 @@ impl Workspace {
                  w.pinned AS "pinned!: bool",
                  w.name,
                  w.worktree_deleted AS "worktree_deleted!: bool",
@@ -451,7 +414,7 @@ index a42ce4a3e..8675c24f1 100644
  
                  CASE WHEN EXISTS (
                      SELECT 1
-@@ -686,6 +697,7 @@ impl Workspace {
+@@ -653,6 +664,7 @@ impl Workspace {
                  pinned: rec.pinned,
                  name: rec.name,
                  worktree_deleted: rec.worktree_deleted,
@@ -492,10 +455,10 @@ index 6b79466f7..2a8d6afec 100644
          workspace_id,
      )
 diff --git a/crates/server/src/routes/workspaces/pr.rs b/crates/server/src/routes/workspaces/pr.rs
-index 1ff3830e2..e9e03bf35 100644
+index 9a8fd72c3..5711a8377 100644
 --- a/crates/server/src/routes/workspaces/pr.rs
 +++ b/crates/server/src/routes/workspaces/pr.rs
-@@ -712,6 +712,7 @@ pub async fn create_workspace_from_pr(
+@@ -719,6 +719,7 @@ pub async fn create_workspace_from_pr(
          &CreateWorkspace {
              branch: target_branch_ref.clone(),
              name: Some(payload.pr_title.clone()),
@@ -677,10 +640,10 @@ index 8d92b707e..fbf403f08 100644
  }
  
 diff --git a/shared/types.ts b/shared/types.ts
-index c79bdbb74..c1805ed6d 100644
+index dfd704c01..f812cb4e5 100644
 --- a/shared/types.ts
 +++ b/shared/types.ts
-@@ -144,9 +144,9 @@ export type CreateScratch = { payload: ScratchPayload, };
+@@ -152,9 +152,9 @@ export type CreateScratch = { payload: ScratchPayload, };
  
  export type UpdateScratch = { payload: ScratchPayload, };
  
