@@ -1,4 +1,4 @@
-From f64afeffc79a5b032bdd9f333152513c31ef0a5c Mon Sep 17 00:00:00 2001
+From f4393cc7a35fda4d4a1edd9dab485ea65eddb378 Mon Sep 17 00:00:00 2001
 From: Riajul Islam <riajul@kahf.co>
 Date: Wed, 15 Apr 2026 09:57:44 +0000
 Subject: [PATCH] feat: add GitLab merge request integration via glab CLI

@@ -1,9 +1,14 @@
-From 16ca00bdd3326734e9c2bf478e06a99a5dae4551 Mon Sep 17 00:00:00 2001
+From 3b35ad17a4c4361a989beaed874915fd0cfab848 Mon Sep 17 00:00:00 2001
 From: Riajul Islam <riajul@kahf.co>
 Date: Tue, 14 Apr 2026 06:27:05 +0000
-Subject: [PATCH 12/17] downstream:
- 0012-feat-remote-use-R2-for-attachment-storage
+Subject: [PATCH] downstream: 0012-feat-remote-use-R2-for-attachment-storage
 
+---
+ crates/remote/src/app.rs                 |   8 +-
+ crates/remote/src/attachments/cleanup.rs |  28 ++---
+ crates/remote/src/r2.rs                  | 132 +++++++++++++++++++++++
+ crates/remote/src/routes/attachments.rs  |  94 ++++++++--------
+ 4 files changed, 198 insertions(+), 64 deletions(-)
 
 diff --git a/crates/remote/src/app.rs b/crates/remote/src/app.rs
 index 500008497..5c31e57e2 100644

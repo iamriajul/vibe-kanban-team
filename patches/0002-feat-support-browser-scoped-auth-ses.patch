@@ -1,9 +1,23 @@
-From d549d12a7d325c3814b9778db941102da30da122 Mon Sep 17 00:00:00 2001
+From 2e7358a7219f52a845f99b8416a0e7f7b653bd81 Mon Sep 17 00:00:00 2001
 From: Riajul Islam <riajul@kahf.co>
-Date: Tue, 14 Apr 2026 06:27:04 +0000
-Subject: [PATCH 02/17] downstream:
- 0002-feat-support-browser-scoped-auth-sessions-and-per-us
+Date: Wed, 15 Apr 2026 10:31:39 +0000
+Subject: [PATCH] feat: support browser-scoped auth session
 
+---
+ crates/git/src/cli.rs                         |  30 ++++
+ crates/git/src/lib.rs                         |  23 +++
+ crates/local-deployment/src/container.rs      | 143 ++++++++++++++--
+ crates/local-deployment/src/lib.rs            |  79 +++++++--
+ crates/local-deployment/src/pty.rs            |   7 +
+ crates/server/src/middleware/auth_session.rs  |  86 ++++++++++
+ crates/server/src/middleware/mod.rs           |   2 +
+ crates/server/src/routes/mod.rs               |   4 +
+ crates/server/src/routes/terminal.rs          |  14 +-
+ crates/services/src/services/auth.rs          | 152 ++++++++++++++++--
+ .../src/services/oauth_credentials.rs         |   4 +
+ crates/services/src/services/remote_client.rs |  44 ++---
+ 12 files changed, 528 insertions(+), 60 deletions(-)
+ create mode 100644 crates/server/src/middleware/auth_session.rs
 
 diff --git a/crates/git/src/cli.rs b/crates/git/src/cli.rs
 index 0c8a80cf7..e612610d7 100644

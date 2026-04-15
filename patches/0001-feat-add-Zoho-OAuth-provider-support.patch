@@ -1,8 +1,14 @@
-From 3a66dee6ad994c0c030cd096e634a4b7984fee64 Mon Sep 17 00:00:00 2001
+From 49672e97c72f00c9ae4257700cd9dbf1c863757b Mon Sep 17 00:00:00 2001
 From: Riajul Islam <riajul@kahf.co>
 Date: Tue, 14 Apr 2026 06:27:04 +0000
-Subject: [PATCH 01/17] downstream: 0001-feat-add-Zoho-OAuth-provider-support
+Subject: [PATCH] downstream: 0001-feat-add-Zoho-OAuth-provider-support
 
+---
+ crates/remote/src/app.rs           |  10 +-
+ crates/remote/src/auth/mod.rs      |   1 +
+ crates/remote/src/auth/provider.rs | 351 +++++++++++++++++++++++++++++
+ crates/remote/src/config.rs        |  44 +++-
+ 4 files changed, 404 insertions(+), 2 deletions(-)
 
 diff --git a/crates/remote/src/app.rs b/crates/remote/src/app.rs
 index 4aa1d8206..500008497 100644

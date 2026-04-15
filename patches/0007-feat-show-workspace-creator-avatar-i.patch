@@ -1,9 +1,14 @@
-From af313d2c963078f63b85b4003e492a1285fd4d99 Mon Sep 17 00:00:00 2001
+From 528f7d6f27ba7d223e3ef50c0107d2be2bbc476f Mon Sep 17 00:00:00 2001
 From: Riajul Islam <riajul@kahf.co>
 Date: Tue, 14 Apr 2026 06:27:05 +0000
-Subject: [PATCH 07/17] downstream:
+Subject: [PATCH] downstream:
  0007-feat-show-workspace-creator-avatar-in-sidebar
 
+---
+ .../ui/src/components/WorkspaceSummary.tsx    | 11 ++++-
+ .../ui/src/components/WorkspacesSidebar.tsx   |  5 ++
+ .../workspaces/WorkspacesSidebarContainer.tsx | 49 +++++++++++++++++--
+ 3 files changed, 58 insertions(+), 7 deletions(-)
 
 diff --git a/packages/ui/src/components/WorkspaceSummary.tsx b/packages/ui/src/components/WorkspaceSummary.tsx
 index 9ec0e2c0c..ce8923b55 100644

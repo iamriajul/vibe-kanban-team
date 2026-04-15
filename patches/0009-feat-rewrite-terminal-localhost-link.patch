@@ -1,9 +1,16 @@
-From dc0c97e2f1ff062b1ac57f60760bb443ebcb0afe Mon Sep 17 00:00:00 2001
+From 4a83f5dc8ba47126752f8d4b58fe73a11d31fa21 Mon Sep 17 00:00:00 2001
 From: Riajul Islam <riajul@kahf.co>
 Date: Tue, 14 Apr 2026 06:27:05 +0000
-Subject: [PATCH 09/17] downstream:
+Subject: [PATCH] downstream:
  0009-feat-rewrite-terminal-localhost-links-via-VSCODE_PRO
 
+---
+ crates/server/src/routes/config.rs            |  2 ++
+ .../src/shared/components/XTermInstance.tsx   | 25 ++++++++++++++++++-
+ .../src/shared/hooks/useUserSystem.ts         |  2 ++
+ .../shared/hooks/useUserSystemController.ts   |  4 +++
+ shared/types.ts                               |  2 +-
+ 5 files changed, 33 insertions(+), 2 deletions(-)
 
 diff --git a/crates/server/src/routes/config.rs b/crates/server/src/routes/config.rs
 index f22f7895c..6b940cf75 100644

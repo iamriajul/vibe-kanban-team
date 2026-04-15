@@ -1,8 +1,21 @@
-From c3af0d488c907d81f9b8a1e4b508418bd09bfedb Mon Sep 17 00:00:00 2001
+From 5f2ac27c53c39a3ed2a4d80366b0f5145e490b47 Mon Sep 17 00:00:00 2001
 From: Riajul Islam <riajul@kahf.co>
 Date: Tue, 14 Apr 2026 06:27:04 +0000
-Subject: [PATCH 04/17] downstream: 0004-feat-unified-code-server-editor-flow
+Subject: [PATCH] downstream: 0004-feat-unified-code-server-editor-flow
 
+---
+ .../src/services/config/editor/mod.rs         | 159 +++++++++++++++++-
+ .../features/onboarding/ui/LandingPage.tsx    |  38 ++++-
+ .../src/i18n/locales/en/settings.json         |   5 +-
+ packages/web-core/src/shared/actions/index.ts |   9 +-
+ .../src/shared/components/IdeIcon.tsx         |   6 +-
+ .../settings/GeneralSettingsSection.tsx       |  22 ++-
+ .../src/shared/hooks/useOpenInEditor.ts       |   4 +
+ .../web-core/src/shared/lib/editorWarnings.ts |  20 +++
+ packages/web-core/src/shared/lib/ideName.ts   |   2 +
+ shared/types.ts                               |   2 +-
+ 10 files changed, 248 insertions(+), 19 deletions(-)
+ create mode 100644 packages/web-core/src/shared/lib/editorWarnings.ts
 
 diff --git a/crates/services/src/services/config/editor/mod.rs b/crates/services/src/services/config/editor/mod.rs
 index faa1d9360..404800b1e 100644
