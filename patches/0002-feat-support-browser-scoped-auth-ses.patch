@@ -1,13 +1,13 @@
-From 6c0569fd4629388a5d0d53643db34a0ae49df472 Mon Sep 17 00:00:00 2001
+From efde0e2dc3bce0f8bc42d8951c7f9e4cb98ec208 Mon Sep 17 00:00:00 2001
 From: Riajul Islam <riajul@kahf.co>
-Date: Wed, 15 Apr 2026 11:08:10 +0000
+Date: Wed, 15 Apr 2026 11:33:23 +0000
 Subject: [PATCH] feat: support browser-scoped auth session
 
 ---
  crates/git/src/cli.rs                         |  30 +++
  crates/git/src/lib.rs                         |  23 +++
  crates/local-deployment/src/container.rs      | 143 +++++++++++++-
- crates/local-deployment/src/lib.rs            |  79 ++++++--
+ crates/local-deployment/src/lib.rs            |  81 ++++++--
  crates/local-deployment/src/pty.rs            |   7 +
  crates/server/src/middleware/mod.rs           |   2 +
  crates/server/src/routes/mod.rs               |   4 +
@@ -15,7 +15,7 @@ Subject: [PATCH] feat: support browser-scoped auth session
  crates/services/src/services/auth.rs          | 177 ++++++++++++++++--
  .../src/services/oauth_credentials.rs         |   4 +
  crates/services/src/services/remote_client.rs |  48 +++--
- 11 files changed, 468 insertions(+), 63 deletions(-)
+ 11 files changed, 470 insertions(+), 63 deletions(-)
 
 diff --git a/crates/git/src/cli.rs b/crates/git/src/cli.rs
 index 0c8a80cf7..e612610d7 100644
@@ -362,7 +362,7 @@ index d3fe28c72..093182f21 100644
  
      /// Copy files from the original project directory to the worktree.
 diff --git a/crates/local-deployment/src/lib.rs b/crates/local-deployment/src/lib.rs
-index 50e3f2c62..ce74a57ee 100644
+index 50e3f2c62..0f266952f 100644
 --- a/crates/local-deployment/src/lib.rs
 +++ b/crates/local-deployment/src/lib.rs
 @@ -3,7 +3,7 @@ use std::{
@@ -425,7 +425,7 @@ index 50e3f2c62..ce74a57ee 100644
      }
  
      pub async fn get_login_status(&self) -> LoginStatus {
-@@ -457,23 +455,78 @@ impl LocalDeployment {
+@@ -457,23 +455,80 @@ impl LocalDeployment {
          provider: String,
          app_verifier: String,
      ) {
@@ -462,7 +462,9 @@ index 50e3f2c62..ce74a57ee 100644
  
 +    pub async fn current_git_identity(&self) -> Option<(String, String)> {
 +        match self.get_login_status().await {
-+            LoginStatus::LoggedIn { profile } => Self::git_identity_from_profile(&profile),
++            LoginStatus::LoggedIn { profile } => {
++                profile.as_ref().and_then(|p| Self::git_identity_from_profile(p))
++            }
 +            LoginStatus::LoggedOut => None,
 +        }
 +    }
