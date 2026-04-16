@@ -111,10 +111,63 @@ affinity: {}
 postgres:
   enabled: true
   instances: 1
-  database: vibe_kanban
+  database: remote
   storage:
     size: 8Gi
     storageClass: ""
+
+  # ---------------------------------------------------------------------------
+  # Backup via Barman Cloud Plugin (optional)
+  # ---------------------------------------------------------------------------
+  # Requires the CNPG Barman Cloud Plugin installed in the cluster:
+  #   kubectl apply -f \
+  #     https://raw.githubusercontent.com/cloudnative-pg/plugin-barman-cloud/main/config/release.yaml
+  #
+  # Create a secret with your object-store credentials:
+  #   kubectl create secret generic backup-creds -n <namespace> \
+  #     --from-literal=ACCESS_KEY_ID='...' \
+  #     --from-literal=ACCESS_SECRET_KEY='...'
+  #
+  # Then enable backup:
+  #   postgres.backup.enabled: true
+  #   postgres.backup.destinationPath: "s3://my-bucket/backups/"
+  #   postgres.backup.secretName: "backup-creds"
+  # ---------------------------------------------------------------------------
+  backup:
+    enabled: false
+
+    # S3/GCS/Azure destination (required when enabled)
+    #   S3:    s3://bucket/path/
+    #   GCS:   gs://bucket/path/
+    #   Azure: https://account.blob.core.windows.net/container/path/
+    destinationPath: ""
+
+    # Custom S3 endpoint for MinIO or S3-compatible stores (optional)
+    endpointURL: ""
+
+    # Kubernetes secret with object-store credentials
+    # For S3: keys ACCESS_KEY_ID and ACCESS_SECRET_KEY
+    # For GCS: key APPLICATION_CREDENTIALS (JSON service account)
+    # For Azure: keys AZURE_STORAGE_ACCOUNT and AZURE_STORAGE_KEY (or SAS token)
+    secretName: ""
+    accessKeyIdKey: ACCESS_KEY_ID
+    secretAccessKeyKey: ACCESS_SECRET_KEY
+
+    # WAL archiving compression (gzip, bzip2, snappy, lz4, zstd, or "")
+    walCompression: gzip
+
+    # Retention policy — how long to keep backups (e.g. "30d", "90d")
+    retentionPolicy: "30d"
+
+    # Scheduled backup cron (6 fields: sec min hour dom month dow)
+    # Default: daily at midnight
+    schedule: "0 0 0 * * *"
+
+    # Take an immediate backup when the schedule is first created
+    immediate: true
+
+    # Owner reference for backup objects: "self", "cluster", or "none"
+    backupOwnerReference: self
 
 config:
   existingSecrets:
@@ -130,14 +183,8 @@ config:
       name: ""
       githubClientIdKey: github-client-id
       githubClientSecretKey: github-client-secret
-      # Google OAuth — set googleClientIdKey to activate (leave empty to disable)
-      googleClientIdKey: ""
+      googleClientIdKey: google-client-id
       googleClientSecretKey: google-client-secret
-      # Zoho OAuth — set zohoClientIdKey to activate (leave empty to disable)
-      zohoClientIdKey: ""
-      zohoClientSecretKey: zoho-client-secret
-      # Optional: override Zoho accounts URL (e.g. https://accounts.zoho.eu)
-      # Set via extraEnv: [{name: ZOHO_ACCOUNTS_URL, value: "..."}]
 
 # =============================================================================
 # Environment Variables

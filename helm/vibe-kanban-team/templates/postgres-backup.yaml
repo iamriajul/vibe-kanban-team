@@ -1,0 +1,50 @@
+{{- if and .Values.postgres.enabled .Values.postgres.backup.enabled }}
+{{- $clusterName := include "vibe-kanban-team.postgres.clusterName" . }}
+{{- $backup := .Values.postgres.backup }}
+---
+# Barman Cloud ObjectStore: configures where backups and WAL archives are stored.
+# Requires the CNPG Barman Cloud Plugin to be installed in the cluster.
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: {{ $clusterName }}-backup
+  labels:
+    {{- include "vibe-kanban-team.labels" . | nindent 4 }}
+spec:
+  configuration:
+    destinationPath: {{ $backup.destinationPath | quote }}
+    {{- if $backup.endpointURL }}
+    endpointURL: {{ $backup.endpointURL | quote }}
+    {{- end }}
+    s3Credentials:
+      accessKeyId:
+        name: {{ $backup.secretName }}
+        key: {{ $backup.accessKeyIdKey }}
+      secretAccessKey:
+        name: {{ $backup.secretName }}
+        key: {{ $backup.secretAccessKeyKey }}
+    {{- if $backup.walCompression }}
+    wal:
+      compression: {{ $backup.walCompression }}
+    {{- end }}
+  {{- if $backup.retentionPolicy }}
+  retentionPolicy: {{ $backup.retentionPolicy | quote }}
+  {{- end }}
+---
+# ScheduledBackup: triggers periodic base backups via the Barman Cloud Plugin.
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: {{ $clusterName }}-backup
+  labels:
+    {{- include "vibe-kanban-team.labels" . | nindent 4 }}
+spec:
+  cluster:
+    name: {{ $clusterName }}
+  schedule: {{ $backup.schedule | quote }}
+  backupOwnerReference: {{ $backup.backupOwnerReference | default "self" }}
+  immediate: {{ $backup.immediate | default true }}
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
+{{- end }}

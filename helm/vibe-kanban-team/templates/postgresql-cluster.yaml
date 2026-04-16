@@ -1,11 +1,13 @@
 {{- if .Values.postgres.enabled }}
-{{- $dbName := .Values.postgres.database | default "vibe_kanban" }}
+{{- $dbName := .Values.postgres.database | default "remote" }}
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
   name: {{ include "vibe-kanban-team.postgres.clusterName" . }}
   labels:
     {{- include "vibe-kanban-team.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
 spec:
   instances: {{ .Values.postgres.instances | default 1 }}
   storage:
@@ -24,12 +26,9 @@ spec:
       secret:
         name: {{ include "vibe-kanban-team.appCredentialsSecretName" . }}
       postInitApplicationSQL:
-        - {{ printf "ALTER ROLE %s WITH SUPERUSER CREATEROLE CREATEDB REPLICATION;" $dbName | quote }}
-  managed:
-    roles:
-      - name: electric_sync
-        login: true
-        replication: true
-        passwordSecret:
-          name: {{ include "vibe-kanban-team.electricSyncSecretName" . }}
+        - "ALTER ROLE {{ $dbName }} WITH SUPERUSER CREATEROLE CREATEDB REPLICATION;"
+  {{- if .Values.postgres.backup.enabled }}
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+  {{- end }}
 {{- end }}

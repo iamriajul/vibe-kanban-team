@@ -7,6 +7,12 @@
 {{- $annotations := include "vibe-kanban-team.ingress.annotations" (dict "root" . "annotations" .Values.ingress.annotations) -}}
 {{- $className := include "vibe-kanban-team.ingress.className" (dict "root" . "className" .Values.ingress.className) -}}
 {{- $derivedHost := include "vibe-kanban-team.remote.host" . -}}
+{{- $domain := .Values.global.domain | default "" -}}
+{{- $tlsEnabled := or .Values.ingress.tls (and (or .Values.global.tls.enabled (ne (.Values.global.tls.clusterIssuer | default "") "")) $derivedHost) -}}
+{{- $remoteAlias := "" -}}
+{{- if and $domain (not .Values.frontend.enabled) -}}
+{{- $remoteAlias = printf "remote.%s" $domain -}}
+{{- end -}}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -21,7 +27,7 @@ spec:
   {{- if $className }}
   ingressClassName: {{ $className }}
   {{- end }}
-  {{- if or .Values.ingress.tls (and .Values.global.tls.enabled $derivedHost) }}
+  {{- if $tlsEnabled }}
   tls:
     {{- if .Values.ingress.tls }}
     {{- range .Values.ingress.tls }}
@@ -34,6 +40,9 @@ spec:
     {{- else }}
     - hosts:
         - {{ $derivedHost | quote }}
+        {{- if $remoteAlias }}
+        - {{ $remoteAlias | quote }}
+        {{- end }}
       secretName: {{ printf "%sremote-tls" (.Values.global.tls.secretNamePrefix | default "") }}
     {{- end }}
   {{- end }}
@@ -86,5 +95,28 @@ spec:
                 name: {{ $fullName }}
                 port:
                   number: {{ $svcPort }}
+    {{- if $remoteAlias }}
+    - host: {{ $remoteAlias | quote }}
+      http:
+        paths:
+          {{- if $proxyRelayViaRemote }}
+          {{- range $.Values.relay.proxyUnderRemoteIngress.paths }}
+          - path: {{ .path }}
+            pathType: {{ .pathType }}
+            backend:
+              service:
+                name: {{ $relayName }}
+                port:
+                  number: {{ $relaySvcPort }}
+          {{- end }}
+          {{- end }}
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $fullName }}
+                port:
+                  number: {{ $svcPort }}
+    {{- end }}
     {{- end }}
 {{- end }}
