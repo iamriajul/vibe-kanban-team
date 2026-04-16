@@ -165,7 +165,7 @@ Trimmed to 59 chars so CNPG-generated suffixes (-app, -rw, -superuser) stay with
 
 {{- define "vibe-kanban-team.codeServer.proxyHost" -}}
 {{- $domain := .Values.global.domain | default "" -}}
-{{- if $domain -}}{{ printf "*.%s" $domain }}{{- end -}}
+{{- if $domain -}}{{ printf "*.code.%s" $domain }}{{- end -}}
 {{- end }}
 
 {{- define "vibe-kanban-team.auth.host" -}}
@@ -180,7 +180,7 @@ Trimmed to 59 chars so CNPG-generated suffixes (-app, -rw, -superuser) stay with
 
 {{- define "vibe-kanban-team.frontend.proxyDomain" -}}
 {{- $codeServerHost := include "vibe-kanban-team.codeServer.host" . -}}
-{{- if and (include "vibe-kanban-team.frontend.codeServerIngressEnabled" .) $codeServerHost -}}{{ printf "{{port}}-%s" $codeServerHost }}{{- end -}}
+{{- if and (include "vibe-kanban-team.frontend.codeServerIngressEnabled" .) $codeServerHost -}}{{ printf "{{port}}.%s" $codeServerHost }}{{- end -}}
 {{- end }}
 
 {{- define "vibe-kanban-team.frontend.authAnnotations" -}}
