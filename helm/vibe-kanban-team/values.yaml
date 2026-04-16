@@ -181,10 +181,16 @@ config:
       electricRolePasswordKey: electric-role-password
     oauth:
       name: ""
-      githubClientIdKey: github-client-id
+      # Set key to non-empty to enable a provider (must exist in the secret).
+      # Leave empty ("") to disable a provider.
+      githubClientIdKey: ""
       githubClientSecretKey: github-client-secret
-      googleClientIdKey: google-client-id
+      googleClientIdKey: ""
       googleClientSecretKey: google-client-secret
+      zohoClientIdKey: ""
+      zohoClientSecretKey: zoho-client-secret
+      # Optional: override Zoho accounts URL (e.g. https://accounts.zoho.eu)
+      # Set via extraEnv: [{name: ZOHO_ACCOUNTS_URL, value: "..."}]
 
 # =============================================================================
 # Environment Variables
