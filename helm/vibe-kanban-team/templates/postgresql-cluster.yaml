@@ -21,9 +21,9 @@ spec:
     initdb:
       database: {{ $dbName }}
       owner: {{ $dbName }}
+      secret:
+        name: {{ include "vibe-kanban-team.appCredentialsSecretName" . }}
       postInitApplicationSQL:
-        # Grant the app role full privileges so remote can manage roles/passwords
-        # during migrations (including electric_sync role creation).
         - {{ printf "ALTER ROLE %s WITH SUPERUSER CREATEROLE CREATEDB REPLICATION;" $dbName | quote }}
   managed:
     roles:
