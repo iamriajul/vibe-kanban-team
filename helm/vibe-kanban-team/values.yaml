@@ -117,11 +117,9 @@ postgres:
     storageClass: ""
 
   # ---------------------------------------------------------------------------
-  # Backup via Barman Cloud Plugin (optional)
+  # Backup via CNPG built-in Barman (optional)
   # ---------------------------------------------------------------------------
-  # Requires the CNPG Barman Cloud Plugin installed in the cluster:
-  #   kubectl apply -f \
-  #     https://raw.githubusercontent.com/cloudnative-pg/plugin-barman-cloud/main/config/release.yaml
+  # Uses CNPG's native barmanObjectStore — no extra CRDs or plugins needed.
   #
   # Create a secret with your object-store credentials:
   #   kubectl create secret generic backup-creds -n <namespace> \

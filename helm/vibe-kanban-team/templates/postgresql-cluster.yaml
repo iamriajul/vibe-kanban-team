@@ -1,5 +1,6 @@
 {{- if .Values.postgres.enabled }}
 {{- $dbName := .Values.postgres.database | default "remote" }}
+{{- $backup := .Values.postgres.backup }}
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
@@ -27,8 +28,24 @@ spec:
         name: {{ include "vibe-kanban-team.appCredentialsSecretName" . }}
       postInitApplicationSQL:
         - "ALTER ROLE {{ $dbName }} WITH SUPERUSER CREATEROLE CREATEDB REPLICATION;"
-  {{- if .Values.postgres.backup.enabled }}
-  plugins:
-    - name: barman-cloud.cloudnative-pg.io
+  {{- if $backup.enabled }}
+  backup:
+    barmanObjectStore:
+      destinationPath: {{ $backup.destinationPath | quote }}
+      {{- if $backup.endpointURL }}
+      endpointURL: {{ $backup.endpointURL | quote }}
+      {{- end }}
+      s3Credentials:
+        accessKeyId:
+          name: {{ $backup.secretName }}
+          key: {{ $backup.accessKeyIdKey }}
+        secretAccessKey:
+          name: {{ $backup.secretName }}
+          key: {{ $backup.secretAccessKeyKey }}
+      {{- if $backup.walCompression }}
+      wal:
+        compression: {{ $backup.walCompression }}
+      {{- end }}
+    retentionPolicy: {{ $backup.retentionPolicy | default "30d" | quote }}
   {{- end }}
 {{- end }}
