@@ -1,9 +1,13 @@
 {{- if include "vibe-kanban-team.frontend.codeServerIngressEnabled" . -}}
 {{- $frontendName := include "vibe-kanban-team.frontend.fullname" . -}}
 {{- $codeServerPort := .Values.frontend.codeServer.port -}}
+{{- $ingressClassName := .Values.global.ingressClassName | default "" -}}
+{{- $useTraefikProxy := and .Values.frontend.auth.enabled (contains "traefik" $ingressClassName) -}}
+{{- $backendName := ternary (printf "%s-oauth2-proxy-code" $frontendName) $frontendName $useTraefikProxy -}}
+{{- $backendPort := ternary 4180 ($codeServerPort | int) $useTraefikProxy -}}
 {{- $annotations := include "vibe-kanban-team.ingress.annotations" (dict "root" . "annotations" .Values.frontend.codeServerIngress.annotations) -}}
 {{- $authAnnotations := include "vibe-kanban-team.frontend.authAnnotations" . -}}
-{{- if and .Values.frontend.auth.enabled (eq (trim $authAnnotations) "") -}}
+{{- if and .Values.frontend.auth.enabled (not $useTraefikProxy) (eq (trim $authAnnotations) "") -}}
 {{- fail "frontend.auth.enabled=true but no protected ingress annotations could be derived. Set global.ingressClassName to nginx, or set frontend.auth.createTraefikMiddleware=true with a traefik ingress class, or provide frontend.auth.protectedIngressAnnotations." -}}
 {{- end -}}
 {{- $className := include "vibe-kanban-team.ingress.className" (dict "root" . "className" .Values.frontend.codeServerIngress.className) -}}
@@ -16,12 +20,12 @@ metadata:
   labels:
     {{- include "vibe-kanban-team.labels" . | nindent 4 }}
     app.kubernetes.io/component: frontend
-  {{- if or (ne (trim $annotations) "") (ne (trim $authAnnotations) "") }}
+  {{- if or (ne (trim $annotations) "") (and (not $useTraefikProxy) (ne (trim $authAnnotations) "")) }}
   annotations:
     {{- if ne (trim $annotations) "" }}
     {{- $annotations | nindent 4 }}
     {{- end }}
-    {{- if ne (trim $authAnnotations) "" }}
+    {{- if and (not $useTraefikProxy) (ne (trim $authAnnotations) "") }}
     {{- $authAnnotations | nindent 4 }}
     {{- end }}
   {{- end }}
@@ -57,9 +61,9 @@ spec:
             pathType: {{ .pathType }}
             backend:
               service:
-                name: {{ $frontendName }}
+                name: {{ $backendName }}
                 port:
-                  number: {{ $codeServerPort }}
+                  number: {{ $backendPort }}
           {{- end }}
     {{- end }}
     {{- else if $derivedHost }}
@@ -70,9 +74,9 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: {{ $frontendName }}
+                name: {{ $backendName }}
                 port:
-                  number: {{ $codeServerPort }}
+                  number: {{ $backendPort }}
     - host: {{ $derivedProxyHost | quote }}
       http:
         paths:
@@ -80,8 +84,8 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: {{ $frontendName }}
+                name: {{ $backendName }}
                 port:
-                  number: {{ $codeServerPort }}
+                  number: {{ $backendPort }}
     {{- end }}
 {{- end }}
