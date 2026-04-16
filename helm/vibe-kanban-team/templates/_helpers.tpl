@@ -98,6 +98,12 @@ Trimmed to 59 chars so CNPG-generated suffixes (-app, -rw, -superuser) stay with
 {{- printf "%s-vk-electric-sync" (include "vibe-kanban-team.fullname" .) | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
+{{/* Secret with username+password for the CNPG app user; passed as bootstrap.initdb.secret.
+     Kept across helm uninstall so the password survives cluster recreation. */}}
+{{- define "vibe-kanban-team.appCredentialsSecretName" -}}
+{{- printf "%s-vk-app" .Release.Name | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
 {{- define "vibe-kanban-team.ingress.className" -}}
 {{- $className := .className | default "" -}}
 {{- if $className -}}
@@ -218,12 +224,12 @@ Trimmed to 59 chars so CNPG-generated suffixes (-app, -rw, -superuser) stay with
 
 {{- define "vibe-kanban-team.remote.structuredEnv" -}}
 {{- if .Values.postgres.enabled }}
-{{/* postgres.enabled: CNPG app secret for DB URL; chart-generated secret for JWT + electric password */}}
+{{/* postgres.enabled: chart-generated secret for DB URL (stable across reinstalls), JWT, electric password */}}
 - name: SERVER_DATABASE_URL
   valueFrom:
     secretKeyRef:
-      name: {{ include "vibe-kanban-team.postgres.clusterName" . }}-app
-      key: uri
+      name: {{ include "vibe-kanban-team.generatedSecretName" . }}
+      key: url
 - name: VIBEKANBAN_REMOTE_JWT_SECRET
   valueFrom:
     secretKeyRef:
@@ -300,12 +306,12 @@ Trimmed to 59 chars so CNPG-generated suffixes (-app, -rw, -superuser) stay with
 
 {{- define "vibe-kanban-team.relay.structuredEnv" -}}
 {{- if .Values.postgres.enabled }}
-{{/* postgres.enabled: CNPG app secret for DB URL; chart-generated secret for JWT */}}
+{{/* postgres.enabled: chart-generated secret for DB URL (stable across reinstalls) + JWT */}}
 - name: SERVER_DATABASE_URL
   valueFrom:
     secretKeyRef:
-      name: {{ include "vibe-kanban-team.postgres.clusterName" . }}-app
-      key: uri
+      name: {{ include "vibe-kanban-team.generatedSecretName" . }}
+      key: url
 - name: VIBEKANBAN_REMOTE_JWT_SECRET
   valueFrom:
     secretKeyRef:
