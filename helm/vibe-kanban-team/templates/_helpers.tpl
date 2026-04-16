@@ -271,6 +271,18 @@ Trimmed to 59 chars so CNPG-generated suffixes (-app, -rw, -superuser) stay with
       name: {{ $oauth.name }}
       key: {{ $oauth.githubClientSecretKey }}
 {{- end }}
+{{- if $oauth.googleClientIdKey }}
+- name: GOOGLE_OAUTH_CLIENT_ID
+  valueFrom:
+    secretKeyRef:
+      name: {{ $oauth.name }}
+      key: {{ $oauth.googleClientIdKey }}
+- name: GOOGLE_OAUTH_CLIENT_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ $oauth.name }}
+      key: {{ $oauth.googleClientSecretKey }}
+{{- end }}
 {{- if $oauth.zohoClientIdKey }}
 - name: ZOHO_OAUTH_CLIENT_ID
   valueFrom:

@@ -130,6 +130,9 @@ config:
       name: ""
       githubClientIdKey: github-client-id
       githubClientSecretKey: github-client-secret
+      # Google OAuth — set googleClientIdKey to activate (leave empty to disable)
+      googleClientIdKey: ""
+      googleClientSecretKey: google-client-secret
       # Zoho OAuth — set zohoClientIdKey to activate (leave empty to disable)
       zohoClientIdKey: ""
       zohoClientSecretKey: zoho-client-secret
