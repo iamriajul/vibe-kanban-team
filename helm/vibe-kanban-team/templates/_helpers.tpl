@@ -93,15 +93,14 @@ Trimmed to 59 chars so CNPG-generated suffixes (-app, -rw, -superuser) stay with
 {{- printf "%s-vk-generated" (include "vibe-kanban-team.fullname" .) | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
+{{/* Secret with app DB credentials (username + password) for CNPG bootstrap.initdb.secret. */}}
+{{- define "vibe-kanban-team.appCredentialsSecretName" -}}
+{{- printf "%s-vk-app" .Release.Name | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
 {{/* Secret with key "password" consumed by CNPG managed.roles for the electric_sync role. */}}
 {{- define "vibe-kanban-team.electricSyncSecretName" -}}
 {{- printf "%s-vk-electric-sync" (include "vibe-kanban-team.fullname" .) | trunc 63 | trimSuffix "-" }}
-{{- end }}
-
-{{/* Secret with username+password for the CNPG app user; passed as bootstrap.initdb.secret.
-     Kept across helm uninstall so the password survives cluster recreation. */}}
-{{- define "vibe-kanban-team.appCredentialsSecretName" -}}
-{{- printf "%s-vk-app" .Release.Name | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{- define "vibe-kanban-team.ingress.className" -}}
@@ -224,7 +223,7 @@ Trimmed to 59 chars so CNPG-generated suffixes (-app, -rw, -superuser) stay with
 
 {{- define "vibe-kanban-team.remote.structuredEnv" -}}
 {{- if .Values.postgres.enabled }}
-{{/* postgres.enabled: chart-generated secret for DB URL (stable across reinstalls), JWT, electric password */}}
+{{/* postgres.enabled: chart-generated secret for DB URL, JWT, and electric password */}}
 - name: SERVER_DATABASE_URL
   valueFrom:
     secretKeyRef:
@@ -289,24 +288,12 @@ Trimmed to 59 chars so CNPG-generated suffixes (-app, -rw, -superuser) stay with
       name: {{ $oauth.name }}
       key: {{ $oauth.googleClientSecretKey }}
 {{- end }}
-{{- if $oauth.zohoClientIdKey }}
-- name: ZOHO_OAUTH_CLIENT_ID
-  valueFrom:
-    secretKeyRef:
-      name: {{ $oauth.name }}
-      key: {{ $oauth.zohoClientIdKey }}
-- name: ZOHO_OAUTH_CLIENT_SECRET
-  valueFrom:
-    secretKeyRef:
-      name: {{ $oauth.name }}
-      key: {{ $oauth.zohoClientSecretKey }}
-{{- end }}
 {{- end }}
 {{- end }}
 
 {{- define "vibe-kanban-team.relay.structuredEnv" -}}
 {{- if .Values.postgres.enabled }}
-{{/* postgres.enabled: chart-generated secret for DB URL (stable across reinstalls) + JWT */}}
+{{/* postgres.enabled: chart-generated secret for DB URL and JWT */}}
 - name: SERVER_DATABASE_URL
   valueFrom:
     secretKeyRef:

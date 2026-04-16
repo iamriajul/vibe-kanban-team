@@ -19,7 +19,7 @@ spec:
   {{- if $className }}
   ingressClassName: {{ $className }}
   {{- end }}
-  {{- if or .Values.relay.ingress.tls (and .Values.global.tls.enabled $derivedHost) }}
+  {{- if or .Values.relay.ingress.tls (and (or .Values.global.tls.enabled (ne (.Values.global.tls.clusterIssuer | default "") "")) $derivedHost) }}
   tls:
     {{- if .Values.relay.ingress.tls }}
     {{- range .Values.relay.ingress.tls }}
