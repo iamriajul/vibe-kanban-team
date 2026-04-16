@@ -1,6 +1,10 @@
 {{- if include "vibe-kanban-team.frontend.ingressEnabled" . -}}
 {{- $frontendName := include "vibe-kanban-team.frontend.fullname" . -}}
 {{- $frontendPort := .Values.frontend.app.port -}}
+{{- $ingressClassName := .Values.global.ingressClassName | default "" -}}
+{{- $useTraefikProxy := and .Values.frontend.auth.enabled (contains "traefik" $ingressClassName) -}}
+{{- $backendName := ternary (printf "%s-oauth2-proxy" $frontendName) $frontendName $useTraefikProxy -}}
+{{- $backendPort := ternary 4180 ($frontendPort | int) $useTraefikProxy -}}
 {{- $annotations := include "vibe-kanban-team.ingress.annotations" (dict "root" . "annotations" .Values.frontend.ingress.annotations) -}}
 {{- $authAnnotations := include "vibe-kanban-team.frontend.authAnnotations" . -}}
 {{- $className := include "vibe-kanban-team.ingress.className" (dict "root" . "className" .Values.frontend.ingress.className) -}}
@@ -12,12 +16,12 @@ metadata:
   labels:
     {{- include "vibe-kanban-team.labels" . | nindent 4 }}
     app.kubernetes.io/component: frontend
-  {{- if or (ne (trim $annotations) "") (and .Values.frontend.auth.enabled (ne (trim $authAnnotations) "")) }}
+  {{- if or (ne (trim $annotations) "") (and .Values.frontend.auth.enabled (not $useTraefikProxy) (ne (trim $authAnnotations) "")) }}
   annotations:
     {{- if ne (trim $annotations) "" }}
     {{- $annotations | nindent 4 }}
     {{- end }}
-    {{- if and .Values.frontend.auth.enabled (ne (trim $authAnnotations) "") }}
+    {{- if and .Values.frontend.auth.enabled (not $useTraefikProxy) (ne (trim $authAnnotations) "") }}
     {{- $authAnnotations | nindent 4 }}
     {{- end }}
   {{- end }}
@@ -52,9 +56,9 @@ spec:
             pathType: {{ .pathType }}
             backend:
               service:
-                name: {{ $frontendName }}
+                name: {{ $backendName }}
                 port:
-                  number: {{ $frontendPort }}
+                  number: {{ $backendPort }}
           {{- end }}
     {{- end }}
     {{- else if $derivedHost }}
@@ -65,8 +69,8 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: {{ $frontendName }}
+                name: {{ $backendName }}
                 port:
-                  number: {{ $frontendPort }}
+                  number: {{ $backendPort }}
     {{- end }}
 {{- end }}
