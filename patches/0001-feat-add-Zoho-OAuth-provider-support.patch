@@ -1,4 +1,4 @@
-From 49672e97c72f00c9ae4257700cd9dbf1c863757b Mon Sep 17 00:00:00 2001
+From 881346d1209ec8b0ecce3a2696706381061623af Mon Sep 17 00:00:00 2001
 From: Riajul Islam <riajul@kahf.co>
 Date: Tue, 14 Apr 2026 06:27:04 +0000
 Subject: [PATCH] downstream: 0001-feat-add-Zoho-OAuth-provider-support
@@ -6,9 +6,9 @@ Subject: [PATCH] downstream: 0001-feat-add-Zoho-OAuth-provider-support
 ---
  crates/remote/src/app.rs           |  10 +-
  crates/remote/src/auth/mod.rs      |   1 +
- crates/remote/src/auth/provider.rs | 351 +++++++++++++++++++++++++++++
+ crates/remote/src/auth/provider.rs | 363 +++++++++++++++++++++++++++++
  crates/remote/src/config.rs        |  44 +++-
- 4 files changed, 404 insertions(+), 2 deletions(-)
+ 4 files changed, 416 insertions(+), 2 deletions(-)
 
 diff --git a/crates/remote/src/app.rs b/crates/remote/src/app.rs
 index 4aa1d8206..500008497 100644
@@ -49,10 +49,10 @@ index 0a964e4a9..eea303442 100644
 +    ZohoOAuthProvider,
  };
 diff --git a/crates/remote/src/auth/provider.rs b/crates/remote/src/auth/provider.rs
-index 15184214b..63a5aea67 100644
+index 15184214b..3b620ec68 100644
 --- a/crates/remote/src/auth/provider.rs
 +++ b/crates/remote/src/auth/provider.rs
-@@ -366,6 +366,357 @@ impl AuthorizationProvider for GitHubOAuthProvider {
+@@ -366,6 +366,369 @@ impl AuthorizationProvider for GitHubOAuthProvider {
      }
  }
  
@@ -244,10 +244,16 @@ index 15184214b..63a5aea67 100644
 +                ("redirect_uri", redirect_uri),
 +            ])
 +            .send()
-+            .await?
-+            .error_for_status()?;
++            .await?;
 +
-+        match response.json::<ZohoTokenResponse>().await? {
++        let status = response.status();
++        let body = response.text().await?;
++
++        if !status.is_success() {
++            anyhow::bail!("zoho token exchange failed (HTTP {status}): {body}");
++        }
++
++        match serde_json::from_str::<ZohoTokenResponse>(&body)? {
 +            ZohoTokenResponse::Success {
 +                access_token,
 +                token_type,
@@ -280,15 +286,21 @@ index 15184214b..63a5aea67 100644
 +    }
 +
 +    async fn fetch_user(&self, access_token: &SecretString) -> Result<ProviderUser> {
-+        let profile: ZohoUserInfo = self
++        let response = self
 +            .client
 +            .get(&self.userinfo_endpoint())
 +            .header("Authorization", format!("Zoho-oauthtoken {}", access_token.expose_secret()))
 +            .send()
-+            .await?
-+            .error_for_status()?
-+            .json()
 +            .await?;
++
++        let status = response.status();
++        let body = response.text().await?;
++
++        if !status.is_success() {
++            anyhow::bail!("zoho userinfo failed (HTTP {status}): {body}");
++        }
++
++        let profile: ZohoUserInfo = serde_json::from_str(&body)?;
 +
 +        let login = profile.email.clone();
 +        let name = profile
