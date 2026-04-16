@@ -1,4 +1,4 @@
-From 881346d1209ec8b0ecce3a2696706381061623af Mon Sep 17 00:00:00 2001
+From 2e8bcafcebc70d47a5cf21cbaa9c24920bab8ff2 Mon Sep 17 00:00:00 2001
 From: Riajul Islam <riajul@kahf.co>
 Date: Tue, 14 Apr 2026 06:27:04 +0000
 Subject: [PATCH] downstream: 0001-feat-add-Zoho-OAuth-provider-support
@@ -6,9 +6,9 @@ Subject: [PATCH] downstream: 0001-feat-add-Zoho-OAuth-provider-support
 ---
  crates/remote/src/app.rs           |  10 +-
  crates/remote/src/auth/mod.rs      |   1 +
- crates/remote/src/auth/provider.rs | 363 +++++++++++++++++++++++++++++
+ crates/remote/src/auth/provider.rs | 359 +++++++++++++++++++++++++++++
  crates/remote/src/config.rs        |  44 +++-
- 4 files changed, 416 insertions(+), 2 deletions(-)
+ 4 files changed, 412 insertions(+), 2 deletions(-)
 
 diff --git a/crates/remote/src/app.rs b/crates/remote/src/app.rs
 index 4aa1d8206..500008497 100644
@@ -49,10 +49,10 @@ index 0a964e4a9..eea303442 100644
 +    ZohoOAuthProvider,
  };
 diff --git a/crates/remote/src/auth/provider.rs b/crates/remote/src/auth/provider.rs
-index 15184214b..3b620ec68 100644
+index 15184214b..667e420dc 100644
 --- a/crates/remote/src/auth/provider.rs
 +++ b/crates/remote/src/auth/provider.rs
-@@ -366,6 +366,369 @@ impl AuthorizationProvider for GitHubOAuthProvider {
+@@ -366,6 +366,365 @@ impl AuthorizationProvider for GitHubOAuthProvider {
      }
  }
  
@@ -92,7 +92,7 @@ index 15184214b..3b620ec68 100644
 +    }
 +
 +    fn userinfo_endpoint(&self) -> String {
-+        format!("{}/oauth/user/info", self.accounts_url)
++        format!("{}/oauth/v2/userinfo", self.accounts_url)
 +    }
 +
 +    async fn try_refresh_access_token(
@@ -102,9 +102,8 @@ index 15184214b..3b620ec68 100644
 +        let response = match self
 +            .client
 +            .post(&self.token_endpoint())
++            .basic_auth(&self.client_id, Some(self.client_secret.expose_secret()))
 +            .form(&[
-+                ("client_id", self.client_id.as_str()),
-+                ("client_secret", self.client_secret.expose_secret()),
 +                ("refresh_token", refresh_token),
 +                ("grant_type", "refresh_token"),
 +            ])
@@ -193,18 +192,16 @@ index 15184214b..3b620ec68 100644
 +    },
 +}
 +
++/// OIDC-standard userinfo response from `/oauth/v2/userinfo`.
 +#[derive(Debug, Deserialize)]
 +struct ZohoUserInfo {
-+    #[serde(rename = "ZUID")]
-+    zuid: i64,
-+    #[serde(rename = "First_Name")]
-+    first_name: Option<String>,
-+    #[serde(rename = "Last_Name")]
-+    last_name: Option<String>,
-+    #[serde(rename = "Display_Name")]
-+    display_name: Option<String>,
-+    #[serde(rename = "Email")]
++    /// OIDC `sub` claim — unique Zoho user identifier.
++    sub: String,
 +    email: Option<String>,
++    name: Option<String>,
++    given_name: Option<String>,
++    family_name: Option<String>,
++    picture: Option<String>,
 +}
 +
 +#[async_trait]
@@ -236,9 +233,8 @@ index 15184214b..3b620ec68 100644
 +        let response = self
 +            .client
 +            .post(&self.token_endpoint())
++            .basic_auth(&self.client_id, Some(self.client_secret.expose_secret()))
 +            .form(&[
-+                ("client_id", self.client_id.as_str()),
-+                ("client_secret", self.client_secret.expose_secret()),
 +                ("code", code),
 +                ("grant_type", "authorization_code"),
 +                ("redirect_uri", redirect_uri),
@@ -289,7 +285,7 @@ index 15184214b..3b620ec68 100644
 +        let response = self
 +            .client
 +            .get(&self.userinfo_endpoint())
-+            .header("Authorization", format!("Zoho-oauthtoken {}", access_token.expose_secret()))
++            .bearer_auth(access_token.expose_secret())
 +            .send()
 +            .await?;
 +
@@ -304,8 +300,8 @@ index 15184214b..3b620ec68 100644
 +
 +        let login = profile.email.clone();
 +        let name = profile
-+            .display_name
-+            .or_else(|| match (&profile.first_name, &profile.last_name) {
++            .name
++            .or_else(|| match (&profile.given_name, &profile.family_name) {
 +                (Some(first), Some(last)) => Some(format!("{first} {last}")),
 +                (Some(first), None) => Some(first.clone()),
 +                (None, Some(last)) => Some(last.clone()),
@@ -313,11 +309,11 @@ index 15184214b..3b620ec68 100644
 +            });
 +
 +        Ok(ProviderUser {
-+            id: profile.zuid.to_string(),
++            id: profile.sub,
 +            login,
 +            email: profile.email,
 +            name,
-+            avatar_url: None,
++            avatar_url: profile.picture,
 +        })
 +    }
 +
