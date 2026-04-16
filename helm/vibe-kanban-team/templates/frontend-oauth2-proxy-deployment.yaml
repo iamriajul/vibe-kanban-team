@@ -57,7 +57,12 @@ spec:
             {{- range .Values.frontend.auth.extraArgs }}
             - {{ . }}
             {{- end }}
+            {{- $ingressClassName := .Values.global.ingressClassName | default "" }}
+            {{- if contains "traefik" $ingressClassName }}
+            - --upstream=http://{{ include "vibe-kanban-team.frontend.fullname" . }}:{{ .Values.frontend.app.port }}/
+            {{- else }}
             - --upstream=static://200
+            {{- end }}
             - --http-address=0.0.0.0:4180
             - --reverse-proxy=true
             - --set-xauthrequest=true
