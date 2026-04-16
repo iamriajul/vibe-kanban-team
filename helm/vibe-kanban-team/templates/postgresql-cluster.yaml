@@ -1,4 +1,5 @@
 {{- if .Values.postgres.enabled }}
+{{- $dbName := .Values.postgres.database | default "vibe_kanban" }}
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
@@ -18,8 +19,12 @@ spec:
       wal_level: "logical"
   bootstrap:
     initdb:
-      database: {{ .Values.postgres.database | default "vibe_kanban" }}
-      owner: {{ .Values.postgres.database | default "vibe_kanban" }}
+      database: {{ $dbName }}
+      owner: {{ $dbName }}
+      postInitApplicationSQL:
+        # Grant the app role full privileges so remote can manage roles/passwords
+        # during migrations (including electric_sync role creation).
+        - {{ printf "ALTER ROLE %s WITH SUPERUSER CREATEROLE CREATEDB REPLICATION;" $dbName | quote }}
   managed:
     roles:
       - name: electric_sync

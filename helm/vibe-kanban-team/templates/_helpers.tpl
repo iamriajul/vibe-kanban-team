@@ -259,6 +259,7 @@ Trimmed to 59 chars so CNPG-generated suffixes (-app, -rw, -superuser) stay with
 {{- end }}
 {{- $oauth := .Values.config.existingSecrets.oauth -}}
 {{- if $oauth.name }}
+{{- if $oauth.githubClientIdKey }}
 - name: GITHUB_OAUTH_CLIENT_ID
   valueFrom:
     secretKeyRef:
@@ -269,6 +270,31 @@ Trimmed to 59 chars so CNPG-generated suffixes (-app, -rw, -superuser) stay with
     secretKeyRef:
       name: {{ $oauth.name }}
       key: {{ $oauth.githubClientSecretKey }}
+{{- end }}
+{{- if $oauth.googleClientIdKey }}
+- name: GOOGLE_OAUTH_CLIENT_ID
+  valueFrom:
+    secretKeyRef:
+      name: {{ $oauth.name }}
+      key: {{ $oauth.googleClientIdKey }}
+- name: GOOGLE_OAUTH_CLIENT_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ $oauth.name }}
+      key: {{ $oauth.googleClientSecretKey }}
+{{- end }}
+{{- if $oauth.zohoClientIdKey }}
+- name: ZOHO_OAUTH_CLIENT_ID
+  valueFrom:
+    secretKeyRef:
+      name: {{ $oauth.name }}
+      key: {{ $oauth.zohoClientIdKey }}
+- name: ZOHO_OAUTH_CLIENT_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ $oauth.name }}
+      key: {{ $oauth.zohoClientSecretKey }}
+{{- end }}
 {{- end }}
 {{- end }}
 
