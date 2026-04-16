@@ -39,6 +39,9 @@ spec:
           imagePullPolicy: {{ .Values.frontend.auth.image.pullPolicy }}
           args:
             - --provider={{ .Values.frontend.auth.provider | default "google" }}
+            {{- if .Values.frontend.auth.oidcIssuerUrl }}
+            - --oidc-issuer-url={{ .Values.frontend.auth.oidcIssuerUrl }}
+            {{- end }}
             {{- range .Values.frontend.auth.emailDomains }}
             - --email-domain={{ . }}
             {{- end }}
@@ -50,6 +53,9 @@ spec:
             {{- end }}
             {{- if .Values.frontend.auth.githubTeam }}
             - --github-team={{ .Values.frontend.auth.githubTeam }}
+            {{- end }}
+            {{- range .Values.frontend.auth.extraArgs }}
+            - {{ . }}
             {{- end }}
             - --upstream=static://200
             - --http-address=0.0.0.0:4180

@@ -461,11 +461,25 @@ frontend:
   #   Authorized redirect URI: https://<auth.host>/oauth2/callback
   # GitHub OAuth app: https://github.com/settings/developers
   #   Authorization callback URL: https://<auth.host>/oauth2/callback
+  # Zoho OIDC: https://api-console.zoho.com
+  #   Redirect URI: https://<auth.host>/oauth2/callback
+  #   Set provider: oidc, oidcIssuerUrl: https://accounts.zoho.com
   auth:
     enabled: false
 
-    # OAuth provider: google | github
+    # OAuth provider: google | github | oidc
+    # Use "oidc" for Zoho, Keycloak, Auth0, or any OIDC-compliant provider.
     provider: google
+
+    # OIDC configuration (required when provider=oidc)
+    oidcIssuerUrl: ""  # e.g. https://accounts.zoho.com
+
+    # Extra args passed directly to oauth2-proxy (for advanced/provider-specific flags)
+    # Example for Zoho OIDC:
+    #   extraArgs:
+    #     - --scope=openid email profile
+    #     - --insecure-oidc-allow-unverified-email=true
+    extraArgs: []
 
     # -------------------------------------------------------------------------
     # Access restrictions — at least one required when enabled=true
