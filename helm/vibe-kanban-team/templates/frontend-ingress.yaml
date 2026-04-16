@@ -25,7 +25,7 @@ spec:
   {{- if $className }}
   ingressClassName: {{ $className }}
   {{- end }}
-  {{- if or .Values.frontend.ingress.tls (and .Values.global.tls.enabled $derivedHost) }}
+  {{- if or .Values.frontend.ingress.tls (and (or .Values.global.tls.enabled (ne (.Values.global.tls.clusterIssuer | default "") "")) $derivedHost) }}
   tls:
     {{- if .Values.frontend.ingress.tls }}
     {{- range .Values.frontend.ingress.tls }}

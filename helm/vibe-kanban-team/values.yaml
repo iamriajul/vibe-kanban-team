@@ -190,6 +190,12 @@ config:
       # Optional: override Zoho accounts URL (e.g. https://accounts.zoho.eu)
       # Set via extraEnv: [{name: ZOHO_ACCOUNTS_URL, value: "..."}]
 
+  # Restrict OAuth login to specific email domains (comma-separated).
+  # When set, only users whose email ends with one of these domains can sign in.
+  # Leave empty to allow all domains.
+  # Example: "company.com,subsidiary.com"
+  allowedEmailDomains: ""
+
 # =============================================================================
 # Environment Variables
 # =============================================================================
@@ -362,8 +368,9 @@ frontend:
       - ReadWriteOnce
 
   # code-server configuration
-  # Uses high port to avoid conflicts with dev apps (8080 is common)
+  # Set enabled=false to deploy the frontend without code-server ingress.
   codeServer:
+    enabled: true
     port: 13337
     # Proxy domain for exposing internal ports via code-server.
     # code-server extracts the port from the hostname and proxies to localhost:<port>.

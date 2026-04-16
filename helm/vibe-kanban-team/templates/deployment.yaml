@@ -57,6 +57,10 @@ spec:
             - name: SERVER_PUBLIC_BASE_URL
               value: {{ include "vibe-kanban-team.remote.publicBaseUrl" . | quote }}
             {{- end }}
+            {{- if .Values.config.allowedEmailDomains }}
+            - name: ALLOWED_EMAIL_DOMAINS
+              value: {{ .Values.config.allowedEmailDomains | quote }}
+            {{- end }}
             {{- include "vibe-kanban-team.remote.structuredEnv" . | nindent 12 }}
             {{- with .Values.env }}
             {{- toYaml . | nindent 12 }}

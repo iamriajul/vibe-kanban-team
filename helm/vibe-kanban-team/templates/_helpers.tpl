@@ -214,7 +214,7 @@ Trimmed to 59 chars so CNPG-generated suffixes (-app, -rw, -superuser) stay with
 {{- end }}
 
 {{- define "vibe-kanban-team.frontend.codeServerIngressEnabled" -}}
-{{- if and .Values.frontend.enabled .Values.frontend.codeServerIngress.enabled -}}true{{- end -}}
+{{- if and .Values.frontend.enabled .Values.frontend.codeServer.enabled (or .Values.frontend.codeServerIngress.enabled (ne (include "vibe-kanban-team.codeServer.host" .) "")) -}}true{{- end -}}
 {{- end }}
 
 {{- define "vibe-kanban-team.frontend.authIngressEnabled" -}}
