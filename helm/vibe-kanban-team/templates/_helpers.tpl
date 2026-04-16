@@ -165,7 +165,7 @@ Trimmed to 59 chars so CNPG-generated suffixes (-app, -rw, -superuser) stay with
 
 {{- define "vibe-kanban-team.codeServer.proxyHost" -}}
 {{- $domain := .Values.global.domain | default "" -}}
-{{- if $domain -}}{{ printf "*.%s" $domain }}{{- end -}}
+{{- if $domain -}}{{ printf "*.code.%s" $domain }}{{- end -}}
 {{- end }}
 
 {{- define "vibe-kanban-team.auth.host" -}}
