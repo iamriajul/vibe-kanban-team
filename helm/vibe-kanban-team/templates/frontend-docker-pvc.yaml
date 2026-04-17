@@ -6,6 +6,8 @@ metadata:
   labels:
     {{- include "vibe-kanban-team.labels" . | nindent 4 }}
     app.kubernetes.io/component: frontend
+  annotations:
+    helm.sh/resource-policy: keep
 spec:
   accessModes:
     {{- toYaml .Values.frontend.dockerPersistence.accessModes | nindent 4 }}
