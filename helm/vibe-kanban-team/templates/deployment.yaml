@@ -1,3 +1,6 @@
+{{- if and (not .Values.postgres.enabled) (eq (.Values.config.existingSecrets.database.name | default "") "") -}}
+{{- fail "postgres.enabled=false requires config.existingSecrets.database.name to be set with a secret containing the database URL." -}}
+{{- end -}}
 apiVersion: apps/v1
 kind: Deployment
 {{- $serverPublicBaseUrlSet := false -}}

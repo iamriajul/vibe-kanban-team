@@ -93,6 +93,11 @@ Trimmed to 59 chars so CNPG-generated suffixes (-app, -rw, -superuser) stay with
 {{- printf "%s-vk-generated" (include "vibe-kanban-team.fullname" .) | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
+{{/* Auto-generated cookie secret for oauth2-proxy. */}}
+{{- define "vibe-kanban-team.oauth2ProxyCookieSecretName" -}}
+{{- printf "%s-vk-oauth2-cookie" .Release.Name | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
 {{/* Secret with app DB credentials (username + password) for CNPG bootstrap.initdb.secret. */}}
 {{- define "vibe-kanban-team.appCredentialsSecretName" -}}
 {{- printf "%s-vk-app" .Release.Name | trunc 63 | trimSuffix "-" }}

@@ -1,4 +1,4 @@
-{{- if and .Values.frontend.enabled .Values.frontend.auth.enabled .Values.frontend.auth.createTraefikMiddleware }}
+{{- if and .Values.frontend.enabled .Values.frontend.auth.enabled (or .Values.frontend.auth.createTraefikMiddleware (contains "traefik" (.Values.global.ingressClassName | default ""))) }}
 {{- $proxyName := printf "%s-oauth2-proxy" (include "vibe-kanban-team.frontend.fullname" .) -}}
 # Traefik ForwardAuth middleware — used by code-server ingress.
 # The frontend ingress routes through oauth2-proxy directly when using Traefik.
