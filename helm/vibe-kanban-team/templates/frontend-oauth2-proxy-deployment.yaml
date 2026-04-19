@@ -1,6 +1,6 @@
 {{- if and .Values.frontend.enabled .Values.frontend.auth.enabled }}
 {{- if eq (.Values.frontend.auth.secretName | default "") "" -}}
-{{- fail "frontend.auth.enabled=true requires frontend.auth.secretName with client-id, client-secret, and cookie-secret keys." -}}
+{{- fail "frontend.auth.enabled=true requires frontend.auth.secretName with client-id and client-secret keys." -}}
 {{- end -}}
 {{- $hasRestriction := or (gt (len .Values.frontend.auth.emailDomains) 0) (gt (len .Values.frontend.auth.allowedEmails) 0) (ne (.Values.frontend.auth.githubOrg | default "") "") (ne (.Values.frontend.auth.githubTeam | default "") "") -}}
 {{- if not $hasRestriction -}}
@@ -91,7 +91,7 @@ spec:
             - name: OAUTH2_PROXY_COOKIE_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.frontend.auth.secretName }}
+                  name: {{ include "vibe-kanban-team.oauth2ProxyCookieSecretName" . }}
                   key: cookie-secret
           ports:
             - name: http

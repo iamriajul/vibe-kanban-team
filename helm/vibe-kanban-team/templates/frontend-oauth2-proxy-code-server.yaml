@@ -80,7 +80,7 @@ spec:
             - name: OAUTH2_PROXY_COOKIE_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.frontend.auth.secretName }}
+                  name: {{ include "vibe-kanban-team.oauth2ProxyCookieSecretName" . }}
                   key: cookie-secret
           ports:
             - name: http
