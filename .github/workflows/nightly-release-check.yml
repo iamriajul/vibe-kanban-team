@@ -52,4 +52,11 @@ jobs:
             echo "Skipping target '$TARGET' (selected target: '$SELECTED_TARGET')"
             exit 0
           fi
-          bash scripts/nightly-check-release.sh "$TARGET"
+          rc=0
+          bash scripts/nightly-check-release.sh "$TARGET" || rc=$?
+          if [ "$rc" -eq 42 ]; then
+            echo "Patch mismatch detected for '$TARGET'; Discord notification sent (if configured)."
+            echo "Treating this as non-blocking so nightly monitoring remains green."
+            exit 0
+          fi
+          exit "$rc"

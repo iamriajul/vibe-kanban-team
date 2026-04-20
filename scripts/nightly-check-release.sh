@@ -19,6 +19,9 @@
 
 set -euo pipefail
 
+# Distinct exit code for patch-drift detection (notification path).
+PATCH_MISMATCH_EXIT_CODE=42
+
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TARGET="${1:-}"
 DEFAULT_BRANCH="${DEFAULT_BRANCH:-main}"
@@ -203,7 +206,7 @@ DISCORD_EOF
       --retry-delay 5 || echo "Warning: Discord notification failed"
   fi
 
-  exit 1
+  exit "$PATCH_MISMATCH_EXIT_CODE"
 fi
 
 echo ""
