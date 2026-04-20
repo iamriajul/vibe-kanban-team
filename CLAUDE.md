@@ -13,8 +13,8 @@ Downstream deployment and integration layer for Vibe Kanban. Owns the Helm chart
 ## Ownership
 
 - `helm/vibe-kanban-team/`: Helm chart for Remote, Relay, ElectricSQL, and optional Frontend
-- `.github/workflows/`: GitHub Actions for image, chart, and npm releases
-- `scripts/`: `apply-patches.sh`, `update-vibe-kanban.sh`, `deploy.sh`, `publish-npm.sh`
+- `.github/workflows/`: GitHub Actions for image/chart/npm releases and nightly upstream checks
+- `scripts/`: `apply-patches.sh`, `update-vibe-kanban.sh`, `deploy.sh`, `publish-npm.sh`, `nightly-check-release.sh`
 - `patches/`: linear downstream patch stack (`series` + `*.patch`)
 - `vibe-kanban/`: single upstream submodule for frontend, backend, remote, and relay
 
@@ -31,6 +31,7 @@ Downstream deployment and integration layer for Vibe Kanban. Owns the Helm chart
 - GitHub Actions own the checked-in release automation.
 - `remote-v*` tags build Remote and Relay images, publish them to GHCR, optionally mirror them to Docker Hub, and publish the Helm chart to GHCR as an OCI artifact.
 - `v*` tags publish the `vibe-kanban-team` npm package via `scripts/publish-npm.sh`.
+- `nightly-release-check.yml` runs on schedule for `frontend` and `remote`, compares upstream tags, verifies patch applicability, updates submodule + patch metadata, and pushes commit/tag for release workflows.
 - Manual workflow dispatch must target an existing `git_ref`; versions are derived from that ref.
 - Keep tag naming stable:
   - frontend/npm: `v<upstream-semver>-<YYYYMMDDHHmmss>`
@@ -113,6 +114,10 @@ Sysbox container with systemd PID 1. Runs code-server + Vibe Kanban + Claude Cod
 Committed values should reference secrets via `secretKeyRef`. Real credentials belong in untracked overlays or deployment-time secret creation steps.
 
 Local publish credentials should stay in an untracked file outside committed history.
+
+Nightly release automation expects repository secrets:
+- `NIGHTLY_RELEASE_PUSH_TOKEN`: PAT/fine-grained token with `contents:write` to push commits + tags (tag pushes trigger release workflows)
+- `DISCORD_WEBHOOK_URL`: Discord webhook used for patch-failure alerts
 
 **Gitignore** (do not modify): `values-production.yaml`, `*-secrets.yaml`, `*-secret.yaml`, `.env*`
 

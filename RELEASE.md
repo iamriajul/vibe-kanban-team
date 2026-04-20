@@ -6,6 +6,7 @@ This repository uses GitHub Actions for checked-in release automation.
 
 - `remote-v*` tags trigger `.github/workflows/release-images.yml`
 - `v*` tags trigger `.github/workflows/publish-npm.yml`
+- nightly upstream checks run via `.github/workflows/nightly-release-check.yml`
 - GHCR is the default public registry for images and the Helm chart
 - Docker Hub image pushes are optional and controlled by repository variables and secrets
 
@@ -49,6 +50,14 @@ Required secrets and variables:
 4. Push the release tag for the workflow you want to run.
 
 Manual workflow dispatch is supported for existing release refs only. Pass `git_ref`, let the workflow derive the version from that ref, and avoid free-form version-only publishes.
+
+## Nightly Automation
+
+`nightly-release-check.yml` checks upstream `BloopAI/vibe-kanban` tags for `frontend` and `remote`, verifies downstream patches still apply, updates the tracked submodule ref and patch `From` metadata, then pushes a commit and release tag.
+
+Required secrets:
+- `NIGHTLY_RELEASE_PUSH_TOKEN` (PAT or fine-grained token with `contents:write`)
+- `DISCORD_WEBHOOK_URL` (used for patch-failure alerts)
 
 ## Future Additions
 
