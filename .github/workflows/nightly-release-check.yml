@@ -31,7 +31,6 @@ jobs:
       fail-fast: false
       matrix:
         target: [frontend, remote]
-    if: ${{ github.event_name == 'schedule' || github.event.inputs.target == 'all' || github.event.inputs.target == matrix.target }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -45,7 +44,12 @@ jobs:
           NIGHTLY_RELEASE_PUSH_TOKEN: ${{ secrets.NIGHTLY_RELEASE_PUSH_TOKEN }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           UPSTREAM_REPO_API: ${{ vars.UPSTREAM_REPO_API }}
+          SELECTED_TARGET: ${{ github.event_name == 'workflow_dispatch' && inputs.target || 'all' }}
           DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && '1' || '' }}
         run: |
           set -euo pipefail
+          if [ "$SELECTED_TARGET" != "all" ] && [ "$SELECTED_TARGET" != "$TARGET" ]; then
+            echo "Skipping target '$TARGET' (selected target: '$SELECTED_TARGET')"
+            exit 0
+          fi
           bash scripts/nightly-check-release.sh "$TARGET"
