@@ -399,7 +399,7 @@ ${NODE_CMD} -e "
   const pkg = JSON.parse(fs.readFileSync(path, 'utf8'));
   pkg.name = 'vibe-kanban-team';
   pkg.version = '${VERSION}';
-  pkg.publishConfig = { access: 'public' };
+  pkg.publishConfig = { access: 'public', registry: 'https://registry.npmjs.org' };
   pkg.author = 'iamriajul';
   pkg.repository = { type: 'git', url: 'git+https://github.com/iamriajul/vibe-kanban-team.git' };
   fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + '\\n');
@@ -673,6 +673,11 @@ if [ "${NPM_PUBLISH_AUTH}" = "token" ]; then
   NPM_ARGS=(--userconfig "${NPMRC_BAK}")
 else
   echo "Using npm trusted publishing (OIDC)."
+  # setup-node writes a token-based .npmrc when registry-url is configured.
+  # In OIDC mode, keep npm from falling back to stale token auth.
+  unset NODE_AUTH_TOKEN
+  unset NPM_CONFIG_USERCONFIG
+  unset npm_config_userconfig
 fi
 
 if (cd "${VIBE_DIR}/npx-cli" && npm "${NPM_ARGS[@]}" view "vibe-kanban-team@${VERSION}" version >/dev/null 2>&1); then
