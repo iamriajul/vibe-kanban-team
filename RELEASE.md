@@ -34,7 +34,7 @@ Artifacts:
 - binaries uploaded through the existing R2-based publish flow
 
 Required secrets and variables:
-- `NPM_TOKEN`
+- npm trusted publishing / OIDC configured for `.github/workflows/publish-npm.yml`
 - `R2_ACCESS_KEY_ID`
 - `R2_SECRET_ACCESS_KEY`
 - `R2_ENDPOINT`
