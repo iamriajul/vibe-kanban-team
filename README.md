@@ -224,6 +224,12 @@ code-server runs with its own auth disabled because ingress auth owns access con
 
 For nginx, auth annotations are derived automatically when `global.ingressClassName` contains `nginx`. For Traefik, set `frontend.auth.createTraefikMiddleware=true` with a Traefik ingress class, or provide `frontend.auth.protectedIngressAnnotations`.
 
+The frontend app can be preconfigured through env vars, including Coder workspace injection:
+
+- `VIBE_KANBAN_EDITOR_TYPE=CODE_SERVER`
+- `VIBE_KANBAN_CODE_SERVER_URL=https://code.vk.example.com/` (`CODE_SERVER_URL` also works)
+- `VIBE_KANBAN_BYPASS_ONBOARDING=true`
+
 ### 5. Deploy
 
 ```bash
