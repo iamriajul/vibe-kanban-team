@@ -401,7 +401,7 @@ ${NODE_CMD} -e "
   pkg.version = '${VERSION}';
   pkg.publishConfig = { access: 'public' };
   pkg.author = 'iamriajul';
-  pkg.repository = { type: 'git', url: 'https://github.com/iamriajul/vibe-kanban-team' };
+  pkg.repository = { type: 'git', url: 'git+https://github.com/iamriajul/vibe-kanban-team.git' };
   fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + '\\n');
 "
 
