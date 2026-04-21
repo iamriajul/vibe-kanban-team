@@ -18,3 +18,4 @@
 0017-fix-add-30s-WebSocket-ping-keepalive.patch
 0018-feat-allowed-email-domains-restriction.patch
 0019-feat-support-env-configured-editor-onboarding.patch
+0020-fix-scope-org-selection-persistence-per-authenticated-user.patch
