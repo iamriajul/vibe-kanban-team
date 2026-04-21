@@ -18,3 +18,4 @@
 0017-fix-add-30s-WebSocket-ping-keepalive.patch
 0018-feat-allowed-email-domains-restriction.patch
 0019-feat-add-browser-notification-support.patch
+0020-fix-show-configured-sign-in-options.patch

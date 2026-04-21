@@ -1,0 +1,317 @@
+diff --git a/packages/remote-web/src/pages/InvitationPage.tsx b/packages/remote-web/src/pages/InvitationPage.tsx
+index ae9b23f1c..466e42741 100644
+--- a/packages/remote-web/src/pages/InvitationPage.tsx
++++ b/packages/remote-web/src/pages/InvitationPage.tsx
+@@ -1,11 +1,13 @@
+ import { useEffect, useState } from "react";
+ import { useParams } from "@tanstack/react-router";
+ import {
++  getAuthMethods,
+   getInvitation,
+   initOAuth,
+   type InvitationLookupResponse,
+   type OAuthProvider,
+ } from "@remote/shared/lib/api";
++import { useQuery } from "@tanstack/react-query";
+ import {
+   generateChallenge,
+   generateVerifier,
+@@ -22,6 +24,18 @@ export default function InvitationPage() {
+   const [pendingProvider, setPendingProvider] = useState<OAuthProvider | null>(
+     null,
+   );
++  const {
++    data: authMethods,
++    error: authMethodsError,
++    isError: isAuthMethodsError,
++  } = useQuery({
++    queryKey: ["remote-auth-methods"],
++    queryFn: getAuthMethods,
++    staleTime: 60_000,
++  });
++  const oauthProviders = (authMethods?.oauth_providers ?? []).filter(
++    isSupportedOAuthProvider,
++  );
+ 
+   useEffect(() => {
+     let cancelled = false;
+@@ -129,24 +143,30 @@ export default function InvitationPage() {
+               <p className="text-sm text-high">{error}</p>
+             </div>
+           )}
++          {isAuthMethodsError && (
++            <div className="rounded-sm border border-error/30 bg-error/10 p-base">
++              <p className="text-sm text-high">
++                {authMethodsError instanceof Error
++                  ? authMethodsError.message
++                  : "Failed to load available sign-in methods."}
++              </p>
++            </div>
++          )}
+ 
+           <section className="space-y-base border-t border-border pt-base text-center">
+             <p className="text-sm text-low">Choose a provider to continue:</p>
+             <div className="flex flex-col items-center gap-2">
+-              <OAuthButton
+-                provider="github"
+-                label="Continue with GitHub"
+-                onClick={() => void handleOAuthLogin("github")}
+-                disabled={pendingProvider !== null}
+-                loading={pendingProvider === "github"}
+-              />
+-              <OAuthButton
+-                provider="google"
+-                label="Continue with Google"
+-                onClick={() => void handleOAuthLogin("google")}
+-                disabled={pendingProvider !== null}
+-                loading={pendingProvider === "google"}
+-              />
++              {!isAuthMethodsError &&
++                oauthProviders.map((provider) => (
++                  <OAuthButton
++                    key={provider}
++                    provider={provider}
++                    label={`Continue with ${providerLabel(provider)}`}
++                    onClick={() => void handleOAuthLogin(provider)}
++                    disabled={pendingProvider !== null}
++                    loading={pendingProvider === provider}
++                  />
++                ))}
+             </div>
+           </section>
+         </div>
+@@ -155,6 +175,23 @@ export default function InvitationPage() {
+   );
+ }
+ 
++const SUPPORTED_OAUTH_PROVIDERS: OAuthProvider[] = ["github", "google", "zoho"];
++
++function isSupportedOAuthProvider(provider: string): provider is OAuthProvider {
++  return SUPPORTED_OAUTH_PROVIDERS.includes(provider as OAuthProvider);
++}
++
++function providerLabel(provider: OAuthProvider): string {
++  switch (provider) {
++    case "github":
++      return "GitHub";
++    case "google":
++      return "Google";
++    case "zoho":
++      return "Zoho";
++  }
++}
++
+ function OAuthButton({
+   provider,
+   label,
+@@ -176,9 +213,7 @@ function OAuthButton({
+       onClick={onClick}
+       disabled={disabled || loading}
+     >
+-      {loading
+-        ? `Opening ${provider === "github" ? "GitHub" : "Google"}...`
+-        : label}
++      {loading ? `Opening ${providerLabel(provider)}...` : label}
+     </button>
+   );
+ }
+diff --git a/packages/remote-web/src/pages/LoginPage.tsx b/packages/remote-web/src/pages/LoginPage.tsx
+index 9446e0ed0..b9369efda 100644
+--- a/packages/remote-web/src/pages/LoginPage.tsx
++++ b/packages/remote-web/src/pages/LoginPage.tsx
+@@ -34,7 +34,9 @@ export default function LoginPage() {
+   });
+ 
+   const hasLocalAuth = authMethods?.local_auth_enabled ?? false;
+-  const oauthProviders = authMethods?.oauth_providers ?? [];
++  const oauthProviders = (authMethods?.oauth_providers ?? []).filter(
++    isSupportedOAuthProvider,
++  );
+   const hasOAuthProviders = oauthProviders.length > 0;
+ 
+   const handleLogin = async (provider: OAuthProvider) => {
+@@ -152,27 +154,16 @@ export default function LoginPage() {
+ 
+             <div className="flex flex-col items-center gap-2">
+               {!isAuthMethodsError &&
+-                hasOAuthProviders &&
+-                oauthProviders.includes("github") && (
+-                  <OAuthButton
+-                    provider="github"
+-                    label="Continue with GitHub"
+-                    onClick={() => void handleLogin("github")}
+-                    disabled={pending !== null}
+-                    loading={pending === "github"}
+-                  />
+-                )}
+-              {!isAuthMethodsError &&
+-                hasOAuthProviders &&
+-                oauthProviders.includes("google") && (
++                oauthProviders.map((provider) => (
+                   <OAuthButton
+-                    provider="google"
+-                    label="Continue with Google"
+-                    onClick={() => void handleLogin("google")}
++                    key={provider}
++                    provider={provider}
++                    label={`Continue with ${providerLabel(provider)}`}
++                    onClick={() => void handleLogin(provider)}
+                     disabled={pending !== null}
+-                    loading={pending === "google"}
++                    loading={pending === provider}
+                   />
+-                )}
++                ))}
+             </div>
+           </section>
+ 
+@@ -193,6 +184,23 @@ export default function LoginPage() {
+   );
+ }
+ 
++const SUPPORTED_OAUTH_PROVIDERS: OAuthProvider[] = ["github", "google", "zoho"];
++
++function isSupportedOAuthProvider(provider: string): provider is OAuthProvider {
++  return SUPPORTED_OAUTH_PROVIDERS.includes(provider as OAuthProvider);
++}
++
++function providerLabel(provider: OAuthProvider): string {
++  switch (provider) {
++    case "github":
++      return "GitHub";
++    case "google":
++      return "Google";
++    case "zoho":
++      return "Zoho";
++  }
++}
++
+ function OAuthButton({
+   provider,
+   label,
+@@ -214,9 +222,7 @@ function OAuthButton({
+       onClick={onClick}
+       disabled={disabled || loading}
+     >
+-      {loading
+-        ? `Opening ${provider === "github" ? "GitHub" : "Google"}...`
+-        : label}
++      {loading ? `Opening ${providerLabel(provider)}...` : label}
+     </button>
+   );
+ }
+diff --git a/packages/remote-web/src/shared/lib/api.ts b/packages/remote-web/src/shared/lib/api.ts
+index feebf0cb4..f8910a66c 100644
+--- a/packages/remote-web/src/shared/lib/api.ts
++++ b/packages/remote-web/src/shared/lib/api.ts
+@@ -5,7 +5,7 @@ import type { ListOrganizationsResponse } from "shared/types";
+ 
+ const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
+ 
+-export type OAuthProvider = "github" | "google";
++export type OAuthProvider = "github" | "google" | "zoho";
+ 
+ export type AuthMethodsResponse = {
+   local_auth_enabled: boolean;
+diff --git a/packages/web-core/src/features/onboarding/ui/OnboardingSignInPage.tsx b/packages/web-core/src/features/onboarding/ui/OnboardingSignInPage.tsx
+index 3e9b5fd70..8c4454228 100644
+--- a/packages/web-core/src/features/onboarding/ui/OnboardingSignInPage.tsx
++++ b/packages/web-core/src/features/onboarding/ui/OnboardingSignInPage.tsx
+@@ -61,7 +61,22 @@ type SignInCompletionMethod =
+   | 'auth_dialog'
+   | 'local_auth'
+   | 'oauth_github'
+-  | 'oauth_google';
++  | 'oauth_google'
++  | 'oauth_zoho';
++
++function completionMethodForProvider(
++  provider: OAuthProvider
++): SignInCompletionMethod {
++  switch (provider) {
++    case 'github':
++      return 'oauth_github';
++    case 'google':
++      return 'oauth_google';
++    case 'zoho':
++      return 'oauth_zoho';
++  }
++}
++
+ function resolveTheme(theme: ThemeMode): 'light' | 'dark' {
+   if (theme === ThemeMode.SYSTEM) {
+     return window.matchMedia('(prefers-color-scheme: dark)').matches
+@@ -98,8 +113,9 @@ export function OnboardingSignInPage() {
+     staleTime: 60_000,
+   });
+   const hasLocalAuth = authMethods?.local_auth_enabled ?? false;
+-  const oauthProviders = authMethods?.oauth_providers ?? [];
+-  const hasOAuthProviders = oauthProviders.length > 0;
++  const oauthProviders = (authMethods?.oauth_providers ?? []).filter(
++    isSupportedOAuthProvider
++  );
+ 
+   const trackRemoteOnboardingEvent = useCallback(
+     (eventName: string, properties: Record<string, unknown> = {}) => {
+@@ -226,7 +242,7 @@ export function OnboardingSignInPage() {
+ 
+     if (didSignIn) {
+       await finishOnboarding({
+-        method: provider === 'github' ? 'oauth_github' : 'oauth_google',
++        method: completionMethodForProvider(provider),
+       });
+     }
+   };
+@@ -332,24 +348,16 @@ export function OnboardingSignInPage() {
+                   />
+                 ) : !isAuthMethodsError ? (
+                   <>
+-                    {hasOAuthProviders && oauthProviders.includes('github') && (
+-                      <OAuthSignInButton
+-                        provider="github"
+-                        onClick={() => void handleProviderSignIn('github')}
+-                        disabled={saving || pendingProvider !== null}
+-                        loading={pendingProvider === 'github'}
+-                        loadingText="Opening GitHub..."
+-                      />
+-                    )}
+-                    {hasOAuthProviders && oauthProviders.includes('google') && (
++                    {oauthProviders.map((provider) => (
+                       <OAuthSignInButton
+-                        provider="google"
+-                        onClick={() => void handleProviderSignIn('google')}
++                        key={provider}
++                        provider={provider}
++                        onClick={() => void handleProviderSignIn(provider)}
+                         disabled={saving || pendingProvider !== null}
+-                        loading={pendingProvider === 'google'}
+-                        loadingText="Opening Google..."
++                        loading={pendingProvider === provider}
++                        loadingText={`Opening ${providerLabel(provider)}...`}
+                       />
+-                    )}
++                    ))}
+                   </>
+                 ) : null}
+               </section>
+@@ -475,3 +483,20 @@ export function OnboardingSignInPage() {
+     </div>
+   );
+ }
++
++const SUPPORTED_OAUTH_PROVIDERS: OAuthProvider[] = ['github', 'google', 'zoho'];
++
++function isSupportedOAuthProvider(provider: string): provider is OAuthProvider {
++  return SUPPORTED_OAUTH_PROVIDERS.includes(provider as OAuthProvider);
++}
++
++function providerLabel(provider: OAuthProvider): string {
++  switch (provider) {
++    case 'github':
++      return 'GitHub';
++    case 'google':
++      return 'Google';
++    case 'zoho':
++      return 'Zoho';
++  }
++}
