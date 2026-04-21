@@ -167,6 +167,7 @@ frontend:
     port: 13500
     command: "npx --yes vibe-kanban-team"
     workingDirectory: "/home/coder"
+    bypassOnboarding: true
 
   service:
     type: ClusterIP

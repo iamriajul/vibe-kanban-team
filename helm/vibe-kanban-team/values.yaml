@@ -389,6 +389,9 @@ frontend:
     # Shared API base URL for the remote server
     # The frontend uses this to connect to the backend
     sharedApiBase: ""
+    # Sets VIBE_KANBAN_BYPASS_ONBOARDING=true for the app service.
+    # You can also inject it through frontend.env/extraEnv.
+    bypassOnboarding: false
 
   service:
     type: ClusterIP

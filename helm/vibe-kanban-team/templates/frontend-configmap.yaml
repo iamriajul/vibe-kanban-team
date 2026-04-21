@@ -1,5 +1,6 @@
 {{- if .Values.frontend.enabled }}
 {{- $proxyDomain := .Values.frontend.codeServer.proxyDomain | default (include "vibe-kanban-team.frontend.proxyDomain" .) }}
+{{- $codeServerHost := include "vibe-kanban-team.codeServer.host" . }}
 {{- $sharedApiBase := .Values.frontend.app.sharedApiBase | default (include "vibe-kanban-team.remote.publicBaseUrl" .) }}
 apiVersion: v1
 kind: ConfigMap
@@ -212,6 +213,34 @@ data:
     if [ -n "${ZAI_API_KEY:-}" ]; then
       echo "ZAI_API_KEY=${ZAI_API_KEY}" >> /etc/default/vibe-kanban-env
     fi
+    write_env_file_var() {
+      local name="$1"
+      local value="${!name:-}"
+      if [ -n "$value" ]; then
+        printf '%s=%q\n' "$name" "$value" >> /etc/default/vibe-kanban-env
+      fi
+    }
+    for VK_ENV_NAME in \
+      VIBE_KANBAN_EDITOR_TYPE \
+      VIBE_KANBAN_EDITOR \
+      VIBE_KANBAN_CODE_SERVER_URL \
+      CODE_SERVER_URL \
+      VIBE_KANBAN_BYPASS_ONBOARDING; do
+      write_env_file_var "$VK_ENV_NAME"
+    done
+    {{- if and .Values.frontend.codeServer.enabled $codeServerHost }}
+    if [ -z "${VIBE_KANBAN_EDITOR_TYPE:-}" ] && [ -z "${VIBE_KANBAN_EDITOR:-}" ]; then
+      printf '%s=%q\n' "VIBE_KANBAN_EDITOR_TYPE" "CODE_SERVER" >> /etc/default/vibe-kanban-env
+    fi
+    if [ -z "${VIBE_KANBAN_CODE_SERVER_URL:-}" ] && [ -z "${CODE_SERVER_URL:-}" ]; then
+      printf '%s=%q\n' "VIBE_KANBAN_CODE_SERVER_URL" "https://{{ $codeServerHost }}/" >> /etc/default/vibe-kanban-env
+    fi
+    {{- end }}
+    {{- if .Values.frontend.app.bypassOnboarding }}
+    if [ -z "${VIBE_KANBAN_BYPASS_ONBOARDING:-}" ]; then
+      printf '%s=%q\n' "VIBE_KANBAN_BYPASS_ONBOARDING" "true" >> /etc/default/vibe-kanban-env
+    fi
+    {{- end }}
     {{- if $proxyDomain }}
     echo "VSCODE_PROXY_URI=https://{{ $proxyDomain }}/" >> /etc/default/vibe-kanban-env
     {{- end }}
@@ -229,6 +258,34 @@ data:
       if [ -n "${ZAI_API_KEY:-}" ]; then
         echo "export ZAI_API_KEY=\"${ZAI_API_KEY}\"" >> "$RC_DIR/80-container-env.sh"
       fi
+      write_shell_export() {
+        local name="$1"
+        local value="${!name:-}"
+        if [ -n "$value" ]; then
+          printf 'export %s=%q\n' "$name" "$value" >> "$RC_DIR/80-container-env.sh"
+        fi
+      }
+      for VK_ENV_NAME in \
+        VIBE_KANBAN_EDITOR_TYPE \
+        VIBE_KANBAN_EDITOR \
+        VIBE_KANBAN_CODE_SERVER_URL \
+        CODE_SERVER_URL \
+        VIBE_KANBAN_BYPASS_ONBOARDING; do
+        write_shell_export "$VK_ENV_NAME"
+      done
+      {{- if and .Values.frontend.codeServer.enabled $codeServerHost }}
+      if [ -z "${VIBE_KANBAN_EDITOR_TYPE:-}" ] && [ -z "${VIBE_KANBAN_EDITOR:-}" ]; then
+        printf '%s\n' 'export VIBE_KANBAN_EDITOR_TYPE="CODE_SERVER"' >> "$RC_DIR/80-container-env.sh"
+      fi
+      if [ -z "${VIBE_KANBAN_CODE_SERVER_URL:-}" ] && [ -z "${CODE_SERVER_URL:-}" ]; then
+        printf '%s\n' 'export VIBE_KANBAN_CODE_SERVER_URL="https://{{ $codeServerHost }}/"' >> "$RC_DIR/80-container-env.sh"
+      fi
+      {{- end }}
+      {{- if .Values.frontend.app.bypassOnboarding }}
+      if [ -z "${VIBE_KANBAN_BYPASS_ONBOARDING:-}" ]; then
+        printf '%s\n' 'export VIBE_KANBAN_BYPASS_ONBOARDING="true"' >> "$RC_DIR/80-container-env.sh"
+      fi
+      {{- end }}
       {{- if $proxyDomain }}
       echo 'export VSCODE_PROXY_URI="https://{{ $proxyDomain }}/"' >> "$RC_DIR/80-container-env.sh"
       {{- end }}

@@ -107,6 +107,7 @@ Sysbox container with systemd PID 1. Runs code-server + Vibe Kanban + Claude Cod
 - `VSCODE_PROXY_URI` for port proxying; `port-url <port>` script at `/usr/local/bin/`
 - AI skill `expose-port` at `~/.claude/skills/` and `~/.agents/skills/`
 - Env propagation: container → `/etc/default/vibe-kanban-env` (systemd) + `~/.bashrc.d/` (shells)
+- App env: `VIBE_KANBAN_EDITOR_TYPE`, `VIBE_KANBAN_CODE_SERVER_URL`, `VIBE_KANBAN_BYPASS_ONBOARDING`
 - Skel copied from `/etc/skel` on first boot
 
 ## Security and Secrets
