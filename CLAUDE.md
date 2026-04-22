@@ -120,6 +120,8 @@ Nightly release automation expects repository secrets:
 - `NIGHTLY_RELEASE_PUSH_TOKEN`: PAT/fine-grained token with `contents:write` to push commits + tags (tag pushes trigger release workflows)
 - `DISCORD_WEBHOOK_URL`: Discord webhook used for patch-failure alerts
 
+NPM release automation uses npm trusted publishing / OIDC for `.github/workflows/publish-npm.yml`; no `NPM_TOKEN` is required in Actions. `scripts/publish-npm.sh` still supports `NPM_PUBLISH_AUTH=token` for local fallback.
+
 **Gitignore** (do not modify): `values-production.yaml`, `*-secrets.yaml`, `*-secret.yaml`, `.env*`
 
 ## Commit Conventions

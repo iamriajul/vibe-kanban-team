@@ -35,13 +35,14 @@ Artifacts:
 - automatic tag publishes use the npm `latest` dist-tag
 
 Required secrets and variables:
-- `NPM_TOKEN`
 - `R2_ACCESS_KEY_ID`
 - `R2_SECRET_ACCESS_KEY`
 - `R2_ENDPOINT`
 - `R2_BUCKET`
 - `R2_PUBLIC_URL`
 - `VITE_PUBLIC_REACT_VIRTUOSO_LICENSE_KEY`
+
+NPM publishes through trusted publishing / OIDC in GitHub Actions. `scripts/publish-npm.sh` still supports `NPM_PUBLISH_AUTH=token` with `NPM_TOKEN` for local fallback.
 
 ## Manual Flow
 

@@ -301,7 +301,30 @@ require_cmd rustc
 require_cmd zip
 require_cmd aws
 
-require_env NPM_TOKEN
+NPM_PUBLISH_AUTH="${NPM_PUBLISH_AUTH:-}"
+if [ -z "${NPM_PUBLISH_AUTH}" ]; then
+  if [ -n "${NPM_TOKEN:-}" ]; then
+    NPM_PUBLISH_AUTH="token"
+  else
+    NPM_PUBLISH_AUTH="oidc"
+  fi
+fi
+
+case "${NPM_PUBLISH_AUTH}" in
+  token)
+    require_env NPM_TOKEN
+    ;;
+  oidc)
+    if [ "${GITHUB_ACTIONS:-}" = "true" ] &&
+       { [ -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ] || [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; }; then
+      die "NPM_PUBLISH_AUTH=oidc requires GitHub Actions id-token: write permission"
+    fi
+    ;;
+  *)
+    die "NPM_PUBLISH_AUTH must be 'oidc' or 'token'"
+    ;;
+esac
+
 require_env R2_ACCESS_KEY_ID
 require_env R2_SECRET_ACCESS_KEY
 require_env R2_ENDPOINT
@@ -376,9 +399,9 @@ ${NODE_CMD} -e "
   const pkg = JSON.parse(fs.readFileSync(path, 'utf8'));
   pkg.name = 'vibe-kanban-team';
   pkg.version = '${VERSION}';
-  pkg.publishConfig = { access: 'public' };
+  pkg.publishConfig = { access: 'public', registry: 'https://registry.npmjs.org' };
   pkg.author = 'iamriajul';
-  pkg.repository = { type: 'git', url: 'https://github.com/iamriajul/vibe-kanban-team' };
+  pkg.repository = { type: 'git', url: 'git+https://github.com/iamriajul/vibe-kanban-team.git' };
   fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + '\\n');
 "
 
@@ -641,15 +664,27 @@ echo "Removing local dist artifacts before npm publish..."
 rm -rf "${VIBE_DIR}/npx-cli/dist"
 
 echo "Publishing to npm..."
-NPMRC_BAK="${TMP_DIR}/.npmrc"
-umask 077
-printf "//registry.npmjs.org/:_authToken=%s\n" "${NPM_TOKEN}" > "${NPMRC_BAK}"
+NPM_ARGS=()
 
-if (cd "${VIBE_DIR}/npx-cli" && npm --userconfig "${NPMRC_BAK}" view "vibe-kanban-team@${VERSION}" version >/dev/null 2>&1); then
+if [ "${NPM_PUBLISH_AUTH}" = "token" ]; then
+  NPMRC_BAK="${TMP_DIR}/.npmrc"
+  umask 077
+  printf "//registry.npmjs.org/:_authToken=%s\n" "${NPM_TOKEN}" > "${NPMRC_BAK}"
+  NPM_ARGS=(--userconfig "${NPMRC_BAK}")
+else
+  echo "Using npm trusted publishing (OIDC)."
+  # setup-node writes a token-based .npmrc when registry-url is configured.
+  # In OIDC mode, keep npm from falling back to stale token auth.
+  unset NODE_AUTH_TOKEN
+  unset NPM_CONFIG_USERCONFIG
+  unset npm_config_userconfig
+fi
+
+if (cd "${VIBE_DIR}/npx-cli" && npm "${NPM_ARGS[@]}" view "vibe-kanban-team@${VERSION}" version >/dev/null 2>&1); then
   echo "npm version ${VERSION} already exists; skipping publish."
 else
   echo "Publishing to npm with dist-tag: ${NPM_TAG}"
-  (cd "${VIBE_DIR}/npx-cli" && npm --userconfig "${NPMRC_BAK}" publish --ignore-scripts --access public --tag "${NPM_TAG}")
+  (cd "${VIBE_DIR}/npx-cli" && npm "${NPM_ARGS[@]}" publish --ignore-scripts --access public --tag "${NPM_TAG}")
 fi
 
 echo "Publish complete."
