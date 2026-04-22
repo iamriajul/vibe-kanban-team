@@ -10,20 +10,16 @@ on:
         description: "Existing release tag or ref to publish from (for example v1.2.3-20260408120000)"
         required: true
         type: string
-      npm_tag:
-        description: "npm dist-tag to publish under"
-        required: false
-        default: "latest"
-        type: string
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   publish:
     runs-on: ubuntu-latest
     env:
-      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+      NPM_PUBLISH_AUTH: oidc
       R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
       R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       R2_ENDPOINT: ${{ vars.R2_ENDPOINT }}
@@ -43,8 +39,12 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "24"
           registry-url: "https://registry.npmjs.org"
+
+      - name: Update npm for trusted publishing
+        shell: bash
+        run: npm install -g npm@latest
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -86,7 +86,6 @@ jobs:
 
           if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
             raw_ref="${{ inputs.git_ref }}"
-            npm_tag="${{ inputs.npm_tag }}"
           else
             raw_ref="${GITHUB_REF_NAME}"
           fi
@@ -101,9 +100,7 @@ jobs:
 
           version="${ref_name#v}"
 
-          if [ "${GITHUB_EVENT_NAME}" != "workflow_dispatch" ]; then
-            npm_tag="latest"
-          fi
+          npm_tag="latest"
 
           if [ -z "$version" ]; then
             echo "Release version is empty"
