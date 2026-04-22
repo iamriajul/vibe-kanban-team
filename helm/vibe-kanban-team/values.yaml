@@ -393,10 +393,10 @@ frontend:
     # You can also inject it through frontend.env/extraEnv.
     bypassOnboarding: false
     # Enable per-browser auth session isolation (VIBE_KANBAN_MULTI_USER=true).
-    # Required when multiple users share the same frontend pod (e.g. team
-    # deployments with oauth2-proxy). Leave false for single-user workspaces.
+    # Defaults to true because Helm deployments are typically shared team
+    # environments. Set to false for single-user workspaces (e.g. Coder).
     # You can also inject it through frontend.env/extraEnv.
-    multiUser: false
+    multiUser: true
 
   service:
     type: ClusterIP
