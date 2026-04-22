@@ -392,6 +392,11 @@ frontend:
     # Sets VIBE_KANBAN_BYPASS_ONBOARDING=true for the app service.
     # You can also inject it through frontend.env/extraEnv.
     bypassOnboarding: false
+    # Enable per-browser auth session isolation (VIBE_KANBAN_MULTI_USER=true).
+    # Required when multiple users share the same frontend pod (e.g. team
+    # deployments with oauth2-proxy). Leave false for single-user workspaces.
+    # You can also inject it through frontend.env/extraEnv.
+    multiUser: false
 
   service:
     type: ClusterIP

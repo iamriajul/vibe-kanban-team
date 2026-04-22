@@ -1,0 +1,47 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Riajul Islam <riajul@kahf.co>
+Date: Tue, 22 Apr 2026 05:30:00 +0000
+Subject: [PATCH] feat: make auth session conditional on VIBE_KANBAN_MULTI_USER
+
+When VIBE_KANBAN_MULTI_USER is not set or falsy, all requests share the
+default auth session (single-user mode) and no per-browser cookie is
+issued or read. When set to a truthy value (1/true/yes/on), the existing
+per-browser-cookie session scoping is activated for multi-user deployments
+where multiple people share the same server instance.
+---
+ crates/server/src/middleware/auth_session.rs | 16 +++++++++++++++++
+ 1 file changed, 16 insertion(+)
+
+--- a/crates/server/src/middleware/auth_session.rs
++++ b/crates/server/src/middleware/auth_session.rs
+@@ -16,11 +16,27 @@
+ const AUTH_SESSION_COOKIE_NAME: &str = "vk_auth_session";
+ const AUTH_SESSION_COOKIE_MAX_AGE_SECS: u64 = 365 * 24 * 60 * 60;
+ 
++/// Returns true when `VIBE_KANBAN_MULTI_USER` is set to a truthy value
++/// (`1`, `true`, `yes`, or `on`, case-insensitive). When false (the default),
++/// all requests share a single auth session and no per-browser cookie is issued.
++fn multi_user_enabled() -> bool {
++    std::env::var("VIBE_KANBAN_MULTI_USER")
++        .ok()
++        .map(|v| v.trim().to_ascii_lowercase())
++        .is_some_and(|v| matches!(v.as_str(), "1" | "true" | "yes" | "on"))
++}
++
+ pub async fn bind_auth_session(
+     State(deployment): State<DeploymentImpl>,
+     request: Request<Body>,
+     next: Next,
+ ) -> Response {
++    if !multi_user_enabled() {
++        // Single-user mode: run without a session scope so all requests share
++        // the default session state. No cookie is read or set.
++        return next.run(request).await;
++    }
++
+     let (auth_session_id, should_set_cookie) = match parse_auth_session_cookie(request.headers()) {
+         Some(value) => (value, false),
+         None => (Uuid::new_v4().to_string(), true),
+
+-- 
+2.50.1
