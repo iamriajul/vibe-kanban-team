@@ -102,11 +102,7 @@ jobs:
           version="${ref_name#v}"
 
           if [ "${GITHUB_EVENT_NAME}" != "workflow_dispatch" ]; then
-            if [[ "$version" == *-* ]]; then
-              npm_tag="next"
-            else
-              npm_tag="latest"
-            fi
+            npm_tag="latest"
           fi
 
           if [ -z "$version" ]; then

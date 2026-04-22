@@ -32,6 +32,7 @@ Optional Docker Hub mirrors:
 Artifacts:
 - npm package `vibe-kanban-team` published by `scripts/publish-npm.sh`
 - binaries uploaded through the existing R2-based publish flow
+- automatic tag publishes use the npm `latest` dist-tag
 
 Required secrets and variables:
 - `NPM_TOKEN`
