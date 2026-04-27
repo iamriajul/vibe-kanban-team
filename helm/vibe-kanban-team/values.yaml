@@ -301,7 +301,7 @@ frontend:
 
   image:
     repository: iamriajul/coder-sysbox-systemd-docker-universal
-    tag: "13"
+    tag: "15"
     pullPolicy: IfNotPresent
 
   # RuntimeClass for sysbox (enables systemd, Docker-in-Docker)
