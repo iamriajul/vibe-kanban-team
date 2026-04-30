@@ -1,0 +1,60 @@
+From 9aeeb961f47e0bd72b65e88885d3ffb38af2c5b8 Mon Sep 17 00:00:00 2001
+From: Riajul Islam <riajul@kahf.co>
+Date: Wed, 22 Apr 2026 05:41:56 +0000
+Subject: [PATCH] feat: make auth session conditional on VIBE_KANBAN_MULTI_USER
+
+When VIBE_KANBAN_MULTI_USER is not set or falsy, all requests share the
+default auth session (single-user mode) and no per-browser cookie is
+issued or read. When set to a truthy value (1/true/yes/on), the existing
+per-browser-cookie session scoping is activated for multi-user deployments
+where multiple people share the same server instance.
+
+Uses std::sync::LazyLock to cache the env-var check at startup rather
+than re-reading it on every request.
+---
+ crates/server/src/middleware/auth_session.rs | 17 +++++++++++++++++
+ 1 file changed, 17 insertions(+)
+
+diff --git a/crates/server/src/middleware/auth_session.rs b/crates/server/src/middleware/auth_session.rs
+index 5f87483f6..d3c02ca8a 100644
+--- a/crates/server/src/middleware/auth_session.rs
++++ b/crates/server/src/middleware/auth_session.rs
+@@ -8,6 +8,8 @@ use axum::{
+     middleware::Next,
+     response::Response,
+ };
++use std::sync::LazyLock;
++
+ use deployment::Deployment;
+ use uuid::Uuid;
+ 
+@@ -16,11 +18,26 @@ use crate::DeploymentImpl;
+ const AUTH_SESSION_COOKIE_NAME: &str = "vk_auth_session";
+ const AUTH_SESSION_COOKIE_MAX_AGE_SECS: u64 = 365 * 24 * 60 * 60;
+ 
++/// Cached at startup: true when `VIBE_KANBAN_MULTI_USER` is `1`, `true`, `yes`, or `on`
++/// (case-insensitive). When false (the default), all requests share a single auth session
++/// and no per-browser cookie is issued.
++static MULTI_USER_ENABLED: LazyLock<bool> = LazyLock::new(|| {
++    std::env::var("VIBE_KANBAN_MULTI_USER")
++        .ok()
++        .map(|v| v.trim().to_ascii_lowercase())
++        .is_some_and(|v| matches!(v.as_str(), "1" | "true" | "yes" | "on"))
++});
++
+ pub async fn bind_auth_session(
+     State(deployment): State<DeploymentImpl>,
+     request: Request<Body>,
+     next: Next,
+ ) -> Response {
++    if !*MULTI_USER_ENABLED {
++        // Single-user mode: pass through without session scope or cookie.
++        return next.run(request).await;
++    }
++
+     let (auth_session_id, should_set_cookie) = match parse_auth_session_cookie(request.headers()) {
+         Some(value) => (value, false),
+         None => (Uuid::new_v4().to_string(), true),
+-- 
+2.50.1
+

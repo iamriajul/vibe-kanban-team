@@ -392,6 +392,11 @@ frontend:
     # Sets VIBE_KANBAN_BYPASS_ONBOARDING=true for the app service.
     # You can also inject it through frontend.env/extraEnv.
     bypassOnboarding: false
+    # Enable per-browser auth session isolation (VIBE_KANBAN_MULTI_USER=true).
+    # Defaults to true because Helm deployments are typically shared team
+    # environments. Set to false for single-user workspaces (e.g. Coder).
+    # You can also inject it through frontend.env/extraEnv.
+    multiUser: true
 
   service:
     type: ClusterIP

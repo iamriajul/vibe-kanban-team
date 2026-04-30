@@ -225,7 +225,8 @@ data:
       VIBE_KANBAN_EDITOR \
       VIBE_KANBAN_CODE_SERVER_URL \
       CODE_SERVER_URL \
-      VIBE_KANBAN_BYPASS_ONBOARDING; do
+      VIBE_KANBAN_BYPASS_ONBOARDING \
+      VIBE_KANBAN_MULTI_USER; do
       write_env_file_var "$VK_ENV_NAME"
     done
     {{- if and .Values.frontend.codeServer.enabled $codeServerHost }}
@@ -239,6 +240,11 @@ data:
     {{- if .Values.frontend.app.bypassOnboarding }}
     if [ -z "${VIBE_KANBAN_BYPASS_ONBOARDING:-}" ]; then
       printf '%s=%q\n' "VIBE_KANBAN_BYPASS_ONBOARDING" "true" >> /etc/default/vibe-kanban-env
+    fi
+    {{- end }}
+    {{- if .Values.frontend.app.multiUser }}
+    if [ -z "${VIBE_KANBAN_MULTI_USER:-}" ]; then
+      printf '%s=%q\n' "VIBE_KANBAN_MULTI_USER" "true" >> /etc/default/vibe-kanban-env
     fi
     {{- end }}
     {{- if $proxyDomain }}
@@ -270,7 +276,8 @@ data:
         VIBE_KANBAN_EDITOR \
         VIBE_KANBAN_CODE_SERVER_URL \
         CODE_SERVER_URL \
-        VIBE_KANBAN_BYPASS_ONBOARDING; do
+        VIBE_KANBAN_BYPASS_ONBOARDING \
+        VIBE_KANBAN_MULTI_USER; do
         write_shell_export "$VK_ENV_NAME"
       done
       {{- if and .Values.frontend.codeServer.enabled $codeServerHost }}
@@ -284,6 +291,11 @@ data:
       {{- if .Values.frontend.app.bypassOnboarding }}
       if [ -z "${VIBE_KANBAN_BYPASS_ONBOARDING:-}" ]; then
         printf '%s\n' 'export VIBE_KANBAN_BYPASS_ONBOARDING="true"' >> "$RC_DIR/80-container-env.sh"
+      fi
+      {{- end }}
+      {{- if .Values.frontend.app.multiUser }}
+      if [ -z "${VIBE_KANBAN_MULTI_USER:-}" ]; then
+        printf '%s\n' 'export VIBE_KANBAN_MULTI_USER="true"' >> "$RC_DIR/80-container-env.sh"
       fi
       {{- end }}
       {{- if $proxyDomain }}

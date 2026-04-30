@@ -20,3 +20,4 @@
 0019-feat-support-env-configured-editor-onboarding.patch
 0020-fix-scope-org-selection-persistence-per-authenticated-user.patch
 0021-fix-hide-cloud-shutdown-banner.patch
+0022-feat-make-auth-session-conditional-on-VIBE_KANBAN_MULTI_USER.patch
