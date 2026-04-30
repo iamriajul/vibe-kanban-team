@@ -18,3 +18,6 @@
 0017-fix-add-30s-WebSocket-ping-keepalive.patch
 0018-feat-allowed-email-domains-restriction.patch
 0019-feat-add-browser-notification-support.patch
+0020-feat-support-env-configured-editor-onboarding.patch
+0021-fix-scope-org-selection-persistence-per-authenticated-user.patch
+0022-fix-hide-cloud-shutdown-banner.patch

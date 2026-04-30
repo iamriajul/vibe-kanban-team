@@ -155,7 +155,7 @@ frontend:
 
   image:
     repository: iamriajul/coder-sysbox-systemd-docker-universal
-    tag: "13"
+    tag: "15"
     pullPolicy: IfNotPresent
 
   runtimeClassName: sysbox-runc
@@ -167,6 +167,7 @@ frontend:
     port: 13500
     command: "npx --yes vibe-kanban-team"
     workingDirectory: "/home/coder"
+    bypassOnboarding: true
 
   service:
     type: ClusterIP

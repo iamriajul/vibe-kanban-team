@@ -107,6 +107,7 @@ Sysbox container with systemd PID 1. Runs code-server + Vibe Kanban + Claude Cod
 - `VSCODE_PROXY_URI` for port proxying; `port-url <port>` script at `/usr/local/bin/`
 - AI skill `expose-port` at `~/.claude/skills/` and `~/.agents/skills/`
 - Env propagation: container → `/etc/default/vibe-kanban-env` (systemd) + `~/.bashrc.d/` (shells)
+- App env: `VIBE_KANBAN_EDITOR_TYPE`, `VIBE_KANBAN_CODE_SERVER_URL`, `VIBE_KANBAN_BYPASS_ONBOARDING`
 - Skel copied from `/etc/skel` on first boot
 
 ## Security and Secrets
@@ -118,6 +119,8 @@ Local publish credentials should stay in an untracked file outside committed his
 Nightly release automation expects repository secrets:
 - `NIGHTLY_RELEASE_PUSH_TOKEN`: PAT/fine-grained token with `contents:write` to push commits + tags (tag pushes trigger release workflows)
 - `DISCORD_WEBHOOK_URL`: Discord webhook used for patch-failure alerts
+
+NPM release automation uses npm trusted publishing / OIDC for `.github/workflows/publish-npm.yml`; no `NPM_TOKEN` is required in Actions. `scripts/publish-npm.sh` still supports `NPM_PUBLISH_AUTH=token` for local fallback.
 
 **Gitignore** (do not modify): `values-production.yaml`, `*-secrets.yaml`, `*-secret.yaml`, `.env*`
 
