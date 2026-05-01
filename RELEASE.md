@@ -48,8 +48,9 @@ NPM publishes through trusted publishing / OIDC in GitHub Actions. `scripts/publ
 
 1. Update the tracked upstream ref with `scripts/update-vibe-kanban.sh`.
 2. Apply and verify the downstream patch stack with `scripts/apply-patches.sh`.
-3. Commit and push the submodule or patch changes.
-4. Push the release tag for the workflow you want to run.
+3. Commit and push the submodule or patch changes on a feature branch.
+4. Open and merge a PR into `main`.
+5. Create and push the release tag from `main` for the workflow you want to run.
 
 Manual workflow dispatch is supported for existing release refs only. Pass `git_ref`, let the workflow derive the version from that ref, and avoid free-form version-only publishes.
 
