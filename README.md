@@ -28,7 +28,7 @@ In other words, this repo is not claiming that upstream Vibe Kanban is not colla
 
 Current upstream base: `v0.1.44-20260424091429`.
 
-This distribution currently carries 25 downstream patches across 12 main feature and stability areas:
+This distribution currently carries 26 downstream patches across 13 main feature and stability areas:
 
 1. Helm-packaged Remote, Relay, ElectricSQL, and optional browser frontend deployment.
 2. Shared browser-first frontend runtime with code-server and reusable workspace environments.
@@ -42,6 +42,7 @@ This distribution currently carries 25 downstream patches across 12 main feature
 10. `VSCODE_PROXY_URI`, localhost link rewriting, and preview proxy support for managed frontend pods.
 11. Release and deployment automation for npm, images, relay, and Helm chart publishing.
 12. Operational stability fixes for relay builds, WebSocket keepalives, org selection, editor onboarding, and cloud UI behavior.
+13. Project kanban restoration for self-hosted cloud deployments.
 
 ## Architecture
 
