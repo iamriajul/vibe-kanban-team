@@ -24,7 +24,7 @@ fi
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-if [ ! -d "${REPO_ROOT}/vibe-kanban/.git" ]; then
+if ! git -C "${REPO_ROOT}/vibe-kanban" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   echo "Submodule not initialized. Run: git submodule update --init --recursive"
   exit 1
 fi

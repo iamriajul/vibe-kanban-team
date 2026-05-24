@@ -24,6 +24,25 @@ The upstream architecture already allows many frontend installations to connect 
 
 In other words, this repo is not claiming that upstream Vibe Kanban is not collaborative. It is packaging a stronger shared-workspace mode for teams that want a centrally managed setup.
 
+## Downstream Feature Snapshot
+
+Current upstream base: `v0.1.44-20260424091429`.
+
+This distribution currently carries 24 downstream patches across 12 main feature and stability areas:
+
+1. Helm-packaged Remote, Relay, ElectricSQL, and optional browser frontend deployment.
+2. Shared browser-first frontend runtime with code-server and reusable workspace environments.
+3. Workspace auth, browser-scoped sessions, and owner-aware standalone workspace handling.
+4. Zoho OAuth support plus optional allowed-email-domain restrictions.
+5. Kimi Code executor support with resume-safe sessions, configurable CLI args, and context usage reporting.
+6. GitLab merge request integration alongside existing GitHub flows.
+7. Markdown preview controls in workspace change review.
+8. Browser notifications for workspace and execution events.
+9. R2-backed attachment storage for the remote service.
+10. `VSCODE_PROXY_URI`, localhost link rewriting, and preview proxy support for managed frontend pods.
+11. Release and deployment automation for npm, images, relay, and Helm chart publishing.
+12. Operational stability fixes for relay builds, WebSocket keepalives, org selection, editor onboarding, and cloud UI behavior.
+
 ## Architecture
 
 ```
