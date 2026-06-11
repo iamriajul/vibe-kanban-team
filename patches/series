@@ -30,3 +30,4 @@
 0029-feat-add-AntiGravity-model-effort-selection.patch
 0030-chore-spell-Antigravity-branding.patch
 0031-feat-add-Cladup-support-to-Claude-executor.patch
+0032-fix-Cladup-prompt-hang.patch
