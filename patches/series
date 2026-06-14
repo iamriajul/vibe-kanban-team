@@ -33,3 +33,4 @@
 0032-fix-Cladup-prompt-hang.patch
 0033-chore-support-Claude-Code-2.1.173-and-Fable-5.patch
 0034-fix-Antigravity-workspace-and-transcript-logs.patch
+0035-fix-lock-remote-Docker-build.patch
