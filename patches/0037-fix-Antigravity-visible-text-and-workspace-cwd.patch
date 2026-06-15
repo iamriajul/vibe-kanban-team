@@ -1,5 +1,5 @@
 diff --git a/crates/executors/src/executors/antigravity.rs b/crates/executors/src/executors/antigravity.rs
-index ae78ccaf3..f379ce385 100644
+index ae78ccaf3..3079514cd 100644
 --- a/crates/executors/src/executors/antigravity.rs
 +++ b/crates/executors/src/executors/antigravity.rs
 @@ -50,6 +50,7 @@ const ANTIGRAVITY_MODEL_DISCOVERY_TIMEOUT_SECS: u64 = 10;
@@ -268,7 +268,23 @@ index ae78ccaf3..f379ce385 100644
  async fn read_new_transcript_steps(
      transcript_path: &Path,
      processed_steps: &mut HashSet<u64>,
-@@ -1490,15 +1514,15 @@ mod tests {
+@@ -1047,6 +1071,7 @@ fn expected_step_type_for_tool(tool_name: &str) -> String {
+         "view_file" | "read_file" => "VIEW_FILE",
+         "list_dir" | "list_directory" => "LIST_DIRECTORY",
+         "write_to_file" | "write_file" => "CODE_ACTION",
++        "grep_search" | "search" => "GREP_SEARCH",
+         "generate_image" => "GENERATE_IMAGE",
+         "schedule" => "GENERIC",
+         _ => "GENERIC",
+@@ -1061,6 +1086,7 @@ fn is_antigravity_tool_result_step(step_type: &str) -> bool {
+             | "LIST_DIRECTORY"
+             | "VIEW_FILE"
+             | "CODE_ACTION"
++            | "GREP_SEARCH"
+             | "GENERATE_IMAGE"
+             | "GENERIC"
+     )
+@@ -1490,15 +1516,15 @@ mod tests {
      }
  
      #[test]
@@ -287,7 +303,7 @@ index ae78ccaf3..f379ce385 100644
          );
  
          let planner = serde_json::from_value::<AntigravityTranscriptStep>(serde_json::json!({
-@@ -1531,6 +1555,28 @@ mod tests {
+@@ -1531,6 +1557,28 @@ mod tests {
          .unwrap();
          state.handle_step(result, &msg_store);
  
@@ -316,7 +332,7 @@ index ae78ccaf3..f379ce385 100644
          let entries = latest_normalized_entries(&msg_store);
          assert!(matches!(
              entries.first().map(|entry| &entry.entry_type),
-@@ -1562,5 +1608,12 @@ mod tests {
+@@ -1562,5 +1610,71 @@ mod tests {
              }
              other => panic!("unexpected tool entry: {other:?}"),
          }
@@ -327,5 +343,64 @@ index ae78ccaf3..f379ce385 100644
 +            .map(|entry| entry.content.as_str())
 +            .collect::<Vec<_>>();
 +        assert_eq!(assistant_messages, vec!["The workspace is /repo.", "Done."]);
++    }
++
++    #[test]
++    fn transcript_grep_search_result_replaces_pending_tool() {
++        let msg_store = Arc::new(MsgStore::new());
++        let mut state = AntigravityTranscriptState::new(
++            EntryIndexProvider::test_new(),
++            Arc::new(AtomicU32::new(0)),
++            DEFAULT_ANTIGRAVITY_CONTEXT_WINDOW,
++            PathBuf::from("/repo"),
++            Arc::new(AtomicBool::new(false)),
++        );
++
++        let planner = serde_json::from_value::<AntigravityTranscriptStep>(serde_json::json!({
++            "step_index": 1,
++            "source": "MODEL",
++            "type": "PLANNER_RESPONSE",
++            "status": "DONE",
++            "tool_calls": [{
++                "name": "grep_search",
++                "args": {
++                    "Query": "\"needle\"",
++                    "SearchPath": "\"/repo\"",
++                    "toolAction": "\"Searching for needle\""
++                }
++            }]
++        }))
++        .unwrap();
++        state.handle_step(planner, &msg_store);
++
++        let result = serde_json::from_value::<AntigravityTranscriptStep>(serde_json::json!({
++            "step_index": 2,
++            "source": "MODEL",
++            "type": "GREP_SEARCH",
++            "status": "DONE",
++            "content": "marker.txt:2:beta needle"
++        }))
++        .unwrap();
++        state.handle_step(result, &msg_store);
++
++        let entries = latest_normalized_entries(&msg_store);
++        let tool_entries = entries
++            .iter()
++            .filter(|entry| matches!(entry.entry_type, NormalizedEntryType::ToolUse { .. }))
++            .collect::<Vec<_>>();
++        assert_eq!(tool_entries.len(), 1);
++
++        match &tool_entries[0].entry_type {
++            NormalizedEntryType::ToolUse {
++                tool_name,
++                action_type: ActionType::Search { query },
++                status,
++            } => {
++                assert_eq!(tool_name, "grep_search");
++                assert_eq!(query, "needle");
++                assert!(matches!(status, ToolStatus::Success));
++            }
++            other => panic!("unexpected search tool entry: {other:?}"),
++        }
      }
  }
