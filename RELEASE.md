@@ -31,7 +31,7 @@ Optional Docker Hub mirrors:
 
 Artifacts:
 - npm package `vibe-kanban-team` published by `scripts/publish-npm.sh`
-- binaries uploaded through the existing R2-based publish flow
+- Linux x64 and macOS arm64 binaries uploaded through the R2-based publish flow
 - automatic tag publishes use the npm `latest` dist-tag
 
 Required secrets and variables:
@@ -42,7 +42,7 @@ Required secrets and variables:
 - `R2_PUBLIC_URL`
 - `VITE_PUBLIC_REACT_VIRTUOSO_LICENSE_KEY`
 
-NPM publishes through trusted publishing / OIDC in GitHub Actions. `scripts/publish-npm.sh` still supports `NPM_PUBLISH_AUTH=token` with `NPM_TOKEN` for local fallback.
+NPM publishes through trusted publishing / OIDC in GitHub Actions after all binary upload jobs complete. `scripts/publish-npm.sh` supports `PUBLISH_BINARY_ARTIFACTS=0` / `PUBLISH_NPM_PACKAGE=0` job splits and `NPM_PUBLISH_AUTH=token` with `NPM_TOKEN` for local fallback.
 
 ## Manual Flow
 
