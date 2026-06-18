@@ -1,0 +1,330 @@
+diff --git a/crates/executors/src/executors/antigravity.rs b/crates/executors/src/executors/antigravity.rs
+index 2e7d0726f..c23bf048f 100644
+--- a/crates/executors/src/executors/antigravity.rs
++++ b/crates/executors/src/executors/antigravity.rs
+@@ -26,7 +26,7 @@ use workspace_utils::{
+ };
+ 
+ use crate::{
+-    command::{CmdOverrides, CommandBuildError, CommandBuilder, CommandParts, apply_overrides},
++    command::{CmdOverrides, CommandBuildError, CommandBuilder, CommandParts},
+     env::ExecutionEnv,
+     executor_discovery::ExecutorDiscoveredOptions,
+     executors::{
+@@ -52,6 +52,16 @@ const PROMPT_CHARS_MARKER: &str = "VIBE_KANBAN_AGY_PROMPT_CHARS=";
+ const CONVERSATION_ID_MARKER: &str = "VIBE_KANBAN_AGY_CONVERSATION_ID=";
+ const TRANSCRIPT_POLL_INTERVAL_MS: u64 = 500;
+ const TRANSCRIPT_FINISH_GRACE_POLLS: usize = 4;
++const ANTIGRAVITY_BLOCKED_VALUE_ARGS: &[&str] = &[
++    "-p",
++    "--print",
++    "--prompt",
++    "--conversation",
++    "--model",
++    "--log-file",
++];
++const ANTIGRAVITY_BLOCKED_STANDALONE_ARGS: &[&str] =
++    &["-i", "--prompt-interactive", "-c", "--continue"];
+ const FALLBACK_ANTIGRAVITY_MODELS: &[&str] = &[
+     "Gemini 3.5 Flash (Medium)",
+     "Gemini 3.5 Flash (High)",
+@@ -188,7 +198,7 @@ impl AntiGravity {
+             }
+         }
+ 
+-        apply_overrides(builder, &self.cmd)
++        apply_antigravity_overrides(builder, &self.cmd)
+     }
+ 
+     fn effective_model_arg(&self) -> Option<String> {
+@@ -206,6 +216,12 @@ impl AntiGravity {
+             .canonicalize()
+             .unwrap_or_else(|_| current_dir.to_path_buf());
+         let combined_prompt = self.append_prompt.combine_prompt(prompt);
++        validate_antigravity_model(
++            &self.cmd,
++            &workspace_dir,
++            self.effective_model_arg().as_deref(),
++        )
++        .await?;
+         let mut additional_args = Vec::new();
+ 
+         additional_args.push("--add-dir".to_string());
+@@ -1180,22 +1196,67 @@ fn add_token_usage_entry(
+     );
+ }
+ 
++async fn validate_antigravity_model(
++    cmd: &CmdOverrides,
++    current_dir: &Path,
++    model: Option<&str>,
++) -> Result<(), ExecutorError> {
++    let Some(model) = model.map(str::trim).filter(|model| !model.is_empty()) else {
++        return Ok(());
++    };
++    let Some(catalog) = discover_antigravity_model_catalog(cmd, current_dir).await else {
++        return Ok(());
++    };
++    antigravity_model_error(model, &catalog)
++        .map(|message| Err(ExecutorError::Io(std::io::Error::other(message))))
++        .unwrap_or(Ok(()))
++}
++
++async fn discover_antigravity_model_catalog(
++    cmd: &CmdOverrides,
++    current_dir: &Path,
++) -> Option<Vec<String>> {
++    match run_antigravity_models_command(cmd, current_dir).await {
++        Ok(lines) => Some(lines),
++        Err(error) => {
++            tracing::warn!("Antigravity model validation skipped: {error}");
++            None
++        }
++    }
++}
++
+ async fn discover_antigravity_model_lines(cmd: &CmdOverrides, current_dir: &Path) -> Vec<String> {
++    match run_antigravity_models_command(cmd, current_dir).await {
++        Ok(lines) if !lines.is_empty() => lines,
++        Ok(_) => fallback_antigravity_model_lines(),
++        Err(error) => {
++            tracing::warn!("Antigravity model discovery failed: {error}");
++            fallback_antigravity_model_lines()
++        }
++    }
++}
++
++async fn run_antigravity_models_command(
++    cmd: &CmdOverrides,
++    current_dir: &Path,
++) -> Result<Vec<String>, String> {
+     let command_parts = match antigravity_discovery_command(cmd)
+         .and_then(|builder| builder.build_follow_up(&["models".to_string()]))
+     {
+         Ok(parts) => parts,
+         Err(error) => {
+-            tracing::warn!("Failed to build Antigravity model discovery command: {error}");
+-            return fallback_antigravity_model_lines();
++            return Err(format!(
++                "failed to build Antigravity model discovery command: {error}"
++            ));
+         }
+     };
+ 
+     let (program_path, args) = match command_parts.into_resolved().await {
+         Ok(parts) => parts,
+         Err(error) => {
+-            tracing::warn!("Failed to resolve Antigravity model discovery command: {error}");
+-            return fallback_antigravity_model_lines();
++            return Err(format!(
++                "failed to resolve Antigravity model discovery command: {error}"
++            ));
+         }
+     };
+ 
+@@ -1218,36 +1279,20 @@ async fn discover_antigravity_model_lines(cmd: &CmdOverrides, current_dir: &Path
+     )
+     .await
+     {
+-        Ok(Ok(output)) if output.status.success() => {
+-            let lines = String::from_utf8_lossy(&output.stdout)
+-                .lines()
+-                .map(str::trim)
+-                .filter(|line| !line.is_empty())
+-                .map(str::to_string)
+-                .collect::<Vec<_>>();
+-            if lines.is_empty() {
+-                fallback_antigravity_model_lines()
+-            } else {
+-                lines
+-            }
+-        }
+-        Ok(Ok(output)) => {
+-            tracing::warn!(
+-                "Antigravity model discovery failed: {}",
+-                String::from_utf8_lossy(&output.stderr).trim()
+-            );
+-            fallback_antigravity_model_lines()
+-        }
+-        Ok(Err(error)) => {
+-            tracing::warn!("Antigravity model discovery failed: {error}");
+-            fallback_antigravity_model_lines()
+-        }
+-        Err(_) => {
+-            tracing::warn!(
+-                "Antigravity model discovery timed out after {ANTIGRAVITY_MODEL_DISCOVERY_TIMEOUT_SECS}s"
+-            );
+-            fallback_antigravity_model_lines()
+-        }
++        Ok(Ok(output)) if output.status.success() => Ok(String::from_utf8_lossy(&output.stdout)
++            .lines()
++            .map(str::trim)
++            .filter(|line| !line.is_empty())
++            .map(str::to_string)
++            .collect::<Vec<_>>()),
++        Ok(Ok(output)) => Err(format!(
++            "{}",
++            String::from_utf8_lossy(&output.stderr).trim()
++        )),
++        Ok(Err(error)) => Err(error.to_string()),
++        Err(_) => Err(format!(
++            "Antigravity model discovery timed out after {ANTIGRAVITY_MODEL_DISCOVERY_TIMEOUT_SECS}s"
++        )),
+     }
+ }
+ 
+@@ -1260,6 +1305,72 @@ fn antigravity_discovery_command(cmd: &CmdOverrides) -> Result<CommandBuilder, C
+     })
+ }
+ 
++fn apply_antigravity_overrides(
++    builder: CommandBuilder,
++    overrides: &CmdOverrides,
++) -> Result<CommandBuilder, CommandBuildError> {
++    let builder = if let Some(base) = &overrides.base_command_override {
++        builder.override_base(base.clone())
++    } else {
++        builder
++    };
++
++    let Some(additional_params) = &overrides.additional_params else {
++        return Ok(builder);
++    };
++
++    let filtered = filter_antigravity_additional_params(additional_params)?;
++    Ok(builder.extend_params(filtered))
++}
++
++fn filter_antigravity_additional_params(
++    additional_params: &[String],
++) -> Result<Vec<String>, CommandBuildError> {
++    let joined = additional_params.join(" ");
++    if joined.trim().is_empty() {
++        return Ok(Vec::new());
++    }
++
++    let params = shlex::split(&joined)
++        .ok_or_else(|| CommandBuildError::InvalidShellParams(joined.clone()))?;
++    let mut filtered = Vec::with_capacity(params.len());
++    let mut index = 0;
++
++    while index < params.len() {
++        let param = &params[index];
++        if ANTIGRAVITY_BLOCKED_STANDALONE_ARGS.contains(&param.as_str()) {
++            index += 1;
++            continue;
++        }
++        if ANTIGRAVITY_BLOCKED_VALUE_ARGS.contains(&param.as_str()) {
++            index += 1;
++            if index < params.len() {
++                index += 1;
++            }
++            continue;
++        }
++
++        filtered.push(param.clone());
++        index += 1;
++    }
++
++    Ok(filtered)
++}
++
++fn antigravity_model_error(model: &str, available: &[String]) -> Option<String> {
++    if model.trim().is_empty()
++        || available.is_empty()
++        || available.iter().any(|available| available == model)
++    {
++        return None;
++    }
++
++    Some(format!(
++        "Antigravity model {model:?} is not available from `agy models`; pick one of: {}",
++        available.join(", ")
++    ))
++}
++
+ fn fallback_antigravity_model_lines() -> Vec<String> {
+     FALLBACK_ANTIGRAVITY_MODELS
+         .iter()
+@@ -1441,11 +1552,11 @@ fn antigravity_config_dir(cmd: &CmdOverrides) -> Option<PathBuf> {
+ 
+ #[cfg(test)]
+ mod tests {
+-    use super::*;
+     use std::collections::BTreeMap;
+ 
+     use workspace_utils::log_msg::LogMsg;
+ 
++    use super::*;
+     use crate::logs::utils::patch::extract_normalized_entry_from_patch;
+ 
+     fn latest_normalized_entries(msg_store: &MsgStore) -> Vec<NormalizedEntry> {
+@@ -1512,6 +1623,42 @@ mod tests {
+         );
+     }
+ 
++    #[test]
++    fn rejects_unknown_antigravity_model_when_catalog_is_known() {
++        let catalog = vec![
++            "Gemini 3.5 Flash (Medium)".to_string(),
++            "Claude Opus 4.6 (Thinking)".to_string(),
++        ];
++
++        assert!(antigravity_model_error("Claude Opus 4.6 (Thinking)", &catalog).is_none());
++        assert!(antigravity_model_error("", &catalog).is_none());
++        assert!(antigravity_model_error("anything", &[]).is_none());
++
++        let error = antigravity_model_error("Claude Opus 4.6", &catalog)
++            .expect("near-miss model should be rejected");
++        assert!(error.contains("Claude Opus 4.6"));
++        assert!(error.contains("agy models"));
++    }
++
++    #[test]
++    fn filters_antigravity_params_owned_by_executor() {
++        let params = vec![
++            "-p hijacked",
++            "--continue",
++            "--conversation bad-id",
++            "--model sneaky-model",
++            "--log-file /tmp/elsewhere.log",
++            "--add-dir /extra",
++            "--sandbox",
++        ]
++        .into_iter()
++        .map(str::to_string)
++        .collect::<Vec<_>>();
++
++        let filtered = filter_antigravity_additional_params(&params).unwrap();
++        assert_eq!(filtered, vec!["--add-dir", "/extra", "--sandbox"]);
++    }
++
+     #[test]
+     fn parses_full_model_for_preset_options() {
+         let (model_id, reasoning_id) =
+@@ -1721,15 +1868,16 @@ mod tests {
+                 .with_timezone(&Utc),
+         );
+ 
+-        let previous_turn = serde_json::from_value::<AntigravityTranscriptStep>(serde_json::json!({
+-            "step_index": 1,
+-            "source": "MODEL",
+-            "type": "PLANNER_RESPONSE",
+-            "status": "DONE",
+-            "created_at": "2026-06-14T00:00:00Z",
+-            "content": "old answer"
+-        }))
+-        .unwrap();
++        let previous_turn =
++            serde_json::from_value::<AntigravityTranscriptStep>(serde_json::json!({
++                "step_index": 1,
++                "source": "MODEL",
++                "type": "PLANNER_RESPONSE",
++                "status": "DONE",
++                "created_at": "2026-06-14T00:00:00Z",
++                "content": "old answer"
++            }))
++            .unwrap();
+         state.handle_step(previous_turn, &msg_store);
+ 
+         let current_turn = serde_json::from_value::<AntigravityTranscriptStep>(serde_json::json!({

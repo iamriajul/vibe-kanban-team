@@ -85,7 +85,7 @@ index 511909e41..787c41c9c 100644
 @@ -28,7 +28,7 @@ export function getAgentName(
      case BaseCodingAgent.KIMI_CODE:
        return 'Kimi';
-     case BaseCodingAgent.ANTI_GRAVITY:
+     case BaseCodingAgent.ANTIGRAVITY:
 -      return 'AntiGravity';
 +      return 'Antigravity';
      case BaseCodingAgent.COPILOT:
