@@ -75,6 +75,7 @@ jobs:
       PUBLISH_BINARY_ARTIFACTS: "1"
       PUBLISH_NPM_PACKAGE: "0"
       UPDATE_LATEST_BINARY_POINTER: "0"
+      PUBLISH_APPLY_PATCHES: "0"
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -82,13 +83,29 @@ jobs:
           ref: ${{ needs.prepare.outputs.checkout_ref }}
           submodules: recursive
 
+      - name: Apply downstream patches
+        shell: bash
+        run: ./scripts/apply-patches.sh vibe-kanban
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "24"
+          cache: pnpm
+          cache-dependency-path: vibe-kanban/pnpm-lock.yaml
+
+      - name: Enable Corepack
+        shell: bash
+        run: corepack enable
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Restore Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: vibe-kanban -> target
+          key: npm-linux-x64-${{ hashFiles('patches/series', 'patches/*.patch') }}
 
       - name: Install system dependencies
         shell: bash
@@ -109,14 +126,16 @@ jobs:
             python3 \
             unzip \
             zip
-          case "$(uname -m)" in
-            x86_64) awscli_arch="x86_64" ;;
-            aarch64|arm64) awscli_arch="aarch64" ;;
-            *) echo "Unsupported architecture for AWS CLI: $(uname -m)" && exit 1 ;;
-          esac
-          curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-${awscli_arch}.zip" -o awscliv2.zip
-          unzip -q awscliv2.zip
-          sudo ./aws/install --update
+          if ! command -v aws >/dev/null 2>&1; then
+            case "$(uname -m)" in
+              x86_64) awscli_arch="x86_64" ;;
+              aarch64|arm64) awscli_arch="aarch64" ;;
+              *) echo "Unsupported architecture for AWS CLI: $(uname -m)" && exit 1 ;;
+            esac
+            curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-${awscli_arch}.zip" -o awscliv2.zip
+            unzip -q awscliv2.zip
+            sudo ./aws/install --update
+          fi
           aws --version
 
       - name: Upload Linux x64 binaries
@@ -147,6 +166,7 @@ jobs:
       PUBLISH_BINARY_ARTIFACTS: "1"
       PUBLISH_NPM_PACKAGE: "0"
       UPDATE_LATEST_BINARY_POINTER: "0"
+      PUBLISH_APPLY_PATCHES: "0"
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -154,13 +174,29 @@ jobs:
           ref: ${{ needs.prepare.outputs.checkout_ref }}
           submodules: recursive
 
+      - name: Apply downstream patches
+        shell: bash
+        run: ./scripts/apply-patches.sh vibe-kanban
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "24"
+          cache: pnpm
+          cache-dependency-path: vibe-kanban/pnpm-lock.yaml
+
+      - name: Enable Corepack
+        shell: bash
+        run: corepack enable
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Restore Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: vibe-kanban -> target
+          key: npm-macos-arm64-${{ hashFiles('patches/series', 'patches/*.patch') }}
 
       - name: Install system dependencies
         shell: bash
@@ -196,6 +232,7 @@ jobs:
       PUBLISH_BINARY_ARTIFACTS: "0"
       PUBLISH_NPM_PACKAGE: "1"
       UPDATE_LATEST_BINARY_POINTER: "1"
+      PUBLISH_APPLY_PATCHES: "0"
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -203,18 +240,25 @@ jobs:
           ref: ${{ needs.prepare.outputs.checkout_ref }}
           submodules: recursive
 
+      - name: Apply downstream patches
+        shell: bash
+        run: ./scripts/apply-patches.sh vibe-kanban
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
+          cache: pnpm
+          cache-dependency-path: vibe-kanban/pnpm-lock.yaml
+
+      - name: Enable Corepack
+        shell: bash
+        run: corepack enable
 
       - name: Update npm for trusted publishing
         shell: bash
         run: npm install -g npm@latest
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
 
       - name: Publish package
         shell: bash

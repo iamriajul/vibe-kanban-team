@@ -300,6 +300,7 @@ require_cmd pnpm
 PUBLISH_BINARY_ARTIFACTS="${PUBLISH_BINARY_ARTIFACTS:-1}"
 PUBLISH_NPM_PACKAGE="${PUBLISH_NPM_PACKAGE:-1}"
 UPDATE_LATEST_BINARY_POINTER="${UPDATE_LATEST_BINARY_POINTER:-1}"
+PUBLISH_APPLY_PATCHES="${PUBLISH_APPLY_PATCHES:-1}"
 
 case "${PUBLISH_BINARY_ARTIFACTS}" in
   0|1) ;;
@@ -314,6 +315,11 @@ esac
 case "${UPDATE_LATEST_BINARY_POINTER}" in
   0|1) ;;
   *) die "UPDATE_LATEST_BINARY_POINTER must be 0 or 1" ;;
+esac
+
+case "${PUBLISH_APPLY_PATCHES}" in
+  0|1) ;;
+  *) die "PUBLISH_APPLY_PATCHES must be 0 or 1" ;;
 esac
 
 if [ "${PUBLISH_BINARY_ARTIFACTS}" -eq 0 ] && [ "${PUBLISH_NPM_PACKAGE}" -eq 0 ]; then
@@ -369,7 +375,7 @@ if [ ! -e "${VIBE_DIR}/.git" ]; then
   exit 1
 fi
 
-if [ -n "$(git -C "${VIBE_DIR}" status -s)" ]; then
+if [ "${PUBLISH_APPLY_PATCHES}" -eq 1 ] && [ -n "$(git -C "${VIBE_DIR}" status -s)" ]; then
   echo "Submodule has uncommitted changes. Please clean it before running this script."
   exit 1
 fi
@@ -414,10 +420,15 @@ echo "Using npm dist-tag: ${NPM_TAG}"
 echo "Publish binary artifacts: ${PUBLISH_BINARY_ARTIFACTS}"
 echo "Publish npm package: ${PUBLISH_NPM_PACKAGE}"
 echo "Update latest binary pointer: ${UPDATE_LATEST_BINARY_POINTER}"
+echo "Apply downstream patches: ${PUBLISH_APPLY_PATCHES}"
 
-echo "Applying downstream patches..."
-"${ROOT_DIR}/scripts/apply-patches.sh" vibe-kanban
-PATCHES_APPLIED=1
+if [ "${PUBLISH_APPLY_PATCHES}" -eq 1 ]; then
+  echo "Applying downstream patches..."
+  "${ROOT_DIR}/scripts/apply-patches.sh" vibe-kanban
+  PATCHES_APPLIED=1
+else
+  log "Skipping downstream patch application because PUBLISH_APPLY_PATCHES=0."
+fi
 
 TMP_DIR="$(mktemp -d)"
 DOWNLOAD_SRC_BAK="${TMP_DIR}/download.ts.bak"
