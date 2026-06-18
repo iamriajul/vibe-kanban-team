@@ -29,9 +29,9 @@ index 70356c477..2fcd49f0e 100644
          }
        }
      },
-+    "ANTI_GRAVITY": {
++    "ANTIGRAVITY": {
 +      "DEFAULT": {
-+        "ANTI_GRAVITY": {
++        "ANTIGRAVITY": {
 +          "dangerously_skip_permissions": true
 +        }
 +      }
@@ -601,15 +601,21 @@ index 7f345af9e..5651fc041 100644
  pub mod claude;
  pub mod codex;
  pub mod copilot;
-@@ -119,6 +121,7 @@ pub enum CodingAgent {
+@@ -119,6 +121,13 @@ pub enum CodingAgent {
      CursorAgent,
      QwenCode,
      KimiCode,
++    #[serde(rename = "ANTIGRAVITY")]
++    #[strum(serialize = "ANTIGRAVITY")]
++    #[strum_discriminants(serde(rename = "ANTIGRAVITY"))]
++    #[strum_discriminants(strum(serialize = "ANTIGRAVITY"))]
++    #[strum_discriminants(ts(rename = "ANTIGRAVITY"))]
++    #[strum_discriminants(sqlx(rename = "ANTIGRAVITY"))]
 +    AntiGravity,
      Copilot,
      Droid,
      #[cfg(feature = "qa-mode")]
-@@ -198,6 +201,10 @@ impl CodingAgent {
+@@ -198,6 +207,10 @@ impl CodingAgent {
                  BaseAgentCapability::SessionFork,
                  BaseAgentCapability::ContextUsage,
              ],
@@ -705,7 +711,7 @@ index 237bb3cbb..511909e41 100644
        return 'Qwen';
      case BaseCodingAgent.KIMI_CODE:
        return 'Kimi';
-+    case BaseCodingAgent.ANTI_GRAVITY:
++    case BaseCodingAgent.ANTIGRAVITY:
 +      return 'AntiGravity';
      case BaseCodingAgent.COPILOT:
        return 'Copilot';
@@ -714,7 +720,7 @@ index 237bb3cbb..511909e41 100644
      case BaseCodingAgent.KIMI_CODE:
        iconPath = `/agents/kimi${suffix}.svg`;
        break;
-+    case BaseCodingAgent.ANTI_GRAVITY:
++    case BaseCodingAgent.ANTIGRAVITY:
 +      iconPath = `/agents/antigravity${suffix}.svg`;
 +      break;
      case BaseCodingAgent.COPILOT:
@@ -835,10 +841,10 @@ index 8de7b66b0..55b51ef4d 100644
  export type ScriptRequestLanguage = "Bash";
  
 -export enum BaseCodingAgent { CLAUDE_CODE = "CLAUDE_CODE", AMP = "AMP", GEMINI = "GEMINI", CODEX = "CODEX", OPENCODE = "OPENCODE", CURSOR_AGENT = "CURSOR_AGENT", QWEN_CODE = "QWEN_CODE", KIMI_CODE = "KIMI_CODE", COPILOT = "COPILOT", DROID = "DROID" }
-+export enum BaseCodingAgent { CLAUDE_CODE = "CLAUDE_CODE", AMP = "AMP", GEMINI = "GEMINI", CODEX = "CODEX", OPENCODE = "OPENCODE", CURSOR_AGENT = "CURSOR_AGENT", QWEN_CODE = "QWEN_CODE", KIMI_CODE = "KIMI_CODE", ANTI_GRAVITY = "ANTI_GRAVITY", COPILOT = "COPILOT", DROID = "DROID" }
++export enum BaseCodingAgent { CLAUDE_CODE = "CLAUDE_CODE", AMP = "AMP", GEMINI = "GEMINI", CODEX = "CODEX", OPENCODE = "OPENCODE", CURSOR_AGENT = "CURSOR_AGENT", QWEN_CODE = "QWEN_CODE", KIMI_CODE = "KIMI_CODE", ANTIGRAVITY = "ANTIGRAVITY", COPILOT = "COPILOT", DROID = "DROID" }
  
 -export type CodingAgent = { "CLAUDE_CODE": ClaudeCode } | { "AMP": Amp } | { "GEMINI": Gemini } | { "CODEX": Codex } | { "OPENCODE": Opencode } | { "CURSOR_AGENT": CursorAgent } | { "QWEN_CODE": QwenCode } | { "KIMI_CODE": KimiCode } | { "COPILOT": Copilot } | { "DROID": Droid };
-+export type CodingAgent = { "CLAUDE_CODE": ClaudeCode } | { "AMP": Amp } | { "GEMINI": Gemini } | { "CODEX": Codex } | { "OPENCODE": Opencode } | { "CURSOR_AGENT": CursorAgent } | { "QWEN_CODE": QwenCode } | { "KIMI_CODE": KimiCode } | { "ANTI_GRAVITY": AntiGravity } | { "COPILOT": Copilot } | { "DROID": Droid };
++export type CodingAgent = { "CLAUDE_CODE": ClaudeCode } | { "AMP": Amp } | { "GEMINI": Gemini } | { "CODEX": Codex } | { "OPENCODE": Opencode } | { "CURSOR_AGENT": CursorAgent } | { "QWEN_CODE": QwenCode } | { "KIMI_CODE": KimiCode } | { "ANTIGRAVITY": AntiGravity } | { "COPILOT": Copilot } | { "DROID": Droid };
  
  export type SlashCommandDescription = { 
  /**
@@ -847,7 +853,7 @@ index 8de7b66b0..55b51ef4d 100644
  reasoning_by_model?: { [key in string]?: string }, };
  
 -export type ExecutorProfile = { recently_used_models?: ExecutorRecentModels | null, } & ({ [key in string]?: { "CLAUDE_CODE": ClaudeCode } | { "AMP": Amp } | { "GEMINI": Gemini } | { "CODEX": Codex } | { "OPENCODE": Opencode } | { "CURSOR_AGENT": CursorAgent } | { "QWEN_CODE": QwenCode } | { "KIMI_CODE": KimiCode } | { "COPILOT": Copilot } | { "DROID": Droid } });
-+export type ExecutorProfile = { recently_used_models?: ExecutorRecentModels | null, } & ({ [key in string]?: { "CLAUDE_CODE": ClaudeCode } | { "AMP": Amp } | { "GEMINI": Gemini } | { "CODEX": Codex } | { "OPENCODE": Opencode } | { "CURSOR_AGENT": CursorAgent } | { "QWEN_CODE": QwenCode } | { "KIMI_CODE": KimiCode } | { "ANTI_GRAVITY": AntiGravity } | { "COPILOT": Copilot } | { "DROID": Droid } });
++export type ExecutorProfile = { recently_used_models?: ExecutorRecentModels | null, } & ({ [key in string]?: { "CLAUDE_CODE": ClaudeCode } | { "AMP": Amp } | { "GEMINI": Gemini } | { "CODEX": Codex } | { "OPENCODE": Opencode } | { "CURSOR_AGENT": CursorAgent } | { "QWEN_CODE": QwenCode } | { "KIMI_CODE": KimiCode } | { "ANTIGRAVITY": AntiGravity } | { "COPILOT": Copilot } | { "DROID": Droid } });
  
  export type ExecutorConfigs = { executors: { [key in BaseCodingAgent]?: ExecutorProfile }, };
  
