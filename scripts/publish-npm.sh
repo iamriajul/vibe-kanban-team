@@ -686,6 +686,19 @@ if [ "${PUBLISH_BINARY_ARTIFACTS}" -eq 1 ]; then
   fi
 fi
 
+if [ "${PUBLISH_BINARY_ARTIFACTS}" -eq 0 ]; then
+  # Final publish jobs can update the global pointer after all platform uploads finish.
+  if [ "${NPM_TAG}" = "latest" ] && [ "${UPDATE_LATEST_BINARY_POINTER}" -eq 1 ]; then
+    echo "{\"latest\": \"${VERSION}\"}" | aws --endpoint-url "${R2_ENDPOINT}" s3 cp \
+      - "s3://${R2_BUCKET}/binaries/manifest.json" \
+      --content-type "application/json"
+  elif [ "${NPM_TAG}" = "latest" ]; then
+    log "Skipping binaries/manifest.json update because UPDATE_LATEST_BINARY_POINTER=0."
+  else
+    log "Skipping binaries/manifest.json update because NPM_TAG=${NPM_TAG} (not 'latest')."
+  fi
+fi
+
 if [ "${PUBLISH_NPM_PACKAGE}" -eq 1 ]; then
   echo "Injecting R2 URL and tag into download.ts..."
   ${NODE_CMD} -e "
