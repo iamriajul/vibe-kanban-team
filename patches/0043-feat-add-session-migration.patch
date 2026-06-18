@@ -1,0 +1,633 @@
+diff --git a/packages/web-core/src/features/workspace-chat/ui/SessionChatBoxContainer.tsx b/packages/web-core/src/features/workspace-chat/ui/SessionChatBoxContainer.tsx
+index ff8be7305..2c4792b1d 100644
+--- a/packages/web-core/src/features/workspace-chat/ui/SessionChatBoxContainer.tsx
++++ b/packages/web-core/src/features/workspace-chat/ui/SessionChatBoxContainer.tsx
+@@ -1,11 +1,15 @@
+-import { useCallback, useEffect, useMemo, useRef } from 'react';
++import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+ import { useQueryClient } from '@tanstack/react-query';
+ import { useDropzone } from 'react-dropzone';
++import { ArrowsLeftRightIcon } from '@phosphor-icons/react';
+ import {
+   type AskUserQuestionItem,
+   BaseAgentCapability,
+   type Session,
+   type BaseCodingAgent,
++  type ExecutorConfig,
++  type ExecutorProfile,
++  type ExecutorProfileId,
+   ExecutionProcessStatus,
+ } from 'shared/types';
+ import { AgentIcon } from '@/shared/components/AgentIcon';
+@@ -65,6 +69,26 @@ import { useAppNavigation } from '@/shared/hooks/useAppNavigation';
+ import { sessionsApi } from '@/shared/lib/api';
+ import { RenameSessionDialog } from '@vibe/ui/components/RenameSessionDialog';
+ import type { TurnNavigationItem } from '@vibe/ui/components/TurnNavigationPopup';
++import type { PatchTypeWithKey } from '@/shared/hooks/useConversationHistory/types';
++import {
++  Dialog,
++  DialogContent,
++  DialogDescription,
++  DialogFooter,
++  DialogHeader,
++  DialogTitle,
++} from '@vibe/ui/components/Dialog';
++import { Button } from '@vibe/ui/components/Button';
++import {
++  Select,
++  SelectContent,
++  SelectItem,
++  SelectTrigger,
++  SelectValue,
++} from '@vibe/ui/components/Select';
++
++const MIGRATION_TRANSCRIPT_ENTRY_LIMIT = 60;
++const MIGRATION_TRANSCRIPT_CHAR_LIMIT = 24000;
+ 
+ /** Compute execution status from boolean flags */
+ function computeExecutionStatus(params: {
+@@ -86,6 +110,185 @@ function computeExecutionStatus(params: {
+   return 'idle';
+ }
+ 
++function buildSessionMigrationPrompt({
++  sourceSession,
++  targetExecutor,
++  entries,
++}: {
++  sourceSession: Session;
++  targetExecutor: BaseCodingAgent;
++  entries: PatchTypeWithKey[];
++}) {
++  const transcriptEntries = entries
++    .filter((entry) => entry.type === 'NORMALIZED_ENTRY')
++    .map((entry) => entry.content)
++    .filter((entry) =>
++      [
++        'user_message',
++        'assistant_message',
++        'system_message',
++        'user_feedback',
++        'user_answered_questions',
++      ].includes(entry.entry_type.type)
++    )
++    .slice(-MIGRATION_TRANSCRIPT_ENTRY_LIMIT);
++
++  const transcript = transcriptEntries
++    .map((entry) => {
++      const role =
++        entry.entry_type.type === 'assistant_message'
++          ? 'Assistant'
++          : entry.entry_type.type === 'system_message'
++            ? 'System'
++            : 'User';
++      return `### ${role}\n${entry.content.trim()}`;
++    })
++    .join('\n\n')
++    .slice(-MIGRATION_TRANSCRIPT_CHAR_LIMIT);
++
++  return [
++    `We are migrating this Vibe Kanban session from ${sourceSession.executor ?? 'the previous executor'} to ${targetExecutor}.`,
++    '',
++    'Use the context below as the prior conversation and continue the same engineering task in this workspace. Inspect the repository before changing files. Preserve any existing working-tree changes unless I explicitly ask otherwise.',
++    '',
++    `Source session ID: ${sourceSession.id}`,
++    sourceSession.name ? `Source session name: ${sourceSession.name}` : null,
++    '',
++    'Migrated transcript:',
++    transcript || '(No transcript entries were available in the current view.)',
++  ]
++    .filter((line): line is string => line !== null)
++    .join('\n');
++}
++
++function SessionMigrationDialog({
++  open,
++  sourceSession,
++  workspaceId,
++  profiles,
++  latestConfig,
++  configExecutorProfile,
++  entries,
++  error,
++  isMigrating,
++  onOpenChange,
++  onMigrate,
++}: {
++  open: boolean;
++  sourceSession: Session | undefined;
++  workspaceId: string | undefined;
++  profiles: Record<string, ExecutorProfile> | null;
++  latestConfig: ExecutorConfig | null;
++  configExecutorProfile: ExecutorProfileId | null | undefined;
++  entries: PatchTypeWithKey[];
++  error: string | null;
++  isMigrating: boolean;
++  onOpenChange: (open: boolean) => void;
++  onMigrate: (executorConfig: ExecutorConfig, prompt: string) => Promise<void>;
++}) {
++  const {
++    executorConfig,
++    effectiveExecutor,
++    selectedVariant,
++    executorOptions,
++    variantOptions,
++    presetOptions,
++    setExecutor,
++    setVariant,
++    setOverrides,
++  } = useExecutorConfig({
++    profiles,
++    lastUsedConfig: latestConfig,
++    configExecutorProfile,
++  });
++
++  const handleMigrate = useCallback(async () => {
++    if (!sourceSession || !executorConfig || !effectiveExecutor) return;
++    await onMigrate(
++      executorConfig,
++      buildSessionMigrationPrompt({
++        sourceSession,
++        targetExecutor: effectiveExecutor,
++        entries,
++      })
++    );
++  }, [entries, executorConfig, effectiveExecutor, onMigrate, sourceSession]);
++
++  return (
++    <Dialog open={open} onOpenChange={onOpenChange}>
++      <DialogContent className="sm:max-w-[560px]">
++        <DialogHeader>
++          <DialogTitle>Migrate session</DialogTitle>
++          <DialogDescription>
++            Start a new session with a different executor and pass the current
++            transcript as handoff context.
++          </DialogDescription>
++        </DialogHeader>
++        <div className="space-y-4 py-2">
++          <div className="grid gap-2">
++            <label htmlFor="migration-agent" className="text-sm font-medium">
++              Target executor
++            </label>
++            <Select
++              value={effectiveExecutor ?? undefined}
++              onValueChange={(value) => setExecutor(value as BaseCodingAgent)}
++              disabled={isMigrating}
++            >
++              <SelectTrigger id="migration-agent">
++                <SelectValue placeholder="Select executor" />
++              </SelectTrigger>
++              <SelectContent>
++                {executorOptions.map((executor) => (
++                  <SelectItem key={executor} value={executor}>
++                    <span className="flex items-center gap-2">
++                      <AgentIcon agent={executor} className="size-icon" />
++                      <span>{toPrettyCase(executor)}</span>
++                    </span>
++                  </SelectItem>
++                ))}
++              </SelectContent>
++            </Select>
++          </div>
++          {effectiveExecutor && (
++            <ModelSelectorContainer
++              agent={effectiveExecutor}
++              workspaceId={workspaceId}
++              sessionId={sourceSession?.id}
++              onAdvancedSettings={() =>
++                SettingsDialog.show({ initialSection: 'agents' })
++              }
++              presets={variantOptions}
++              selectedPreset={selectedVariant}
++              onPresetSelect={setVariant}
++              onOverrideChange={setOverrides}
++              executorConfig={executorConfig}
++              presetOptions={presetOptions}
++            />
++          )}
++          {error && <div className="text-sm text-destructive">{error}</div>}
++        </div>
++        <DialogFooter>
++          <Button
++            type="button"
++            variant="outline"
++            onClick={() => onOpenChange(false)}
++            disabled={isMigrating}
++          >
++            Cancel
++          </Button>
++          <Button
++            type="button"
++            onClick={handleMigrate}
++            disabled={!sourceSession || !executorConfig || isMigrating}
++          >
++            {isMigrating ? 'Migrating...' : 'Migrate'}
++          </Button>
++        </DialogFooter>
++      </DialogContent>
++    </Dialog>
++  );
++}
++
+ /** Shared props across all modes */
+ interface SharedProps {
+   /** Available sessions for this workspace */
+@@ -172,6 +375,9 @@ export function SessionChatBoxContainer(props: SessionChatBoxContainerProps) {
+   const sessionId = session?.id;
+   const queryClient = useQueryClient();
+   const hostId = useHostId();
++  const [isMigrationDialogOpen, setIsMigrationDialogOpen] = useState(false);
++  const [isMigratingSession, setIsMigratingSession] = useState(false);
++  const [migrationError, setMigrationError] = useState<string | null>(null);
+ 
+   const handleRenameSession = useCallback(
+     (targetSessionId: string, currentName: string) => {
+@@ -468,6 +674,44 @@ export function SessionChatBoxContainer(props: SessionChatBoxContainerProps) {
+       BaseAgentCapability.CONTEXT_USAGE
+     );
+ 
++  const handleMigrateSession = useCallback(
++    async (targetConfig: ExecutorConfig, prompt: string) => {
++      if (!workspaceId || !session || !onSelectSession) return;
++
++      setIsMigratingSession(true);
++      setMigrationError(null);
++      try {
++        const migratedSession = await sessionsApi.create({
++          workspace_id: workspaceId,
++          executor: targetConfig.executor,
++          name: `Migrated from ${toPrettyCase(session.executor ?? 'session')}`,
++        });
++
++        await sessionsApi.followUp(migratedSession.id, {
++          prompt,
++          executor_config: targetConfig,
++          retry_process_id: null,
++          force_when_dirty: null,
++          perform_git_reset: null,
++        });
++
++        await queryClient.invalidateQueries({
++          queryKey: workspaceSessionKeys.byWorkspace(workspaceId, hostId),
++        });
++        onSelectSession(migratedSession.id);
++        setIsMigrationDialogOpen(false);
++      } catch (e: unknown) {
++        const err = e as { message?: string };
++        setMigrationError(
++          `Failed to migrate session: ${err.message ?? 'Unknown error'}`
++        );
++      } finally {
++        setIsMigratingSession(false);
++      }
++    },
++    [hostId, onSelectSession, queryClient, session, workspaceId]
++  );
++
+   // Navigate to agent settings to customise variants
+   const handleCustomise = () => {
+     SettingsDialog.show({ initialSection: 'agents' });
+@@ -769,28 +1013,45 @@ export function SessionChatBoxContainer(props: SessionChatBoxContainerProps) {
+     [actionCtx]
+   );
+ 
+-  const toolbarActionItems = useMemo(
+-    () =>
+-      toolbarActionsList.flatMap((action) => {
+-        if (isSpecialIcon(action.icon)) {
+-          return [];
+-        }
++  const toolbarActionItems = useMemo(() => {
++    const actionItems = toolbarActionsList.flatMap((action) => {
++      if (isSpecialIcon(action.icon)) {
++        return [];
++      }
+ 
+-        const label = action.label;
+-
+-        return [
+-          {
+-            id: action.id,
+-            icon: action.icon,
+-            label,
+-            tooltip: getActionTooltip(action, actionCtx),
+-            disabled: !isActionEnabled(action, actionCtx),
+-            onClick: () => handleToolbarAction(action),
+-          },
+-        ];
+-      }),
+-    [toolbarActionsList, actionCtx, handleToolbarAction]
+-  );
++      const label = action.label;
++
++      return [
++        {
++          id: action.id,
++          icon: action.icon,
++          label,
++          tooltip: getActionTooltip(action, actionCtx),
++          disabled: !isActionEnabled(action, actionCtx),
++          onClick: () => handleToolbarAction(action),
++        },
++      ];
++    });
++
++    if (mode !== 'existing-session') {
++      return actionItems;
++    }
++
++    return [
++      {
++        id: 'migrate-session',
++        icon: ArrowsLeftRightIcon,
++        label: 'Migrate session',
++        tooltip: 'Start a new session with another executor',
++        disabled: !sessionId,
++        onClick: () => {
++          setMigrationError(null);
++          setIsMigrationDialogOpen(true);
++        },
++      },
++      ...actionItems,
++    ];
++  }, [toolbarActionsList, actionCtx, handleToolbarAction, mode, sessionId]);
+ 
+   // Handle approve action
+   const handleApprove = useCallback(async () => {
+@@ -999,132 +1260,149 @@ export function SessionChatBoxContainer(props: SessionChatBoxContainerProps) {
+   }
+ 
+   return (
+-    <SessionChatBox<BaseCodingAgent>
+-      status={status}
+-      onViewCode={disableViewCode ? undefined : handleViewCode}
+-      onOpenWorkspace={
+-        showOpenWorkspaceButton && workspaceId ? handleOpenWorkspace : undefined
+-      }
+-      onScrollToPreviousMessage={onScrollToPreviousMessage}
+-      userMessageTurns={userMessageTurns}
+-      onScrollToUserMessage={onScrollToUserMessage}
+-      getActiveTurnPatchKey={getActiveTurnPatchKey}
+-      renderEditor={renderEditor}
+-      repoIds={repoIds}
+-      tokenUsageInfo={tokenUsageInfo}
+-      supportsContextUsage={supportsContextUsage}
+-      formatExecutorLabel={toPrettyCase}
+-      formatSessionDate={(createdAt) =>
+-        formatDateShortWithTime(
+-          createdAt instanceof Date ? createdAt.toISOString() : createdAt
+-        )
+-      }
+-      renderAgentIcon={(executor, className) => (
+-        <AgentIcon
+-          agent={executor as BaseCodingAgent | null | undefined}
+-          className={className}
+-        />
+-      )}
+-      editor={{
+-        value: editorValue,
+-        onChange: handleEditorChange,
+-      }}
+-      actions={{
+-        onSend: handleSend,
+-        onQueue: handleQueueMessage,
+-        onCancelQueue: handleCancelQueue,
+-        onStop: stopExecution,
+-        onPasteFiles: uploadFiles,
+-      }}
+-      session={{
+-        sessions,
+-        selectedSessionId: sessionId,
+-        onSelectSession: onSelectSession ?? (() => {}),
+-        isNewSessionMode: needsExecutorSelection,
+-        onNewSession: onStartNewSession,
+-        onRenameSession: handleRenameSession,
+-      }}
+-      toolbarActions={{
+-        items: toolbarActionItems,
+-      }}
+-      onPrCommentClick={
+-        actionCtx.hasOpenPR ? handleInsertPrComments : undefined
+-      }
+-      stats={{
+-        filesChanged,
+-        linesAdded,
+-        linesRemoved,
+-        hasConflicts,
+-        conflictedFilesCount,
+-        onResolveConflicts: handleResolveConflicts,
+-      }}
+-      error={sendError}
+-      agent={effectiveExecutor}
+-      todos={todos}
+-      inProgressTodo={inProgressTodo}
+-      executor={
+-        needsExecutorSelection
+-          ? {
+-              selected: effectiveExecutor,
+-              options: executorOptions,
+-              onChange: handleExecutorChange,
+-            }
+-          : undefined
+-      }
+-      feedbackMode={
+-        feedbackContext
+-          ? {
+-              isActive: isInFeedbackMode,
+-              onSubmitFeedback: handleSubmitFeedback,
+-              onCancel: handleCancelFeedback,
+-              isSubmitting: feedbackContext.isSubmitting,
+-              error: feedbackContext.error,
+-              isTimedOut: feedbackContext.isTimedOut,
+-            }
+-          : undefined
+-      }
+-      approvalMode={
+-        pendingApproval && !pendingApproval.questions
+-          ? {
+-              isActive: true,
+-              onApprove: handleApprove,
+-              onRequestChanges: handleRequestChanges,
+-              isSubmitting: isApproving || isDenying,
+-              isTimedOut: isApprovalTimedOut,
+-              error: denyError?.message ?? null,
+-            }
+-          : undefined
+-      }
+-      askQuestionMode={
+-        pendingApproval?.questions
+-          ? {
+-              isActive: true,
+-              questions: pendingApproval.questions,
+-              onSubmitAnswers: handleAnswerQuestion,
+-              isSubmitting: isAnswering,
+-              isTimedOut: isApprovalTimedOut,
+-              error: answerError?.message ?? null,
+-            }
+-          : undefined
+-      }
+-      editMode={{
+-        isActive: isInEditMode,
+-        onSubmitEdit: handleSubmitEdit,
+-        onCancel: handleCancelEdit,
+-        isSubmitting: editRetryMutation.isPending,
+-      }}
+-      reviewComments={
+-        hasReviewComments && reviewContext
+-          ? {
+-              count: reviewContext.comments.length,
+-              previewMarkdown: reviewMarkdown,
+-              onClear: reviewContext.clearComments,
+-            }
+-          : undefined
+-      }
+-      localAttachments={localAttachments}
+-      dropzone={{ getRootProps, getInputProps, isDragActive }}
+-      modelSelector={modelSelectorNode}
+-    />
++    <>
++      <SessionChatBox<BaseCodingAgent>
++        status={status}
++        onViewCode={disableViewCode ? undefined : handleViewCode}
++        onOpenWorkspace={
++          showOpenWorkspaceButton && workspaceId
++            ? handleOpenWorkspace
++            : undefined
++        }
++        onScrollToPreviousMessage={onScrollToPreviousMessage}
++        userMessageTurns={userMessageTurns}
++        onScrollToUserMessage={onScrollToUserMessage}
++        getActiveTurnPatchKey={getActiveTurnPatchKey}
++        renderEditor={renderEditor}
++        repoIds={repoIds}
++        tokenUsageInfo={tokenUsageInfo}
++        supportsContextUsage={supportsContextUsage}
++        formatExecutorLabel={toPrettyCase}
++        formatSessionDate={(createdAt) =>
++          formatDateShortWithTime(
++            createdAt instanceof Date ? createdAt.toISOString() : createdAt
++          )
++        }
++        renderAgentIcon={(executor, className) => (
++          <AgentIcon
++            agent={executor as BaseCodingAgent | null | undefined}
++            className={className}
++          />
++        )}
++        editor={{
++          value: editorValue,
++          onChange: handleEditorChange,
++        }}
++        actions={{
++          onSend: handleSend,
++          onQueue: handleQueueMessage,
++          onCancelQueue: handleCancelQueue,
++          onStop: stopExecution,
++          onPasteFiles: uploadFiles,
++        }}
++        session={{
++          sessions,
++          selectedSessionId: sessionId,
++          onSelectSession: onSelectSession ?? (() => {}),
++          isNewSessionMode: needsExecutorSelection,
++          onNewSession: onStartNewSession,
++          onRenameSession: handleRenameSession,
++        }}
++        toolbarActions={{
++          items: toolbarActionItems,
++        }}
++        onPrCommentClick={
++          actionCtx.hasOpenPR ? handleInsertPrComments : undefined
++        }
++        stats={{
++          filesChanged,
++          linesAdded,
++          linesRemoved,
++          hasConflicts,
++          conflictedFilesCount,
++          onResolveConflicts: handleResolveConflicts,
++        }}
++        error={sendError}
++        agent={effectiveExecutor}
++        todos={todos}
++        inProgressTodo={inProgressTodo}
++        executor={
++          needsExecutorSelection
++            ? {
++                selected: effectiveExecutor,
++                options: executorOptions,
++                onChange: handleExecutorChange,
++              }
++            : undefined
++        }
++        feedbackMode={
++          feedbackContext
++            ? {
++                isActive: isInFeedbackMode,
++                onSubmitFeedback: handleSubmitFeedback,
++                onCancel: handleCancelFeedback,
++                isSubmitting: feedbackContext.isSubmitting,
++                error: feedbackContext.error,
++                isTimedOut: feedbackContext.isTimedOut,
++              }
++            : undefined
++        }
++        approvalMode={
++          pendingApproval && !pendingApproval.questions
++            ? {
++                isActive: true,
++                onApprove: handleApprove,
++                onRequestChanges: handleRequestChanges,
++                isSubmitting: isApproving || isDenying,
++                isTimedOut: isApprovalTimedOut,
++                error: denyError?.message ?? null,
++              }
++            : undefined
++        }
++        askQuestionMode={
++          pendingApproval?.questions
++            ? {
++                isActive: true,
++                questions: pendingApproval.questions,
++                onSubmitAnswers: handleAnswerQuestion,
++                isSubmitting: isAnswering,
++                isTimedOut: isApprovalTimedOut,
++                error: answerError?.message ?? null,
++              }
++            : undefined
++        }
++        editMode={{
++          isActive: isInEditMode,
++          onSubmitEdit: handleSubmitEdit,
++          onCancel: handleCancelEdit,
++          isSubmitting: editRetryMutation.isPending,
++        }}
++        reviewComments={
++          hasReviewComments && reviewContext
++            ? {
++                count: reviewContext.comments.length,
++                previewMarkdown: reviewMarkdown,
++                onClear: reviewContext.clearComments,
++              }
++            : undefined
++        }
++        localAttachments={localAttachments}
++        dropzone={{ getRootProps, getInputProps, isDragActive }}
++        modelSelector={modelSelectorNode}
++      />
++      <SessionMigrationDialog
++        open={isMigrationDialogOpen}
++        sourceSession={session}
++        workspaceId={workspaceId}
++        profiles={profiles}
++        latestConfig={latestConfig}
++        configExecutorProfile={config?.executor_profile}
++        entries={entries}
++        error={migrationError}
++        isMigrating={isMigratingSession}
++        onOpenChange={setIsMigrationDialogOpen}
++        onMigrate={handleMigrateSession}
++      />
++    </>
+   );
+ }

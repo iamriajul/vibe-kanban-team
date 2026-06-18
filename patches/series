@@ -41,3 +41,4 @@
 0040-feat-notify-browser-on-workspace-attention.patch
 0041-fix-reload-shared-auth-before-refresh.patch
 0042-feat-add-quick-effort-selector.patch
+0043-feat-add-session-migration.patch
