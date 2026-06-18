@@ -30,7 +30,7 @@ Downstream deployment and integration layer for Vibe Kanban. Owns the Helm chart
 
 - GitHub Actions own the checked-in release automation.
 - `remote-v*` tags build Remote and Relay images, publish them to GHCR, optionally mirror them to Docker Hub, and publish the Helm chart to GHCR as an OCI artifact.
-- `v*` tags publish the `vibe-kanban-team` npm package via `scripts/publish-npm.sh`.
+- `v*` tags upload Linux and macOS arm64 npm binaries, then publish `vibe-kanban-team` via `scripts/publish-npm.sh`.
 - Canonical releases must be tagged from `main` after the feature PR is merged. Do not release directly from feature branches.
 - `nightly-release-check.yml` runs on schedule for `frontend` and `remote`, compares upstream tags, verifies patch applicability, updates submodule + patch metadata, and pushes commit/tag for release workflows.
 - Manual workflow dispatch must target an existing `git_ref`; versions are derived from that ref.
@@ -124,7 +124,7 @@ Nightly release automation expects repository secrets:
 - `NIGHTLY_RELEASE_PUSH_TOKEN`: PAT/fine-grained token with `contents:write` to push commits + tags (tag pushes trigger release workflows)
 - `DISCORD_WEBHOOK_URL`: Discord webhook used for patch-failure alerts
 
-NPM release automation uses npm trusted publishing / OIDC for `.github/workflows/publish-npm.yml`; no `NPM_TOKEN` is required in Actions. `scripts/publish-npm.sh` still supports `NPM_PUBLISH_AUTH=token` for local fallback.
+NPM release automation uses npm trusted publishing / OIDC for `.github/workflows/publish-npm.yml`; no `NPM_TOKEN` is required in Actions. `scripts/publish-npm.sh` supports `PUBLISH_BINARY_ARTIFACTS=0` / `PUBLISH_NPM_PACKAGE=0` job splits and `NPM_PUBLISH_AUTH=token` for local fallback.
 
 **Gitignore** (do not modify): `values-production.yaml`, `*-secrets.yaml`, `*-secret.yaml`, `.env*`
 

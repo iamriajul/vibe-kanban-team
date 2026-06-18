@@ -15,36 +15,77 @@ permissions:
   contents: read
   id-token: write
 
+env:
+  R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+  R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+  R2_ENDPOINT: ${{ vars.R2_ENDPOINT }}
+  R2_BUCKET: ${{ vars.R2_BUCKET }}
+  R2_PUBLIC_URL: ${{ vars.R2_PUBLIC_URL }}
+  VITE_PUBLIC_REACT_VIRTUOSO_LICENSE_KEY: ${{ secrets.VITE_PUBLIC_REACT_VIRTUOSO_LICENSE_KEY }}
+  NODE_OPTIONS: --max-old-space-size=6144
+  SKIP_SYSTEM_DEPS: "1"
+
 jobs:
-  publish:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      checkout_ref: ${{ steps.version.outputs.checkout_ref }}
+      npm_tag: ${{ steps.version.outputs.npm_tag }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Determine release version and npm tag
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            raw_ref="${{ inputs.git_ref }}"
+          else
+            raw_ref="${GITHUB_REF}"
+          fi
+
+          ref_name="${raw_ref#refs/tags/}"
+          ref_name="${ref_name#refs/heads/}"
+
+          if [[ ! "$ref_name" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-.].*)?$ ]]; then
+            echo "Expected an npm release tag like v1.2.3 or v1.2.3-20260408120000, got: $raw_ref"
+            exit 1
+          fi
+
+          version="${ref_name#v}"
+          npm_tag="latest"
+
+          if [ -z "$version" ]; then
+            echo "Release version is empty"
+            exit 1
+          fi
+
+          echo "checkout_ref=$raw_ref" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "npm_tag=$npm_tag" >> "$GITHUB_OUTPUT"
+
+  build-linux-x64:
+    needs: prepare
     runs-on: ubuntu-latest
     env:
-      NPM_PUBLISH_AUTH: oidc
-      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-      R2_ENDPOINT: ${{ vars.R2_ENDPOINT }}
-      R2_BUCKET: ${{ vars.R2_BUCKET }}
-      R2_PUBLIC_URL: ${{ vars.R2_PUBLIC_URL }}
-      VITE_PUBLIC_REACT_VIRTUOSO_LICENSE_KEY: ${{ secrets.VITE_PUBLIC_REACT_VIRTUOSO_LICENSE_KEY }}
-      NODE_OPTIONS: --max-old-space-size=6144
-      SKIP_SYSTEM_DEPS: "1"
       LIBSQLITE3_SYS_USE_PKG_CONFIG: "1"
+      NPM_VERSION: ${{ needs.prepare.outputs.version }}
+      NPM_TAG: ${{ needs.prepare.outputs.npm_tag }}
+      PUBLISH_BINARY_ARTIFACTS: "1"
+      PUBLISH_NPM_PACKAGE: "0"
+      UPDATE_LATEST_BINARY_POINTER: "0"
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.git_ref || github.ref }}
+          ref: ${{ needs.prepare.outputs.checkout_ref }}
           submodules: recursive
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "24"
-          registry-url: "https://registry.npmjs.org"
-
-      - name: Update npm for trusted publishing
-        shell: bash
-        run: npm install -g npm@latest
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -78,43 +119,8 @@ jobs:
           sudo ./aws/install --update
           aws --version
 
-      - name: Determine release version and npm tag
-        id: version
+      - name: Upload Linux x64 binaries
         shell: bash
-        run: |
-          set -euo pipefail
-
-          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
-            raw_ref="${{ inputs.git_ref }}"
-          else
-            raw_ref="${GITHUB_REF_NAME}"
-          fi
-
-          ref_name="${raw_ref#refs/tags/}"
-          ref_name="${ref_name#refs/heads/}"
-
-          if [[ ! "$ref_name" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-.].*)?$ ]]; then
-            echo "Expected an npm release tag like v1.2.3 or v1.2.3-20260408120000, got: $raw_ref"
-            exit 1
-          fi
-
-          version="${ref_name#v}"
-
-          npm_tag="latest"
-
-          if [ -z "$version" ]; then
-            echo "Release version is empty"
-            exit 1
-          fi
-
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "npm_tag=$npm_tag" >> "$GITHUB_OUTPUT"
-
-      - name: Publish package
-        shell: bash
-        env:
-          NPM_VERSION: ${{ steps.version.outputs.version }}
-          NPM_TAG: ${{ steps.version.outputs.npm_tag }}
         run: |
           set -euo pipefail
 
@@ -130,3 +136,86 @@ jobs:
           export LIBCLANG_PATH="$(dirname "$(find /usr/lib -name 'libclang.so*' -print -quit)")"
 
           ./scripts/publish-npm.sh
+
+  build-macos-arm64:
+    needs:
+      - prepare
+      - build-linux-x64
+    runs-on: macos-14
+    env:
+      MACOS_TARGET: aarch64-apple-darwin
+      NPM_VERSION: ${{ needs.prepare.outputs.version }}
+      NPM_TAG: ${{ needs.prepare.outputs.npm_tag }}
+      PUBLISH_BINARY_ARTIFACTS: "1"
+      PUBLISH_NPM_PACKAGE: "0"
+      UPDATE_LATEST_BINARY_POINTER: "1"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.checkout_ref }}
+          submodules: recursive
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          for formula in awscli cmake openssl@3 pkg-config; do
+            brew list --formula "$formula" >/dev/null 2>&1 || brew install "$formula"
+          done
+          aws --version
+
+      - name: Upload macOS arm64 binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          openssl_prefix="$(brew --prefix openssl@3)"
+          export OPENSSL_DIR="$openssl_prefix"
+          export OPENSSL_INCLUDE_DIR="$openssl_prefix/include"
+          export OPENSSL_LIB_DIR="$openssl_prefix/lib"
+          export PKG_CONFIG_PATH="$openssl_prefix/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+
+          ./scripts/publish-npm.sh
+
+  publish:
+    needs:
+      - prepare
+      - build-macos-arm64
+    runs-on: ubuntu-latest
+    env:
+      NPM_PUBLISH_AUTH: oidc
+      NPM_VERSION: ${{ needs.prepare.outputs.version }}
+      NPM_TAG: ${{ needs.prepare.outputs.npm_tag }}
+      PUBLISH_BINARY_ARTIFACTS: "0"
+      PUBLISH_NPM_PACKAGE: "1"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.checkout_ref }}
+          submodules: recursive
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Update npm for trusted publishing
+        shell: bash
+        run: npm install -g npm@latest
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Publish package
+        shell: bash
+        run: ./scripts/publish-npm.sh

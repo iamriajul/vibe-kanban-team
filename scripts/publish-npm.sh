@@ -296,41 +296,73 @@ require_cmd git
 require_cmd "${NODE_CMD}"
 require_cmd npm
 require_cmd pnpm
-require_cmd cargo
-require_cmd rustc
-require_cmd zip
-require_cmd aws
 
-NPM_PUBLISH_AUTH="${NPM_PUBLISH_AUTH:-}"
-if [ -z "${NPM_PUBLISH_AUTH}" ]; then
-  if [ -n "${NPM_TOKEN:-}" ]; then
-    NPM_PUBLISH_AUTH="token"
-  else
-    NPM_PUBLISH_AUTH="oidc"
-  fi
-fi
+PUBLISH_BINARY_ARTIFACTS="${PUBLISH_BINARY_ARTIFACTS:-1}"
+PUBLISH_NPM_PACKAGE="${PUBLISH_NPM_PACKAGE:-1}"
+UPDATE_LATEST_BINARY_POINTER="${UPDATE_LATEST_BINARY_POINTER:-1}"
 
-case "${NPM_PUBLISH_AUTH}" in
-  token)
-    require_env NPM_TOKEN
-    ;;
-  oidc)
-    if [ "${GITHUB_ACTIONS:-}" = "true" ] &&
-       { [ -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ] || [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; }; then
-      die "NPM_PUBLISH_AUTH=oidc requires GitHub Actions id-token: write permission"
-    fi
-    ;;
-  *)
-    die "NPM_PUBLISH_AUTH must be 'oidc' or 'token'"
-    ;;
+case "${PUBLISH_BINARY_ARTIFACTS}" in
+  0|1) ;;
+  *) die "PUBLISH_BINARY_ARTIFACTS must be 0 or 1" ;;
 esac
 
-require_env R2_ACCESS_KEY_ID
-require_env R2_SECRET_ACCESS_KEY
-require_env R2_ENDPOINT
-require_env R2_BUCKET
-require_env R2_PUBLIC_URL
-require_env VITE_PUBLIC_REACT_VIRTUOSO_LICENSE_KEY
+case "${PUBLISH_NPM_PACKAGE}" in
+  0|1) ;;
+  *) die "PUBLISH_NPM_PACKAGE must be 0 or 1" ;;
+esac
+
+case "${UPDATE_LATEST_BINARY_POINTER}" in
+  0|1) ;;
+  *) die "UPDATE_LATEST_BINARY_POINTER must be 0 or 1" ;;
+esac
+
+if [ "${PUBLISH_BINARY_ARTIFACTS}" -eq 0 ] && [ "${PUBLISH_NPM_PACKAGE}" -eq 0 ]; then
+  die "Nothing to do: enable PUBLISH_BINARY_ARTIFACTS and/or PUBLISH_NPM_PACKAGE"
+fi
+
+NPM_PUBLISH_AUTH="${NPM_PUBLISH_AUTH:-}"
+if [ "${PUBLISH_NPM_PACKAGE}" -eq 1 ]; then
+  if [ -z "${NPM_PUBLISH_AUTH}" ]; then
+    if [ -n "${NPM_TOKEN:-}" ]; then
+      NPM_PUBLISH_AUTH="token"
+    else
+      NPM_PUBLISH_AUTH="oidc"
+    fi
+  fi
+
+  case "${NPM_PUBLISH_AUTH}" in
+    token)
+      require_env NPM_TOKEN
+      ;;
+    oidc)
+      if [ "${GITHUB_ACTIONS:-}" = "true" ] &&
+         { [ -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ] || [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; }; then
+        die "NPM_PUBLISH_AUTH=oidc requires GitHub Actions id-token: write permission"
+      fi
+      ;;
+    *)
+      die "NPM_PUBLISH_AUTH must be 'oidc' or 'token'"
+      ;;
+  esac
+fi
+
+if [ "${PUBLISH_BINARY_ARTIFACTS}" -eq 1 ]; then
+  require_cmd cargo
+  require_cmd rustc
+  require_cmd zip
+  require_cmd aws
+
+  require_env R2_ACCESS_KEY_ID
+  require_env R2_SECRET_ACCESS_KEY
+  require_env R2_ENDPOINT
+  require_env R2_BUCKET
+  require_env R2_PUBLIC_URL
+  require_env VITE_PUBLIC_REACT_VIRTUOSO_LICENSE_KEY
+fi
+
+if [ "${PUBLISH_NPM_PACKAGE}" -eq 1 ]; then
+  require_env R2_PUBLIC_URL
+fi
 
 if [ ! -e "${VIBE_DIR}/.git" ]; then
   echo "Missing submodule repo at ${VIBE_DIR}"
@@ -379,6 +411,9 @@ BINARY_TAG="v${VERSION}"
 echo "Using version: ${VERSION}"
 echo "Using binary tag: ${BINARY_TAG}"
 echo "Using npm dist-tag: ${NPM_TAG}"
+echo "Publish binary artifacts: ${PUBLISH_BINARY_ARTIFACTS}"
+echo "Publish npm package: ${PUBLISH_NPM_PACKAGE}"
+echo "Update latest binary pointer: ${UPDATE_LATEST_BINARY_POINTER}"
 
 echo "Applying downstream patches..."
 "${ROOT_DIR}/scripts/apply-patches.sh" vibe-kanban
@@ -416,275 +451,283 @@ ${NODE_CMD} -e "
 echo "Installing dependencies..."
 (cd "${VIBE_DIR}" && pnpm install)
 
-echo "Building frontend..."
-if [ -d "${VIBE_DIR}/packages/local-web" ]; then
-  (cd "${VIBE_DIR}" && pnpm --filter @vibe/local-web run build)
-elif [ -d "${VIBE_DIR}/frontend" ]; then
-  (cd "${VIBE_DIR}/frontend" && pnpm run build)
-else
-  die "Frontend source directory not found. Expected '${VIBE_DIR}/packages/local-web' or '${VIBE_DIR}/frontend'."
-fi
+if [ "${PUBLISH_BINARY_ARTIFACTS}" -eq 1 ]; then
+  echo "Building frontend..."
+  if [ -d "${VIBE_DIR}/packages/local-web" ]; then
+    (cd "${VIBE_DIR}" && pnpm --filter @vibe/local-web run build)
+  elif [ -d "${VIBE_DIR}/frontend" ]; then
+    (cd "${VIBE_DIR}/frontend" && pnpm run build)
+  else
+    die "Frontend source directory not found. Expected '${VIBE_DIR}/packages/local-web' or '${VIBE_DIR}/frontend'."
+  fi
 
-HOST_TRIPLE="$(rustc -vV | awk '/host/ {print $2}')"
+  HOST_TRIPLE="$(rustc -vV | awk '/host/ {print $2}')"
 
-TARGET_TRIPLE="${TARGET_TRIPLE:-}"
-if [ -z "${TARGET_TRIPLE}" ]; then
+  TARGET_TRIPLE="${TARGET_TRIPLE:-}"
+  if [ -z "${TARGET_TRIPLE}" ]; then
+    case "${OS_NAME}" in
+      Darwin)
+        TARGET_TRIPLE="${MACOS_TARGET:-${HOST_TRIPLE}}"
+        ;;
+      Linux)
+        TARGET_TRIPLE="${LINUX_TARGET:-${HOST_TRIPLE}}"
+        ;;
+    esac
+  fi
+
   case "${OS_NAME}" in
     Darwin)
-      TARGET_TRIPLE="${MACOS_TARGET:-${HOST_TRIPLE}}"
+      case "${HOST_TRIPLE}" in
+        *apple-darwin)
+          ;;
+        *)
+          die "Rust host target '${HOST_TRIPLE}' is not macOS. Run this script on a macOS host."
+          ;;
+      esac
+      case "${TARGET_TRIPLE}" in
+        *apple-darwin)
+          ;;
+        *)
+          die "Unsupported macOS target triple: ${TARGET_TRIPLE}. Expected an *-apple-darwin triple."
+          ;;
+      esac
       ;;
     Linux)
-      TARGET_TRIPLE="${LINUX_TARGET:-${HOST_TRIPLE}}"
+      # Best-effort sanity check only; cross builds are still allowed.
+      case "${TARGET_TRIPLE}" in
+        *linux*)
+          ;;
+        *)
+          log "Warning: target triple '${TARGET_TRIPLE}' does not look like Linux."
+          ;;
+      esac
       ;;
   esac
-fi
 
-case "${OS_NAME}" in
-  Darwin)
-    case "${HOST_TRIPLE}" in
-      *apple-darwin)
-        ;;
-      *)
-        die "Rust host target '${HOST_TRIPLE}' is not macOS. Run this script on a macOS host."
-        ;;
-    esac
-    case "${TARGET_TRIPLE}" in
-      *apple-darwin)
-        ;;
-      *)
-        die "Unsupported macOS target triple: ${TARGET_TRIPLE}. Expected an *-apple-darwin triple."
-        ;;
-    esac
-    ;;
-  Linux)
-    # Best-effort sanity check only; cross builds are still allowed.
-    case "${TARGET_TRIPLE}" in
-      *linux*)
-        ;;
-      *)
-        log "Warning: target triple '${TARGET_TRIPLE}' does not look like Linux."
-        ;;
-    esac
-    ;;
-esac
+  if [ "${TARGET_TRIPLE}" != "${HOST_TRIPLE}" ]; then
+    echo "Adding Rust target ${TARGET_TRIPLE}..."
+    rustup target add "${TARGET_TRIPLE}"
+  fi
 
-if [ "${TARGET_TRIPLE}" != "${HOST_TRIPLE}" ]; then
-  echo "Adding Rust target ${TARGET_TRIPLE}..."
-  rustup target add "${TARGET_TRIPLE}"
-fi
-
-echo "Resolving MCP binary target..."
-MCP_BIN_TARGET="$(
-  cd "${VIBE_DIR}" && cargo metadata --no-deps --format-version 1 | ${NODE_CMD} -e '
-    let data = "";
-    process.stdin.on("data", chunk => data += chunk);
-    process.stdin.on("end", () => {
-      const metadata = JSON.parse(data);
-      const binTargets = new Set();
-      for (const pkg of metadata.packages || []) {
-        for (const target of pkg.targets || []) {
-          if ((target.kind || []).includes("bin")) {
-            binTargets.add(target.name);
+  echo "Resolving MCP binary target..."
+  MCP_BIN_TARGET="$(
+    cd "${VIBE_DIR}" && cargo metadata --no-deps --format-version 1 | ${NODE_CMD} -e '
+      let data = "";
+      process.stdin.on("data", chunk => data += chunk);
+      process.stdin.on("end", () => {
+        const metadata = JSON.parse(data);
+        const binTargets = new Set();
+        for (const pkg of metadata.packages || []) {
+          for (const target of pkg.targets || []) {
+            if ((target.kind || []).includes("bin")) {
+              binTargets.add(target.name);
+            }
           }
         }
-      }
-      if (binTargets.has("vibe-kanban-mcp")) {
-        process.stdout.write("vibe-kanban-mcp");
-      } else if (binTargets.has("mcp_task_server")) {
-        process.stdout.write("mcp_task_server");
-      }
-    });
-  '
-)"
-if [ -z "${MCP_BIN_TARGET}" ]; then
-  die "Unable to detect MCP binary target. Expected 'vibe-kanban-mcp' or 'mcp_task_server'."
-fi
-echo "Using MCP binary target: ${MCP_BIN_TARGET}"
-
-echo "Building backend binaries for ${TARGET_TRIPLE}..."
-if [ "${TARGET_TRIPLE}" = "${HOST_TRIPLE}" ]; then
-  (cd "${VIBE_DIR}" && cargo build --release --bin server --bin "${MCP_BIN_TARGET}" --bin review)
-  TARGET_DIR="${VIBE_DIR}/target/release"
-else
-  (cd "${VIBE_DIR}" && cargo build --release --target "${TARGET_TRIPLE}" --bin server --bin "${MCP_BIN_TARGET}" --bin review)
-  TARGET_DIR="${VIBE_DIR}/target/${TARGET_TRIPLE}/release"
-fi
-
-if [ ! -f "${TARGET_DIR}/server" ]; then
-  echo "Expected binary not found at ${TARGET_DIR}/server"
-  exit 1
-fi
-if [ ! -f "${TARGET_DIR}/${MCP_BIN_TARGET}" ]; then
-  echo "Expected binary not found at ${TARGET_DIR}/${MCP_BIN_TARGET}"
-  exit 1
-fi
-if [ ! -f "${TARGET_DIR}/review" ]; then
-  echo "Expected binary not found at ${TARGET_DIR}/review"
-  exit 1
-fi
-
-PLATFORM_DIR=""
-case "${OS_NAME}" in
-  Linux)
-    PLATFORM_DIR="linux-x64"
-    if [[ "${TARGET_TRIPLE}" == *"aarch64"* ]] || [[ "${TARGET_TRIPLE}" == *"arm64"* ]]; then
-      PLATFORM_DIR="linux-arm64"
-    fi
-    ;;
-  Darwin)
-    case "${TARGET_TRIPLE}" in
-      x86_64-apple-darwin)
-        PLATFORM_DIR="macos-x64"
-        ;;
-      aarch64-apple-darwin|arm64-apple-darwin)
-        PLATFORM_DIR="macos-arm64"
-        ;;
-      *)
-        die "Unsupported macOS target triple: ${TARGET_TRIPLE}. Supported: x86_64-apple-darwin, aarch64-apple-darwin"
-        ;;
-    esac
-    ;;
-esac
-
-DIST_DIR="${VIBE_DIR}/npx-cli/dist/${PLATFORM_DIR}"
-rm -rf "${DIST_DIR}"
-mkdir -p "${DIST_DIR}"
-
-echo "Packaging binaries..."
-WORK_DIR="$(mktemp -d)"
-
-cp "${TARGET_DIR}/server" "${WORK_DIR}/vibe-kanban"
-zip -j "${DIST_DIR}/vibe-kanban.zip" "${WORK_DIR}/vibe-kanban" >/dev/null
-
-cp "${TARGET_DIR}/${MCP_BIN_TARGET}" "${WORK_DIR}/vibe-kanban-mcp"
-zip -j "${DIST_DIR}/vibe-kanban-mcp.zip" "${WORK_DIR}/vibe-kanban-mcp" >/dev/null
-
-cp "${TARGET_DIR}/review" "${WORK_DIR}/vibe-kanban-review"
-zip -j "${DIST_DIR}/vibe-kanban-review.zip" "${WORK_DIR}/vibe-kanban-review" >/dev/null
-
-rm -rf "${WORK_DIR}"
-
-echo "Generating manifest..."
-PLATFORM_MANIFEST_PATH="${TMP_DIR}/platform-manifest.json"
-MANIFEST_PATH="${TMP_DIR}/version-manifest.json"
-${NODE_CMD} -e "
-  const fs = require('fs');
-  const crypto = require('crypto');
-  const tag = '${BINARY_TAG}';
-  const platform = '${PLATFORM_DIR}';
-  const binaries = ['vibe-kanban', 'vibe-kanban-mcp', 'vibe-kanban-review'];
-  const manifest = { version: tag, platforms: { [platform]: {} } };
-  for (const bin of binaries) {
-    const zipPath = '${DIST_DIR}/' + bin + '.zip';
-    if (!fs.existsSync(zipPath)) continue;
-    const data = fs.readFileSync(zipPath);
-    manifest.platforms[platform][bin] = {
-      sha256: crypto.createHash('sha256').update(data).digest('hex'),
-      size: data.length,
-    };
-  }
-  fs.writeFileSync('${PLATFORM_MANIFEST_PATH}', JSON.stringify(manifest, null, 2));
-"
-
-echo "Uploading to R2..."
-export AWS_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID}"
-export AWS_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY}"
-export AWS_DEFAULT_REGION="${R2_REGION:-auto}"
-export AWS_EC2_METADATA_DISABLED=true
-
-EXISTING_MANIFEST_PATH="${TMP_DIR}/existing-manifest.json"
-if aws --endpoint-url "${R2_ENDPOINT}" s3 cp \
-  "s3://${R2_BUCKET}/binaries/${BINARY_TAG}/manifest.json" \
-  "${EXISTING_MANIFEST_PATH}" >/dev/null 2>&1; then
-  echo "Merging with existing manifest for ${BINARY_TAG}..."
-else
-  rm -f "${EXISTING_MANIFEST_PATH}"
-fi
-
-${NODE_CMD} -e "
-  const fs = require('fs');
-  const outPath = '${MANIFEST_PATH}';
-  const platformPath = '${PLATFORM_MANIFEST_PATH}';
-  const existingPath = '${EXISTING_MANIFEST_PATH}';
-
-  const merged = { version: '${BINARY_TAG}', platforms: {} };
-  if (fs.existsSync(existingPath)) {
-    try {
-      const existing = JSON.parse(fs.readFileSync(existingPath, 'utf8'));
-      if (existing && typeof existing === 'object' && existing.platforms && typeof existing.platforms === 'object') {
-        merged.platforms = existing.platforms;
-      }
-    } catch {}
-  }
-
-  const platformManifest = JSON.parse(fs.readFileSync(platformPath, 'utf8'));
-  merged.version = '${BINARY_TAG}';
-  merged.platforms['${PLATFORM_DIR}'] = platformManifest.platforms?.['${PLATFORM_DIR}'] || {};
-
-  fs.writeFileSync(outPath, JSON.stringify(merged, null, 2));
-"
-
-for bin in vibe-kanban vibe-kanban-mcp vibe-kanban-review; do
-  ZIP_PATH="${DIST_DIR}/${bin}.zip"
-  if [ -f "${ZIP_PATH}" ]; then
-    aws --endpoint-url "${R2_ENDPOINT}" s3 cp \
-      "${ZIP_PATH}" \
-      "s3://${R2_BUCKET}/binaries/${BINARY_TAG}/${PLATFORM_DIR}/${bin}.zip"
+        if (binTargets.has("vibe-kanban-mcp")) {
+          process.stdout.write("vibe-kanban-mcp");
+        } else if (binTargets.has("mcp_task_server")) {
+          process.stdout.write("mcp_task_server");
+        }
+      });
+    '
+  )"
+  if [ -z "${MCP_BIN_TARGET}" ]; then
+    die "Unable to detect MCP binary target. Expected 'vibe-kanban-mcp' or 'mcp_task_server'."
   fi
-done
+  echo "Using MCP binary target: ${MCP_BIN_TARGET}"
 
-aws --endpoint-url "${R2_ENDPOINT}" s3 cp \
-  "${MANIFEST_PATH}" \
-  "s3://${R2_BUCKET}/binaries/${BINARY_TAG}/manifest.json" \
-  --content-type "application/json"
+  echo "Building backend binaries for ${TARGET_TRIPLE}..."
+  if [ "${TARGET_TRIPLE}" = "${HOST_TRIPLE}" ]; then
+    (cd "${VIBE_DIR}" && cargo build --release --bin server --bin "${MCP_BIN_TARGET}" --bin review)
+    TARGET_DIR="${VIBE_DIR}/target/release"
+  else
+    (cd "${VIBE_DIR}" && cargo build --release --target "${TARGET_TRIPLE}" --bin server --bin "${MCP_BIN_TARGET}" --bin review)
+    TARGET_DIR="${VIBE_DIR}/target/${TARGET_TRIPLE}/release"
+  fi
 
-# Only update the "latest" pointer when publishing under the npm "latest" dist-tag.
-if [ "${NPM_TAG}" = "latest" ]; then
-  echo "{\"latest\": \"${VERSION}\"}" | aws --endpoint-url "${R2_ENDPOINT}" s3 cp \
-    - "s3://${R2_BUCKET}/binaries/manifest.json" \
+  if [ ! -f "${TARGET_DIR}/server" ]; then
+    echo "Expected binary not found at ${TARGET_DIR}/server"
+    exit 1
+  fi
+  if [ ! -f "${TARGET_DIR}/${MCP_BIN_TARGET}" ]; then
+    echo "Expected binary not found at ${TARGET_DIR}/${MCP_BIN_TARGET}"
+    exit 1
+  fi
+  if [ ! -f "${TARGET_DIR}/review" ]; then
+    echo "Expected binary not found at ${TARGET_DIR}/review"
+    exit 1
+  fi
+
+  PLATFORM_DIR=""
+  case "${OS_NAME}" in
+    Linux)
+      PLATFORM_DIR="linux-x64"
+      if [[ "${TARGET_TRIPLE}" == *"aarch64"* ]] || [[ "${TARGET_TRIPLE}" == *"arm64"* ]]; then
+        PLATFORM_DIR="linux-arm64"
+      fi
+      ;;
+    Darwin)
+      case "${TARGET_TRIPLE}" in
+        x86_64-apple-darwin)
+          PLATFORM_DIR="macos-x64"
+          ;;
+        aarch64-apple-darwin|arm64-apple-darwin)
+          PLATFORM_DIR="macos-arm64"
+          ;;
+        *)
+          die "Unsupported macOS target triple: ${TARGET_TRIPLE}. Supported: x86_64-apple-darwin, aarch64-apple-darwin"
+          ;;
+      esac
+      ;;
+  esac
+
+  DIST_DIR="${VIBE_DIR}/npx-cli/dist/${PLATFORM_DIR}"
+  rm -rf "${DIST_DIR}"
+  mkdir -p "${DIST_DIR}"
+
+  echo "Packaging binaries..."
+  WORK_DIR="$(mktemp -d)"
+
+  cp "${TARGET_DIR}/server" "${WORK_DIR}/vibe-kanban"
+  zip -j "${DIST_DIR}/vibe-kanban.zip" "${WORK_DIR}/vibe-kanban" >/dev/null
+
+  cp "${TARGET_DIR}/${MCP_BIN_TARGET}" "${WORK_DIR}/vibe-kanban-mcp"
+  zip -j "${DIST_DIR}/vibe-kanban-mcp.zip" "${WORK_DIR}/vibe-kanban-mcp" >/dev/null
+
+  cp "${TARGET_DIR}/review" "${WORK_DIR}/vibe-kanban-review"
+  zip -j "${DIST_DIR}/vibe-kanban-review.zip" "${WORK_DIR}/vibe-kanban-review" >/dev/null
+
+  rm -rf "${WORK_DIR}"
+
+  echo "Generating manifest..."
+  PLATFORM_MANIFEST_PATH="${TMP_DIR}/platform-manifest.json"
+  MANIFEST_PATH="${TMP_DIR}/version-manifest.json"
+  ${NODE_CMD} -e "
+    const fs = require('fs');
+    const crypto = require('crypto');
+    const tag = '${BINARY_TAG}';
+    const platform = '${PLATFORM_DIR}';
+    const binaries = ['vibe-kanban', 'vibe-kanban-mcp', 'vibe-kanban-review'];
+    const manifest = { version: tag, platforms: { [platform]: {} } };
+    for (const bin of binaries) {
+      const zipPath = '${DIST_DIR}/' + bin + '.zip';
+      if (!fs.existsSync(zipPath)) continue;
+      const data = fs.readFileSync(zipPath);
+      manifest.platforms[platform][bin] = {
+        sha256: crypto.createHash('sha256').update(data).digest('hex'),
+        size: data.length,
+      };
+    }
+    fs.writeFileSync('${PLATFORM_MANIFEST_PATH}', JSON.stringify(manifest, null, 2));
+  "
+
+  echo "Uploading to R2..."
+  export AWS_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID}"
+  export AWS_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY}"
+  export AWS_DEFAULT_REGION="${R2_REGION:-auto}"
+  export AWS_EC2_METADATA_DISABLED=true
+
+  EXISTING_MANIFEST_PATH="${TMP_DIR}/existing-manifest.json"
+  if aws --endpoint-url "${R2_ENDPOINT}" s3 cp \
+    "s3://${R2_BUCKET}/binaries/${BINARY_TAG}/manifest.json" \
+    "${EXISTING_MANIFEST_PATH}" >/dev/null 2>&1; then
+    echo "Merging with existing manifest for ${BINARY_TAG}..."
+  else
+    rm -f "${EXISTING_MANIFEST_PATH}"
+  fi
+
+  ${NODE_CMD} -e "
+    const fs = require('fs');
+    const outPath = '${MANIFEST_PATH}';
+    const platformPath = '${PLATFORM_MANIFEST_PATH}';
+    const existingPath = '${EXISTING_MANIFEST_PATH}';
+
+    const merged = { version: '${BINARY_TAG}', platforms: {} };
+    if (fs.existsSync(existingPath)) {
+      try {
+        const existing = JSON.parse(fs.readFileSync(existingPath, 'utf8'));
+        if (existing && typeof existing === 'object' && existing.platforms && typeof existing.platforms === 'object') {
+          merged.platforms = existing.platforms;
+        }
+      } catch {}
+    }
+
+    const platformManifest = JSON.parse(fs.readFileSync(platformPath, 'utf8'));
+    merged.version = '${BINARY_TAG}';
+    merged.platforms['${PLATFORM_DIR}'] = platformManifest.platforms?.['${PLATFORM_DIR}'] || {};
+
+    fs.writeFileSync(outPath, JSON.stringify(merged, null, 2));
+  "
+
+  for bin in vibe-kanban vibe-kanban-mcp vibe-kanban-review; do
+    ZIP_PATH="${DIST_DIR}/${bin}.zip"
+    if [ -f "${ZIP_PATH}" ]; then
+      aws --endpoint-url "${R2_ENDPOINT}" s3 cp \
+        "${ZIP_PATH}" \
+        "s3://${R2_BUCKET}/binaries/${BINARY_TAG}/${PLATFORM_DIR}/${bin}.zip"
+    fi
+  done
+
+  aws --endpoint-url "${R2_ENDPOINT}" s3 cp \
+    "${MANIFEST_PATH}" \
+    "s3://${R2_BUCKET}/binaries/${BINARY_TAG}/manifest.json" \
     --content-type "application/json"
-else
-  log "Skipping binaries/manifest.json update because NPM_TAG=${NPM_TAG} (not 'latest')."
+
+  # Only update the "latest" pointer when publishing under the npm "latest" dist-tag.
+  if [ "${NPM_TAG}" = "latest" ] && [ "${UPDATE_LATEST_BINARY_POINTER}" -eq 1 ]; then
+    echo "{\"latest\": \"${VERSION}\"}" | aws --endpoint-url "${R2_ENDPOINT}" s3 cp \
+      - "s3://${R2_BUCKET}/binaries/manifest.json" \
+      --content-type "application/json"
+  elif [ "${NPM_TAG}" = "latest" ]; then
+    log "Skipping binaries/manifest.json update because UPDATE_LATEST_BINARY_POINTER=0."
+  else
+    log "Skipping binaries/manifest.json update because NPM_TAG=${NPM_TAG} (not 'latest')."
+  fi
 fi
 
-echo "Injecting R2 URL and tag into download.ts..."
-${NODE_CMD} -e "
-  const fs = require('fs');
-  const path = '${VIBE_DIR}/npx-cli/src/download.ts';
-  let data = fs.readFileSync(path, 'utf8');
-  data = data.replace(/__R2_PUBLIC_URL__/g, '${R2_PUBLIC_URL}');
-  data = data.replace(/__BINARY_TAG__/g, '${BINARY_TAG}');
-  fs.writeFileSync(path, data);
-"
+if [ "${PUBLISH_NPM_PACKAGE}" -eq 1 ]; then
+  echo "Injecting R2 URL and tag into download.ts..."
+  ${NODE_CMD} -e "
+    const fs = require('fs');
+    const path = '${VIBE_DIR}/npx-cli/src/download.ts';
+    let data = fs.readFileSync(path, 'utf8');
+    data = data.replace(/__R2_PUBLIC_URL__/g, '${R2_PUBLIC_URL}');
+    data = data.replace(/__BINARY_TAG__/g, '${BINARY_TAG}');
+    fs.writeFileSync(path, data);
+  "
 
-echo "Building npx-cli..."
-(cd "${VIBE_DIR}/npx-cli" && npm install && npm run build)
+  echo "Building npx-cli..."
+  (cd "${VIBE_DIR}/npx-cli" && npm install && npm run build)
 
-echo "Removing local dist artifacts before npm publish..."
-rm -rf "${VIBE_DIR}/npx-cli/dist"
+  echo "Removing local dist artifacts before npm publish..."
+  rm -rf "${VIBE_DIR}/npx-cli/dist"
 
-echo "Publishing to npm..."
-NPM_ARGS=()
+  echo "Publishing to npm..."
+  NPM_ARGS=()
 
-if [ "${NPM_PUBLISH_AUTH}" = "token" ]; then
-  NPMRC_BAK="${TMP_DIR}/.npmrc"
-  umask 077
-  printf "//registry.npmjs.org/:_authToken=%s\n" "${NPM_TOKEN}" > "${NPMRC_BAK}"
-  NPM_ARGS=(--userconfig "${NPMRC_BAK}")
+  if [ "${NPM_PUBLISH_AUTH}" = "token" ]; then
+    NPMRC_BAK="${TMP_DIR}/.npmrc"
+    umask 077
+    printf "//registry.npmjs.org/:_authToken=%s\n" "${NPM_TOKEN}" > "${NPMRC_BAK}"
+    NPM_ARGS=(--userconfig "${NPMRC_BAK}")
+  else
+    echo "Using npm trusted publishing (OIDC)."
+    # setup-node writes a token-based .npmrc when registry-url is configured.
+    # In OIDC mode, keep npm from falling back to stale token auth.
+    unset NODE_AUTH_TOKEN
+    unset NPM_CONFIG_USERCONFIG
+    unset npm_config_userconfig
+  fi
+
+  if (cd "${VIBE_DIR}/npx-cli" && npm "${NPM_ARGS[@]}" view "vibe-kanban-team@${VERSION}" version >/dev/null 2>&1); then
+    echo "npm version ${VERSION} already exists; skipping publish."
+  else
+    echo "Publishing to npm with dist-tag: ${NPM_TAG}"
+    (cd "${VIBE_DIR}/npx-cli" && npm "${NPM_ARGS[@]}" publish --ignore-scripts --access public --tag "${NPM_TAG}")
+  fi
 else
-  echo "Using npm trusted publishing (OIDC)."
-  # setup-node writes a token-based .npmrc when registry-url is configured.
-  # In OIDC mode, keep npm from falling back to stale token auth.
-  unset NODE_AUTH_TOKEN
-  unset NPM_CONFIG_USERCONFIG
-  unset npm_config_userconfig
-fi
-
-if (cd "${VIBE_DIR}/npx-cli" && npm "${NPM_ARGS[@]}" view "vibe-kanban-team@${VERSION}" version >/dev/null 2>&1); then
-  echo "npm version ${VERSION} already exists; skipping publish."
-else
-  echo "Publishing to npm with dist-tag: ${NPM_TAG}"
-  (cd "${VIBE_DIR}/npx-cli" && npm "${NPM_ARGS[@]}" publish --ignore-scripts --access public --tag "${NPM_TAG}")
+  log "Skipping npm package publish because PUBLISH_NPM_PACKAGE=0."
 fi
 
 echo "Publish complete."
