@@ -1,0 +1,205 @@
+From eeb40823e593044280318556c99861536901e024 Mon Sep 17 00:00:00 2001
+From: Riajul Islam <kmriajulislami@gmail.com>
+Date: Thu, 18 Jun 2026 11:24:56 +0000
+Subject: [PATCH] feat: notify browser on workspace attention
+
+---
+ packages/local-web/src/routes/_app.tsx        |   2 +
+ packages/remote-web/src/routes/__root.tsx     |   6 +-
+ .../src/shared/hooks/useWorkspaces.ts         |   4 +-
+ .../AppWorkspaceAttentionNotifications.tsx    | 117 ++++++++++++++++++
+ 4 files changed, 127 insertions(+), 2 deletions(-)
+ create mode 100644 packages/web-core/src/shared/notifications/AppWorkspaceAttentionNotifications.tsx
+
+diff --git a/packages/local-web/src/routes/_app.tsx b/packages/local-web/src/routes/_app.tsx
+index b6c326dda..41f762ed5 100644
+--- a/packages/local-web/src/routes/_app.tsx
++++ b/packages/local-web/src/routes/_app.tsx
+@@ -21,6 +21,7 @@ import { ActionsProvider } from '@/shared/providers/ActionsProvider';
+ import { useWorkspaceContext } from '@/shared/hooks/useWorkspaceContext';
+ import { useUserSystem } from '@/shared/hooks/useUserSystem';
+ import { SharedAppLayout } from '@/shared/components/ui-new/containers/SharedAppLayout';
++import { AppWorkspaceAttentionNotifications } from '@/shared/notifications/AppWorkspaceAttentionNotifications';
+ 
+ function KeyboardShortcutsHandler() {
+   useKeyShowHelp(
+@@ -85,6 +86,7 @@ function ExecutionProcessesProviderWrapper({
+ function AppRouteProviders({ children }: { children: ReactNode }) {
+   return (
+     <HostIdProvider>
++      <AppWorkspaceAttentionNotifications />
+       <WorkspaceProvider>
+         <ExecutionProcessesProviderWrapper>
+           <LogsPanelProvider>
+diff --git a/packages/remote-web/src/routes/__root.tsx b/packages/remote-web/src/routes/__root.tsx
+index 6c4a9b9a0..25a1568ee 100644
+--- a/packages/remote-web/src/routes/__root.tsx
++++ b/packages/remote-web/src/routes/__root.tsx
+@@ -12,6 +12,7 @@ import { RemoteUserSystemProvider } from "@remote/app/providers/RemoteUserSystem
+ import { RemoteAppShell } from "@remote/app/layout/RemoteAppShell";
+ import { UserProvider } from "@/shared/providers/remote/UserProvider";
+ import { AppBrowserNotifications } from "@/shared/notifications/AppBrowserNotifications";
++import { AppWorkspaceAttentionNotifications } from "@/shared/notifications/AppWorkspaceAttentionNotifications";
+ import { WorkspaceProvider } from "@/shared/providers/WorkspaceProvider";
+ import { ExecutionProcessesProvider } from "@/shared/providers/ExecutionProcessesProvider";
+ import { TerminalProvider } from "@/shared/providers/TerminalProvider";
+@@ -165,7 +166,10 @@ function RootLayout() {
+       <UserProvider>
+         <AppBrowserNotifications />
+         <RemoteActionsProvider>
+-          <RemoteUserSystemProvider>{content}</RemoteUserSystemProvider>
++          <RemoteUserSystemProvider>
++            <AppWorkspaceAttentionNotifications hostId={navigationHostId} />
++            {content}
++          </RemoteUserSystemProvider>
+         </RemoteActionsProvider>
+       </UserProvider>
+     </AppNavigationProvider>
+diff --git a/packages/web-core/src/shared/hooks/useWorkspaces.ts b/packages/web-core/src/shared/hooks/useWorkspaces.ts
+index fbf403f08..7f7ce23a0 100644
+--- a/packages/web-core/src/shared/hooks/useWorkspaces.ts
++++ b/packages/web-core/src/shared/hooks/useWorkspaces.ts
+@@ -49,6 +49,7 @@ export interface UseWorkspacesResult {
+ 
+ interface UseWorkspacesOptions {
+   enabled?: boolean;
++  hostId?: string | null;
+ }
+ 
+ // State shape from the WebSocket stream
+@@ -137,7 +138,8 @@ export function useWorkspaces(
+   options: UseWorkspacesOptions = {}
+ ): UseWorkspacesResult {
+   const enabled = options.enabled ?? true;
+-  const hostId = useHostId();
++  const contextHostId = useHostId();
++  const hostId = options.hostId !== undefined ? options.hostId : contextHostId;
+ 
+   // Two separate WebSocket connections: one for active, one for archived
+   // No limit param - we fetch all and slice on frontend so backfill works when archiving
+diff --git a/packages/web-core/src/shared/notifications/AppWorkspaceAttentionNotifications.tsx b/packages/web-core/src/shared/notifications/AppWorkspaceAttentionNotifications.tsx
+new file mode 100644
+index 000000000..d8afd49cb
+--- /dev/null
++++ b/packages/web-core/src/shared/notifications/AppWorkspaceAttentionNotifications.tsx
+@@ -0,0 +1,117 @@
++import { useEffect, useRef } from 'react';
++import { SoundFile } from 'shared/types';
++import { useAuth } from '@/shared/hooks/auth/useAuth';
++import { useBrowserNotificationPreference } from '@/shared/hooks/useBrowserNotificationPreference';
++import { useUserSystem } from '@/shared/hooks/useUserSystem';
++import {
++  useWorkspaces,
++  type SidebarWorkspace,
++} from '@/shared/hooks/useWorkspaces';
++import {
++  getBrowserNotificationPermission,
++  showBrowserNotification,
++} from '@/shared/lib/browserNotifications';
++import { playSound } from '@/shared/lib/utils';
++
++interface AppWorkspaceAttentionNotificationsProps {
++  hostId?: string | null;
++}
++
++function workspaceNeedsAttention(workspace: SidebarWorkspace): boolean {
++  return (
++    workspace.hasPendingApproval === true ||
++    (workspace.hasUnseenActivity === true && workspace.isRunning !== true)
++  );
++}
++
++function getWorkspaceAttentionBody(workspace: SidebarWorkspace): string {
++  if (workspace.hasPendingApproval) {
++    return `${workspace.name} is waiting for approval.`;
++  }
++
++  return `${workspace.name} has new activity.`;
++}
++
++function getWorkspaceDeeplinkPath(
++  workspaceId: string,
++  hostId: string | null | undefined
++): string {
++  return hostId
++    ? `/hosts/${encodeURIComponent(hostId)}/workspaces/${encodeURIComponent(workspaceId)}`
++    : `/workspaces/${encodeURIComponent(workspaceId)}`;
++}
++
++export function AppWorkspaceAttentionNotifications({
++  hostId,
++}: AppWorkspaceAttentionNotificationsProps) {
++  const { isSignedIn, userId } = useAuth();
++  const { config } = useUserSystem();
++  const { enabled: browserNotificationsEnabled } =
++    useBrowserNotificationPreference(userId);
++  const { workspaces, isLoading } = useWorkspaces({
++    enabled: isSignedIn,
++    hostId,
++  });
++  const attentionByWorkspaceIdRef = useRef(new Map<string, boolean>());
++
++  useEffect(() => {
++    attentionByWorkspaceIdRef.current.clear();
++  }, [hostId, userId]);
++
++  useEffect(() => {
++    if (!isSignedIn || isLoading) {
++      return;
++    }
++
++    const seenWorkspaceIds = new Set(
++      workspaces.map((workspace) => workspace.id)
++    );
++    for (const workspaceId of attentionByWorkspaceIdRef.current.keys()) {
++      if (!seenWorkspaceIds.has(workspaceId)) {
++        attentionByWorkspaceIdRef.current.delete(workspaceId);
++      }
++    }
++
++    for (const workspace of workspaces) {
++      const needsAttention = workspaceNeedsAttention(workspace);
++      const previousNeedsAttention = attentionByWorkspaceIdRef.current.get(
++        workspace.id
++      );
++      attentionByWorkspaceIdRef.current.set(workspace.id, needsAttention);
++
++      if (previousNeedsAttention !== false || !needsAttention) {
++        continue;
++      }
++
++      if (
++        browserNotificationsEnabled &&
++        getBrowserNotificationPermission() === 'granted'
++      ) {
++        showBrowserNotification({
++          id: `workspace-attention:${workspace.id}`,
++          title: 'Workspace needs attention',
++          body: getWorkspaceAttentionBody(workspace),
++          deeplinkPath: getWorkspaceDeeplinkPath(workspace.id, hostId),
++        });
++      }
++
++      if (config?.notifications.sound_enabled !== false) {
++        const soundFile =
++          config?.notifications.sound_file ?? SoundFile.ABSTRACT_SOUND1;
++        void playSound(`/api/sounds/${soundFile}`).catch((error) => {
++          console.warn('Failed to play workspace attention sound:', error);
++        });
++      }
++    }
++  }, [
++    browserNotificationsEnabled,
++    config?.notifications.sound_enabled,
++    config?.notifications.sound_file,
++    hostId,
++    isLoading,
++    isSignedIn,
++    workspaces,
++  ]);
++
++  return null;
++}
+-- 
+2.53.0
+
