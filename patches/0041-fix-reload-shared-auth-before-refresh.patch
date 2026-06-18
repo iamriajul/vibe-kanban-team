@@ -1,0 +1,152 @@
+diff --git a/crates/services/src/services/auth.rs b/crates/services/src/services/auth.rs
+index a5cb5a1e9..4696397c8 100644
+--- a/crates/services/src/services/auth.rs
++++ b/crates/services/src/services/auth.rs
+@@ -35,7 +35,8 @@ impl AuthContext {
+     pub fn new(base_credentials_path: PathBuf) -> Self {
+         Self {
+             base_credentials_path: Arc::new(base_credentials_path),
+-            browser_scoped_auth: parse_bool_env(VIBE_KANBAN_BROWSER_SCOPED_AUTH_ENV).unwrap_or(true),
++            browser_scoped_auth: parse_bool_env(VIBE_KANBAN_BROWSER_SCOPED_AUTH_ENV)
++                .unwrap_or(true),
+             session_states: Arc::new(RwLock::new(HashMap::new())),
+         }
+     }
+@@ -53,13 +54,23 @@ impl AuthContext {
+ 
+     pub async fn get_credentials(&self) -> Option<Credentials> {
+         let current_session_id = self.current_session_id();
+-        self.get_credentials_for(current_session_id.as_deref()).await
++        self.get_credentials_for(current_session_id.as_deref())
++            .await
+     }
+ 
+     pub async fn get_credentials_for(&self, session_id: Option<&str>) -> Option<Credentials> {
+         self.session_state_for(session_id).await.oauth.get().await
+     }
+ 
++    pub async fn reload_credentials_for(
++        &self,
++        session_id: Option<&str>,
++    ) -> std::io::Result<Option<Credentials>> {
++        let oauth = self.session_state_for(session_id).await.oauth;
++        oauth.load().await?;
++        Ok(oauth.get().await)
++    }
++
+     pub async fn save_credentials(&self, creds: &Credentials) -> std::io::Result<()> {
+         let current_session_id = self.current_session_id();
+         self.save_credentials_for(current_session_id.as_deref(), creds)
+@@ -71,12 +82,17 @@ impl AuthContext {
+         session_id: Option<&str>,
+         creds: &Credentials,
+     ) -> std::io::Result<()> {
+-        self.session_state_for(session_id).await.oauth.save(creds).await
++        self.session_state_for(session_id)
++            .await
++            .oauth
++            .save(creds)
++            .await
+     }
+ 
+     pub async fn clear_credentials(&self) -> std::io::Result<()> {
+         let current_session_id = self.current_session_id();
+-        self.clear_credentials_for(current_session_id.as_deref()).await
++        self.clear_credentials_for(current_session_id.as_deref())
++            .await
+     }
+ 
+     pub async fn clear_credentials_for(&self, session_id: Option<&str>) -> std::io::Result<()> {
+@@ -119,16 +135,27 @@ impl AuthContext {
+     }
+ 
+     pub async fn cached_profile_for(&self, session_id: Option<&str>) -> Option<ProfileResponse> {
+-        self.session_state_for(session_id).await.profile.read().await.clone()
++        self.session_state_for(session_id)
++            .await
++            .profile
++            .read()
++            .await
++            .clone()
+     }
+ 
+     pub async fn set_profile(&self, profile: ProfileResponse) {
+         let current_session_id = self.current_session_id();
+-        self.set_profile_for(current_session_id.as_deref(), profile).await;
++        self.set_profile_for(current_session_id.as_deref(), profile)
++            .await;
+     }
+ 
+     pub async fn set_profile_for(&self, session_id: Option<&str>, profile: ProfileResponse) {
+-        *self.session_state_for(session_id).await.profile.write().await = Some(profile);
++        *self
++            .session_state_for(session_id)
++            .await
++            .profile
++            .write()
++            .await = Some(profile);
+     }
+ 
+     pub async fn clear_profile(&self) {
+@@ -137,7 +164,12 @@ impl AuthContext {
+     }
+ 
+     pub async fn clear_profile_for(&self, session_id: Option<&str>) {
+-        *self.session_state_for(session_id).await.profile.write().await = None;
++        *self
++            .session_state_for(session_id)
++            .await
++            .profile
++            .write()
++            .await = None;
+     }
+ 
+     pub async fn refresh_guard(&self) -> OwnedMutexGuard<()> {
+diff --git a/crates/services/src/services/remote_client.rs b/crates/services/src/services/remote_client.rs
+index ab4ef94d2..9041ee156 100644
+--- a/crates/services/src/services/remote_client.rs
++++ b/crates/services/src/services/remote_client.rs
+@@ -226,8 +226,9 @@ impl RemoteClient {
+                 let _refresh_guard = self.auth_context.refresh_guard_for(session_id).await;
+                 let latest = self
+                     .auth_context
+-                    .get_credentials_for(session_id)
++                    .reload_credentials_for(session_id)
+                     .await
++                    .map_err(|e| RemoteClientError::Storage(e.to_string()))?
+                     .ok_or(RemoteClientError::Auth)?;
+                 if let Some(token) = latest.access_token.as_ref()
+                     && !latest.expires_soon(leeway)
+@@ -236,7 +237,31 @@ impl RemoteClient {
+                     return Ok(token.clone());
+                 }
+ 
+-                self.refresh_credentials(session_id, &latest).await
++                let refresh_token = latest.refresh_token.clone();
++                match self.refresh_credentials(session_id, &latest).await {
++                    Err(err) if err.is_definitive_auth_failure() => {
++                        let reloaded = self
++                            .auth_context
++                            .reload_credentials_for(session_id)
++                            .await
++                            .map_err(|e| RemoteClientError::Storage(e.to_string()))?
++                            .ok_or(RemoteClientError::Auth)?;
++
++                        if reloaded.refresh_token != refresh_token {
++                            if let Some(token) = reloaded.access_token.as_ref()
++                                && !reloaded.expires_soon(leeway)
++                            {
++                                self.auth_context.clear_remote_auth_degraded_slug().await;
++                                return Ok(token.clone());
++                            }
++
++                            self.refresh_credentials(session_id, &reloaded).await
++                        } else {
++                            Err(err)
++                        }
++                    }
++                    result => result,
++                }
+             };
+ 
+             match refreshed {

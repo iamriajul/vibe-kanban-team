@@ -34,7 +34,7 @@ Downstream deployment and integration layer for Vibe Kanban. Owns the Helm chart
 - Canonical releases must be tagged from `main` after the feature PR is merged. Do not release directly from feature branches.
 - `nightly-release-check.yml` runs on schedule for `frontend` and `remote`, compares upstream tags, verifies patch applicability, updates submodule + patch metadata, and pushes commit/tag for release workflows.
 - Manual workflow dispatch must target an existing `git_ref`; versions are derived from that ref.
-- When watching GitHub Actions or any CI pipeline, wait at least 5 minutes between status checks unless the user asks for tighter polling.
+- When watching GitHub Actions or any CI pipeline, wait at least 5 minutes (using sleep command) between status checks unless the user asks for tighter polling.
 - Keep tag naming stable:
   - frontend/npm: `v<upstream-semver>-<YYYYMMDDHHmmss>`
   - remote/relay: `remote-v<upstream-semver>`
