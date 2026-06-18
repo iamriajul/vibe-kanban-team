@@ -689,6 +689,11 @@ fi
 if [ "${PUBLISH_BINARY_ARTIFACTS}" -eq 0 ]; then
   # Final publish jobs can update the global pointer after all platform uploads finish.
   if [ "${NPM_TAG}" = "latest" ] && [ "${UPDATE_LATEST_BINARY_POINTER}" -eq 1 ]; then
+    export AWS_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID}"
+    export AWS_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY}"
+    export AWS_DEFAULT_REGION="${R2_REGION:-auto}"
+    export AWS_EC2_METADATA_DISABLED=true
+
     echo "{\"latest\": \"${VERSION}\"}" | aws --endpoint-url "${R2_ENDPOINT}" s3 cp \
       - "s3://${R2_BUCKET}/binaries/manifest.json" \
       --content-type "application/json"
