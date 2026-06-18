@@ -1,0 +1,523 @@
+diff --git a/packages/ui/src/components/SessionChatBox.tsx b/packages/ui/src/components/SessionChatBox.tsx
+index 11ff96557..d79ff865a 100644
+--- a/packages/ui/src/components/SessionChatBox.tsx
++++ b/packages/ui/src/components/SessionChatBox.tsx
+@@ -86,6 +86,11 @@ interface ToolbarActionsProps {
+   items: SessionToolbarActionItem[];
+ }
+ 
++interface MigrationModeProps {
++  isActive: boolean;
++  notice: ReactNode;
++}
++
+ interface StatsProps {
+   filesChanged?: number;
+   linesAdded?: number;
+@@ -168,6 +173,7 @@ interface SessionChatBoxProps<TExecutor extends string = string> {
+   askQuestionMode?: AskQuestionModeProps;
+   reviewComments?: ReviewCommentsProps;
+   toolbarActions?: ToolbarActionsProps;
++  migrationMode?: MigrationModeProps;
+   modelSelector?: ReactNode;
+   error?: string | null;
+   repoIds?: string[];
+@@ -233,6 +239,7 @@ export function SessionChatBox<TExecutor extends string = string>({
+   askQuestionMode,
+   reviewComments,
+   toolbarActions,
++  migrationMode,
+   modelSelector,
+   error,
+   repoIds,
+@@ -286,8 +293,10 @@ export function SessionChatBox<TExecutor extends string = string>({
+       approvalMode?.isSubmitting ||
+       askQuestionMode?.isSubmitting
+   );
++  const hasTextPrompt = editor.value.trim().length > 0;
+   const hasContent =
+-    editor.value.trim().length > 0 || (reviewComments?.count ?? 0) > 0;
++    hasTextPrompt ||
++    (!migrationMode?.isActive && (reviewComments?.count ?? 0) > 0);
+   const canSend =
+     hasContent && !['sending', 'stopping', 'queue-loading'].includes(status);
+   const isQueued = status === 'queued';
+@@ -332,7 +341,7 @@ export function SessionChatBox<TExecutor extends string = string>({
+       feedbackMode?.onSubmitFeedback();
+     } else if (isInEditMode && canSend) {
+       editMode?.onSubmitEdit();
+-    } else if (status === 'running' && canSend) {
++    } else if (status === 'running' && canSend && !migrationMode?.isActive) {
+       actions.onQueue();
+     } else if (status === 'idle' && canSend) {
+       actions.onSend();
+@@ -521,6 +530,20 @@ export function SessionChatBox<TExecutor extends string = string>({
+         );
+ 
+       case 'running':
++        if (migrationMode?.isActive) {
++          return (
++            <>
++              <PrimaryButton disabled value={t('conversation.actions.send')} />
++              <PrimaryButton
++                onClick={actions.onStop}
++                variant="secondary"
++                value={t('conversation.actions.stop')}
++                actionIcon="spinner"
++              />
++            </>
++          );
++        }
++
+         return (
+           <>
+             <PrimaryButton
+@@ -580,6 +603,15 @@ export function SessionChatBox<TExecutor extends string = string>({
+   const renderBanner = () => {
+     const banners: ReactNode[] = [];
+ 
++    // Migration mode banner
++    if (migrationMode?.isActive) {
++      banners.push(
++        <div key="migration" className="border-b bg-accent/5">
++          {migrationMode.notice}
++        </div>
++      );
++    }
++
+     // Review comments banner
+     if (reviewComments && reviewComments.count > 0) {
+       banners.push(
+@@ -674,8 +706,8 @@ export function SessionChatBox<TExecutor extends string = string>({
+       modelSelector={modelSelector}
+       headerLeft={
+         <>
+-          {/* New session mode: agent icon + executor dropdown */}
+-          {isNewSessionMode && executor && (
++          {/* Executor dropdown */}
++          {executor && (
+             <>
+               {renderAgentIcon?.(agent, 'size-icon-xl')}
+               <ToolbarDropdown
+@@ -786,7 +818,7 @@ export function SessionChatBox<TExecutor extends string = string>({
+       }
+       headerRight={
+         <>
+-          {/* Turn navigation + Agent icon for existing session mode */}
++          {/* Turn navigation for existing session mode */}
+           {!isNewSessionMode && (
+             <>
+               {onScrollToPreviousMessage && (
+@@ -805,7 +837,6 @@ export function SessionChatBox<TExecutor extends string = string>({
+                   />
+                 </TurnNavigationPopup>
+               )}
+-              {renderAgentIcon?.(agent, 'size-icon-xl')}
+             </>
+           )}
+           {/* Todo progress popup - always rendered, disabled when no todos */}
+diff --git a/packages/web-core/src/features/workspace-chat/model/hooks/useCreateSession.ts b/packages/web-core/src/features/workspace-chat/model/hooks/useCreateSession.ts
+index f97a4a23d..d7588c2c9 100644
+--- a/packages/web-core/src/features/workspace-chat/model/hooks/useCreateSession.ts
++++ b/packages/web-core/src/features/workspace-chat/model/hooks/useCreateSession.ts
+@@ -12,6 +12,7 @@ interface CreateSessionParams {
+   workspaceId: string;
+   prompt: string;
+   executorConfig: ExecutorConfig;
++  name?: string;
+ }
+ 
+ /**
+@@ -27,9 +28,12 @@ export function useCreateSession() {
+       workspaceId,
+       prompt,
+       executorConfig,
++      name,
+     }: CreateSessionParams): Promise<Session> => {
+       const session = await sessionsApi.create({
+         workspace_id: workspaceId,
++        executor: executorConfig.executor,
++        name,
+       });
+ 
+       const body: CreateFollowUpAttempt = {
+diff --git a/packages/web-core/src/features/workspace-chat/model/hooks/useSessionSend.ts b/packages/web-core/src/features/workspace-chat/model/hooks/useSessionSend.ts
+index 2e829efb4..aab0ec088 100644
+--- a/packages/web-core/src/features/workspace-chat/model/hooks/useSessionSend.ts
++++ b/packages/web-core/src/features/workspace-chat/model/hooks/useSessionSend.ts
+@@ -18,7 +18,10 @@ interface UseSessionSendOptions {
+ 
+ interface UseSessionSendResult {
+   /** Send a message. Returns true on success, false on failure. */
+-  send: (message: string) => Promise<boolean>;
++  send: (
++    message: string,
++    options?: { createNewSession?: boolean; sessionName?: string }
++  ) => Promise<boolean>;
+   /** Whether a send operation is in progress */
+   isSending: boolean;
+   /** Error message if send failed */
+@@ -49,7 +52,10 @@ export function useSessionSend({
+   const [error, setError] = useState<string | null>(null);
+ 
+   const send = useCallback(
+-    async (message: string): Promise<boolean> => {
++    async (
++      message: string,
++      options?: { createNewSession?: boolean; sessionName?: string }
++    ): Promise<boolean> => {
+       const trimmed = message.trim();
+       if (!trimmed) return false;
+       if (!executorConfig) {
+@@ -59,7 +65,7 @@ export function useSessionSend({
+ 
+       setError(null);
+ 
+-      if (isNewSessionMode) {
++      if (isNewSessionMode || options?.createNewSession) {
+         // New session flow
+         if (!workspaceId) {
+           setError('No workspace selected');
+@@ -70,6 +76,7 @@ export function useSessionSend({
+             workspaceId,
+             prompt: trimmed,
+             executorConfig,
++            name: options?.sessionName,
+           });
+           onSelectSession?.(session.id);
+           return true;
+diff --git a/packages/web-core/src/features/workspace-chat/ui/SessionChatBoxContainer.tsx b/packages/web-core/src/features/workspace-chat/ui/SessionChatBoxContainer.tsx
+index ff8be7305..0e87f7625 100644
+--- a/packages/web-core/src/features/workspace-chat/ui/SessionChatBoxContainer.tsx
++++ b/packages/web-core/src/features/workspace-chat/ui/SessionChatBoxContainer.tsx
+@@ -1,4 +1,4 @@
+-import { useCallback, useEffect, useMemo, useRef } from 'react';
++import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+ import { useQueryClient } from '@tanstack/react-query';
+ import { useDropzone } from 'react-dropzone';
+ import {
+@@ -65,6 +65,49 @@ import { useAppNavigation } from '@/shared/hooks/useAppNavigation';
+ import { sessionsApi } from '@/shared/lib/api';
+ import { RenameSessionDialog } from '@vibe/ui/components/RenameSessionDialog';
+ import type { TurnNavigationItem } from '@vibe/ui/components/TurnNavigationPopup';
++import type { PatchTypeWithKey } from '@/shared/hooks/useConversationHistory/types';
++import { Checkbox } from '@vibe/ui/components/Checkbox';
++
++type MigrationHistoryComponent =
++  | 'user'
++  | 'assistant'
++  | 'system'
++  | 'tool'
++  | 'approval'
++  | 'error'
++  | 'summary'
++  | 'rawLog'
++  | 'thinking';
++
++type MigrationHistorySelection = Record<MigrationHistoryComponent, boolean>;
++
++const MIGRATION_HISTORY_OPTIONS: Array<{
++  key: MigrationHistoryComponent;
++  label: string;
++  required?: boolean;
++}> = [
++  { key: 'user', label: 'User messages', required: true },
++  { key: 'assistant', label: 'Assistant messages' },
++  { key: 'system', label: 'System messages' },
++  { key: 'tool', label: 'Tool calls and results' },
++  { key: 'approval', label: 'Approvals, feedback, and answers' },
++  { key: 'error', label: 'Errors' },
++  { key: 'summary', label: 'Summaries' },
++  { key: 'rawLog', label: 'Raw command logs' },
++  { key: 'thinking', label: 'AI thinking' },
++];
++
++const DEFAULT_MIGRATION_HISTORY_SELECTION: MigrationHistorySelection = {
++  user: true,
++  assistant: true,
++  system: true,
++  tool: true,
++  approval: true,
++  error: true,
++  summary: true,
++  rawLog: true,
++  thinking: false,
++};
+ 
+ /** Compute execution status from boolean flags */
+ function computeExecutionStatus(params: {
+@@ -86,6 +129,117 @@ function computeExecutionStatus(params: {
+   return 'idle';
+ }
+ 
++function classifyHistoryEntry(
++  entry: PatchTypeWithKey
++): MigrationHistoryComponent | null {
++  if (entry.type === 'STDOUT' || entry.type === 'STDERR') return 'rawLog';
++  if (entry.type === 'DIFF') return 'tool';
++  if (entry.type !== 'NORMALIZED_ENTRY') return null;
++
++  switch (entry.content.entry_type.type) {
++    case 'user_message':
++      return 'user';
++    case 'assistant_message':
++      return 'assistant';
++    case 'system_message':
++      return 'system';
++    case 'tool_use':
++      return 'tool';
++    case 'user_feedback':
++    case 'user_answered_questions':
++      return 'approval';
++    case 'error_message':
++      return 'error';
++    case 'thinking':
++      return 'thinking';
++    case 'next_action':
++    case 'token_usage_info':
++      return 'summary';
++    case 'loading':
++      return null;
++  }
++}
++
++function formatHistoryEntry(entry: PatchTypeWithKey): string | null {
++  if (entry.type === 'STDOUT' || entry.type === 'STDERR') {
++    return `### ${entry.type}\n${entry.content}`;
++  }
++
++  if (entry.type === 'DIFF') {
++    return `### Diff\n${JSON.stringify(entry.content, null, 2)}`;
++  }
++
++  if (entry.type !== 'NORMALIZED_ENTRY') return null;
++
++  const normalized = entry.content;
++  const entryType = normalized.entry_type;
++  const content = normalized.content.trim();
++
++  switch (entryType.type) {
++    case 'user_message':
++      return `### User\n${content}`;
++    case 'assistant_message':
++      return `### Assistant\n${content}`;
++    case 'system_message':
++      return `### System\n${content}`;
++    case 'thinking':
++      return `### AI thinking\n${content}`;
++    case 'tool_use':
++      return [
++        `### Tool: ${entryType.tool_name}`,
++        `Status: ${JSON.stringify(entryType.status)}`,
++        `Action: ${JSON.stringify(entryType.action_type, null, 2)}`,
++        content ? `Content:\n${content}` : null,
++      ]
++        .filter((line): line is string => Boolean(line))
++        .join('\n');
++    case 'user_feedback':
++      return `### User feedback\nDenied tool: ${entryType.denied_tool}\n${content}`;
++    case 'user_answered_questions':
++      return `### User answered questions\n${JSON.stringify(entryType.answers, null, 2)}${content ? `\n${content}` : ''}`;
++    case 'error_message':
++      return `### Error\n${JSON.stringify(entryType.error_type)}${content ? `\n${content}` : ''}`;
++    case 'next_action':
++      return `### Summary\n${content || JSON.stringify(entryType, null, 2)}`;
++    case 'token_usage_info':
++      return `### Token usage\n${JSON.stringify(entryType, null, 2)}`;
++    case 'loading':
++      return null;
++  }
++}
++
++function buildMigratedPrompt(
++  entries: PatchTypeWithKey[],
++  selection: MigrationHistorySelection,
++  userPrompt: string
++) {
++  const migratedEntries = entries
++    .filter((entry) => {
++      const component = classifyHistoryEntry(entry);
++      return component ? selection[component] : false;
++    })
++    .map(formatHistoryEntry)
++    .filter((entry): entry is string => Boolean(entry));
++
++  const migratedContext = migratedEntries.length
++    ? migratedEntries.join('\n\n')
++    : 'No previous transcript entries were selected.';
++
++  return [
++    'The following context was migrated from a previous Vibe Kanban session.',
++    '',
++    '<migrated_context>',
++    migratedContext,
++    '</migrated_context>',
++    '',
++    'Continue from that context and respond to this new prompt:',
++    '',
++    '<user_prompt>',
++    userPrompt.trim(),
++    '</user_prompt>',
++  ].join('\n');
++}
++
+ /** Shared props across all modes */
+ interface SharedProps {
+   /** Available sessions for this workspace */
+@@ -172,6 +326,8 @@ export function SessionChatBoxContainer(props: SessionChatBoxContainerProps) {
+   const sessionId = session?.id;
+   const queryClient = useQueryClient();
+   const hostId = useHostId();
++  const [migrationHistorySelection, setMigrationHistorySelection] =
++    useState<MigrationHistorySelection>(DEFAULT_MIGRATION_HISTORY_SELECTION);
+ 
+   const handleRenameSession = useCallback(
+     (targetSessionId: string, currentName: string) => {
+@@ -462,6 +618,91 @@ export function SessionChatBoxContainer(props: SessionChatBoxContainerProps) {
+     onPersist: (cfg) => void saveToScratch(localMessageRef.current, cfg),
+   });
+ 
++  const currentSessionExecutor = useMemo(() => {
++    const value = session?.executor ?? latestConfig?.executor ?? null;
++    return value ? (value as BaseCodingAgent) : null;
++  }, [latestConfig?.executor, session?.executor]);
++
++  const isMigrationMode =
++    mode === 'existing-session' &&
++    !!currentSessionExecutor &&
++    !!effectiveExecutor &&
++    effectiveExecutor !== currentSessionExecutor;
++
++  const migrationEntryCounts = useMemo(() => {
++    const counts: Record<MigrationHistoryComponent, number> = {
++      user: 0,
++      assistant: 0,
++      system: 0,
++      tool: 0,
++      approval: 0,
++      error: 0,
++      summary: 0,
++      rawLog: 0,
++      thinking: 0,
++    };
++
++    for (const entry of entries) {
++      const component = classifyHistoryEntry(entry);
++      if (component) counts[component] += 1;
++    }
++
++    return counts;
++  }, [entries]);
++
++  const handleMigrationHistorySelectionChange = useCallback(
++    (key: MigrationHistoryComponent, checked: boolean) => {
++      if (key === 'user') return;
++      setMigrationHistorySelection((current) => ({
++        ...current,
++        [key]: checked,
++      }));
++    },
++    []
++  );
++
++  const migrationNotice = isMigrationMode ? (
++    <div className="px-double py-base space-y-base">
++      <div className="space-y-half">
++        <div className="text-sm font-medium text-normal">
++          Sending with{' '}
++          {effectiveExecutor
++            ? toPrettyCase(effectiveExecutor)
++            : 'another executor'}{' '}
++          will create a new session.
++        </div>
++        <div className="text-xs text-low">
++          Selected history will be copied into the new session, and your prompt
++          will be appended at the bottom.
++        </div>
++      </div>
++      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-double gap-y-half">
++        {MIGRATION_HISTORY_OPTIONS.map((option) => {
++          const count = migrationEntryCounts[option.key];
++          const disabled = option.required || count === 0;
++          return (
++            <label
++              key={option.key}
++              className="flex items-center gap-2 text-xs text-normal"
++            >
++              <Checkbox
++                checked={migrationHistorySelection[option.key]}
++                disabled={disabled}
++                onCheckedChange={(checked) =>
++                  handleMigrationHistorySelectionChange(option.key, checked)
++                }
++              />
++              <span className={count === 0 ? 'text-low' : undefined}>
++                {option.label}
++                <span className="text-low"> ({count})</span>
++              </span>
++            </label>
++          );
++        })}
++      </div>
++    </div>
++  ) : null;
++
+   const supportsContextUsage =
+     !!effectiveExecutor &&
+     capabilities?.[effectiveExecutor]?.includes(
+@@ -505,12 +746,21 @@ export function SessionChatBoxContainer(props: SessionChatBoxContainerProps) {
+ 
+     onScrollToBottom('auto');
+ 
+-    const success = await send(prompt);
++    const finalPrompt = isMigrationMode
++      ? buildMigratedPrompt(entries, migrationHistorySelection, prompt)
++      : prompt;
++    const success = await send(finalPrompt, {
++      createNewSession: isMigrationMode,
++      sessionName:
++        isMigrationMode && currentSessionExecutor && effectiveExecutor
++          ? `Migrated from ${toPrettyCase(currentSessionExecutor)} to ${toPrettyCase(effectiveExecutor)}`
++          : undefined,
++    });
+     if (success) {
+       cancelDebouncedSave();
+       setLocalMessage('');
+       clearUploadedAttachments();
+-      if (isNewSessionMode) await clearDraft();
++      if (isNewSessionMode || isMigrationMode) await clearDraft();
+       if (!isSlashCommand) {
+         reviewContext?.clearComments();
+       }
+@@ -525,6 +775,11 @@ export function SessionChatBoxContainer(props: SessionChatBoxContainerProps) {
+     send,
+     localMessage,
+     reviewMarkdown,
++    isMigrationMode,
++    entries,
++    migrationHistorySelection,
++    currentSessionExecutor,
++    effectiveExecutor,
+     cancelDebouncedSave,
+     setLocalMessage,
+     clearUploadedAttachments,
+@@ -1047,6 +1302,10 @@ export function SessionChatBoxContainer(props: SessionChatBoxContainerProps) {
+       toolbarActions={{
+         items: toolbarActionItems,
+       }}
++      migrationMode={{
++        isActive: isMigrationMode,
++        notice: migrationNotice,
++      }}
+       onPrCommentClick={
+         actionCtx.hasOpenPR ? handleInsertPrComments : undefined
+       }
+@@ -1063,7 +1322,7 @@ export function SessionChatBoxContainer(props: SessionChatBoxContainerProps) {
+       todos={todos}
+       inProgressTodo={inProgressTodo}
+       executor={
+-        needsExecutorSelection
++        effectiveExecutor
+           ? {
+               selected: effectiveExecutor,
+               options: executorOptions,
