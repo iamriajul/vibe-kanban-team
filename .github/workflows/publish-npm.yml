@@ -11,6 +11,10 @@ on:
         required: true
         type: string
 
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   id-token: write
