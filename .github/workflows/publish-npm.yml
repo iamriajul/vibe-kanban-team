@@ -107,7 +107,7 @@ jobs:
         with:
           workspaces: vibe-kanban -> target
           cache-workspace-crates: "true"
-          key: npm-linux-x64-${{ hashFiles('patches/series', 'patches/*.patch') }}
+          key: npm-linux-x64-workspace-${{ hashFiles('patches/series', 'patches/*.patch') }}
 
       - name: Install system dependencies
         shell: bash
@@ -200,7 +200,7 @@ jobs:
         with:
           workspaces: vibe-kanban -> target
           cache-workspace-crates: "true"
-          key: npm-macos-arm64-${{ hashFiles('patches/series', 'patches/*.patch') }}
+          key: npm-macos-arm64-workspace-${{ hashFiles('patches/series', 'patches/*.patch') }}
 
       - name: Install system dependencies
         shell: bash
