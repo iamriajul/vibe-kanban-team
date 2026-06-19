@@ -81,6 +81,8 @@ jobs:
       UPDATE_LATEST_BINARY_POINTER: "0"
       PUBLISH_APPLY_PATCHES: "0"
       CARGO_INCREMENTAL: "1"
+      CARGO_PROFILE_RELEASE_OPT_LEVEL: "1"
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "256"
       CARGO_PROFILE_RELEASE_DEBUG: "0"
       CARGO_PROFILE_RELEASE_SPLIT_DEBUGINFO: "off"
     steps:
@@ -116,9 +118,9 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             vibe-kanban/target
-          key: npm-linux-x64-target-v1-${{ github.run_id }}
+          key: npm-linux-x64-target-v2-${{ github.run_id }}
           restore-keys: |
-            npm-linux-x64-target-v1-
+            npm-linux-x64-target-v2-
 
       - name: Install system dependencies
         shell: bash
@@ -181,6 +183,8 @@ jobs:
       UPDATE_LATEST_BINARY_POINTER: "0"
       PUBLISH_APPLY_PATCHES: "0"
       CARGO_INCREMENTAL: "1"
+      CARGO_PROFILE_RELEASE_OPT_LEVEL: "1"
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "256"
       CARGO_PROFILE_RELEASE_DEBUG: "0"
       CARGO_PROFILE_RELEASE_SPLIT_DEBUGINFO: "off"
     steps:
@@ -216,9 +220,9 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             vibe-kanban/target
-          key: npm-macos-arm64-target-v1-${{ github.run_id }}
+          key: npm-macos-arm64-target-v2-${{ github.run_id }}
           restore-keys: |
-            npm-macos-arm64-target-v1-
+            npm-macos-arm64-target-v2-
 
       - name: Install system dependencies
         shell: bash
