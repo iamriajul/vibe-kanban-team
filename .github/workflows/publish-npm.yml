@@ -87,16 +87,17 @@ jobs:
         shell: bash
         run: ./scripts/apply-patches.sh vibe-kanban
 
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          package_json_file: vibe-kanban/package.json
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "24"
           cache: pnpm
           cache-dependency-path: vibe-kanban/pnpm-lock.yaml
-
-      - name: Enable Corepack
-        shell: bash
-        run: corepack enable
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -178,16 +179,17 @@ jobs:
         shell: bash
         run: ./scripts/apply-patches.sh vibe-kanban
 
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          package_json_file: vibe-kanban/package.json
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "24"
           cache: pnpm
           cache-dependency-path: vibe-kanban/pnpm-lock.yaml
-
-      - name: Enable Corepack
-        shell: bash
-        run: corepack enable
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -244,6 +246,11 @@ jobs:
         shell: bash
         run: ./scripts/apply-patches.sh vibe-kanban
 
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          package_json_file: vibe-kanban/package.json
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -251,10 +258,6 @@ jobs:
           registry-url: "https://registry.npmjs.org"
           cache: pnpm
           cache-dependency-path: vibe-kanban/pnpm-lock.yaml
-
-      - name: Enable Corepack
-        shell: bash
-        run: corepack enable
 
       - name: Update npm for trusted publishing
         shell: bash
