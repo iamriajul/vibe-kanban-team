@@ -567,14 +567,30 @@ if [ "${PUBLISH_BINARY_ARTIFACTS}" -eq 1 ]; then
   timed_end "cargo metadata" "${STEP_STARTED}"
   echo "Using MCP binary target: ${MCP_BIN_TARGET}"
 
-  echo "Building backend binaries for ${TARGET_TRIPLE}..."
+  CARGO_BUILD_PROFILE="${PUBLISH_CARGO_PROFILE:-release}"
+  case "${CARGO_BUILD_PROFILE}" in
+    release)
+      CARGO_PROFILE_ARGS=(--release)
+      CARGO_PROFILE_DIR="release"
+      ;;
+    dev)
+      CARGO_PROFILE_ARGS=(--profile dev)
+      CARGO_PROFILE_DIR="debug"
+      ;;
+    *)
+      CARGO_PROFILE_ARGS=(--profile "${CARGO_BUILD_PROFILE}")
+      CARGO_PROFILE_DIR="${CARGO_BUILD_PROFILE}"
+      ;;
+  esac
+
+  echo "Building backend binaries for ${TARGET_TRIPLE} with Cargo profile ${CARGO_BUILD_PROFILE}..."
   STEP_STARTED="$(timed_start "cargo build")"
   if [ "${TARGET_TRIPLE}" = "${HOST_TRIPLE}" ]; then
-    (cd "${VIBE_DIR}" && cargo build --release --bin server --bin "${MCP_BIN_TARGET}" --bin review)
-    TARGET_DIR="${VIBE_DIR}/target/release"
+    (cd "${VIBE_DIR}" && cargo build "${CARGO_PROFILE_ARGS[@]}" --bin server --bin "${MCP_BIN_TARGET}" --bin review)
+    TARGET_DIR="${VIBE_DIR}/target/${CARGO_PROFILE_DIR}"
   else
-    (cd "${VIBE_DIR}" && cargo build --release --target "${TARGET_TRIPLE}" --bin server --bin "${MCP_BIN_TARGET}" --bin review)
-    TARGET_DIR="${VIBE_DIR}/target/${TARGET_TRIPLE}/release"
+    (cd "${VIBE_DIR}" && cargo build "${CARGO_PROFILE_ARGS[@]}" --target "${TARGET_TRIPLE}" --bin server --bin "${MCP_BIN_TARGET}" --bin review)
+    TARGET_DIR="${VIBE_DIR}/target/${TARGET_TRIPLE}/${CARGO_PROFILE_DIR}"
   fi
   timed_end "cargo build" "${STEP_STARTED}"
 
