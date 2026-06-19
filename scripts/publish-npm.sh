@@ -290,6 +290,92 @@ require_env() {
   fi
 }
 
+cleanup_old_binary_artifacts() {
+  if [ "${R2_CLEANUP_BINARY_ARTIFACTS:-1}" != "1" ]; then
+    log "Skipping R2 binary cleanup because R2_CLEANUP_BINARY_ARTIFACTS=${R2_CLEANUP_BINARY_ARTIFACTS:-1}."
+    return
+  fi
+
+  local keep_count="${R2_CLEANUP_KEEP_BUILDS:-10}"
+  local max_age_days="${R2_CLEANUP_MAX_AGE_DAYS:-7}"
+
+  if ! [[ "${keep_count}" =~ ^[0-9]+$ ]] || [ "${keep_count}" -lt 1 ]; then
+    die "R2_CLEANUP_KEEP_BUILDS must be a positive integer."
+  fi
+  if ! [[ "${max_age_days}" =~ ^[0-9]+$ ]]; then
+    die "R2_CLEANUP_MAX_AGE_DAYS must be a non-negative integer."
+  fi
+
+  require_cmd aws
+  require_env R2_ACCESS_KEY_ID
+  require_env R2_SECRET_ACCESS_KEY
+  require_env R2_ENDPOINT
+  require_env R2_BUCKET
+
+  export AWS_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID}"
+  export AWS_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY}"
+  export AWS_DEFAULT_REGION="${R2_REGION:-auto}"
+  export AWS_EC2_METADATA_DISABLED=true
+
+  local list_path="${TMP_DIR}/r2-binary-objects.json"
+  local delete_list_path="${TMP_DIR}/r2-binary-delete-list.txt"
+
+  aws --endpoint-url "${R2_ENDPOINT}" s3api list-objects-v2 \
+    --bucket "${R2_BUCKET}" \
+    --prefix "binaries/" \
+    --output json > "${list_path}"
+
+  ${NODE_CMD} - "${list_path}" "${delete_list_path}" "${keep_count}" "${max_age_days}" <<'NODE'
+const fs = require('fs');
+
+const [listPath, outPath, keepCountRaw, maxAgeDaysRaw] = process.argv.slice(2);
+const keepCount = Number.parseInt(keepCountRaw, 10);
+const maxAgeDays = Number.parseInt(maxAgeDaysRaw, 10);
+const data = JSON.parse(fs.readFileSync(listPath, 'utf8'));
+const cutoff = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000;
+const builds = [];
+
+for (const object of data.Contents || []) {
+  const key = object.Key || '';
+  const match = key.match(/^binaries\/([^/]+)\/manifest\.json$/);
+  if (!match) continue;
+
+  const lastModified = Date.parse(object.LastModified || '');
+  if (!Number.isFinite(lastModified)) continue;
+
+  builds.push({
+    tag: match[1],
+    key,
+    lastModified,
+  });
+}
+
+builds.sort((a, b) => b.lastModified - a.lastModified || b.tag.localeCompare(a.tag));
+
+const protectedTags = new Set(builds.slice(0, keepCount).map((build) => build.tag));
+const deleteTags = builds
+  .filter((build) => build.lastModified < cutoff && !protectedTags.has(build.tag))
+  .map((build) => build.tag);
+
+fs.writeFileSync(outPath, deleteTags.join('\n') + (deleteTags.length ? '\n' : ''));
+NODE
+
+  if [ ! -s "${delete_list_path}" ]; then
+    log "R2 binary cleanup found nothing older than ${max_age_days} days outside the newest ${keep_count} builds."
+    return
+  fi
+
+  while IFS= read -r old_tag; do
+    if [ -z "${old_tag}" ]; then
+      continue
+    fi
+    log "Deleting R2 binary build binaries/${old_tag}/"
+    aws --endpoint-url "${R2_ENDPOINT}" s3 rm \
+      "s3://${R2_BUCKET}/binaries/${old_tag}/" \
+      --recursive
+  done < "${delete_list_path}"
+}
+
 ensure_prereqs
 
 require_cmd git
@@ -362,6 +448,13 @@ fi
 
 if [ "${PUBLISH_NPM_PACKAGE}" -eq 1 ]; then
   require_env R2_PUBLIC_URL
+  if [ "${UPDATE_LATEST_BINARY_POINTER}" -eq 1 ] || [ "${R2_CLEANUP_BINARY_ARTIFACTS:-1}" = "1" ]; then
+    require_cmd aws
+    require_env R2_ACCESS_KEY_ID
+    require_env R2_SECRET_ACCESS_KEY
+    require_env R2_ENDPOINT
+    require_env R2_BUCKET
+  fi
 fi
 
 if [ ! -e "${VIBE_DIR}/.git" ]; then
@@ -701,6 +794,10 @@ if [ "${PUBLISH_BINARY_ARTIFACTS}" -eq 0 ]; then
     log "Skipping binaries/manifest.json update because UPDATE_LATEST_BINARY_POINTER=0."
   else
     log "Skipping binaries/manifest.json update because NPM_TAG=${NPM_TAG} (not 'latest')."
+  fi
+
+  if [ "${UPDATE_LATEST_BINARY_POINTER}" -eq 1 ]; then
+    cleanup_old_binary_artifacts
   fi
 fi
 
