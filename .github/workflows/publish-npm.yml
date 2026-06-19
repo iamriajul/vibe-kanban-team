@@ -150,9 +150,7 @@ jobs:
           ./scripts/publish-npm.sh
 
   build-macos-arm64:
-    needs:
-      - prepare
-      - build-linux-x64
+    needs: prepare
     runs-on: macos-14
     env:
       MACOS_TARGET: aarch64-apple-darwin

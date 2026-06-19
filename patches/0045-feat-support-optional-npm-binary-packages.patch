@@ -6,8 +6,9 @@ Subject: [PATCH] feat: support optional npm binary packages
 ---
  npx-cli/package-lock.json | 29 +++++++++++++++++++++++++++++
  npx-cli/package.json      |  2 ++
+ npx-cli/src/cli.ts        |  4 +++-
  npx-cli/src/download.ts   | 38 ++++++++++++++++++++++++++++++++++++++
- 3 files changed, 69 insertions(+)
+ 4 files changed, 72 insertions(+), 1 deletion(-)
 
 diff --git a/npx-cli/package-lock.json b/npx-cli/package-lock.json
 index 40a4d2749..639b77655 100644
@@ -76,6 +77,36 @@ index 375353bac..941cdd092 100644
      "esbuild": "^0.27.2"
    },
    "dependencies": {
+diff --git a/npx-cli/src/cli.ts b/npx-cli/src/cli.ts
+index 11c8272b3..214023f28 100644
+--- a/npx-cli/src/cli.ts
++++ b/npx-cli/src/cli.ts
+@@ -130,6 +130,7 @@ async function extractAndRun(
+   const binName = getBinaryName(baseName);
+   const binPath = path.join(versionCacheDir, binName);
+   const zipPath = path.join(versionCacheDir, `${baseName}.zip`);
++  let sourceZipPath = zipPath;
+ 
+   // Clean old binary if exists
+   try {
+@@ -147,7 +148,7 @@ async function extractAndRun(
+   if (!fs.existsSync(zipPath)) {
+     console.error(`Downloading ${baseName}...`);
+     try {
+-      await ensureBinary(platformDir, baseName, showProgress);
++      sourceZipPath = await ensureBinary(platformDir, baseName, showProgress);
+       console.error(""); // newline after progress
+     } catch (err: unknown) {
+       const msg = err instanceof Error ? err.message : String(err);
+@@ -160,7 +161,7 @@ async function extractAndRun(
+   if (!fs.existsSync(binPath)) {
+     try {
+       const { default: AdmZip } = await import("adm-zip");
+-      const zip = new AdmZip(zipPath);
++      const zip = new AdmZip(sourceZipPath);
+       zip.extractAllTo(versionCacheDir, true);
+     } catch (err: unknown) {
+       const msg = err instanceof Error ? err.message : String(err);
 diff --git a/npx-cli/src/download.ts b/npx-cli/src/download.ts
 index 0be170bee..a7dfcda36 100644
 --- a/npx-cli/src/download.ts
@@ -146,4 +177,3 @@ index 0be170bee..a7dfcda36 100644
  
 -- 
 2.53.0
-
