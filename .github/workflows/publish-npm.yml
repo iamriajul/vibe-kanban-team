@@ -80,6 +80,10 @@ jobs:
       PUBLISH_NPM_PACKAGE: "0"
       UPDATE_LATEST_BINARY_POINTER: "0"
       PUBLISH_APPLY_PATCHES: "0"
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: sccache
+      CARGO_PROFILE_RELEASE_DEBUG: "0"
+      CARGO_PROFILE_RELEASE_SPLIT_DEBUGINFO: "off"
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -105,6 +109,9 @@ jobs:
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@v0.0.10
 
       - name: Restore Rust cache
         uses: Swatinem/rust-cache@v2
@@ -162,6 +169,11 @@ jobs:
 
           ./scripts/publish-npm.sh
 
+      - name: Show sccache stats
+        if: always()
+        shell: bash
+        run: ${SCCACHE_PATH} --show-stats
+
   build-macos-arm64:
     needs: prepare
     runs-on: macos-14
@@ -173,6 +185,10 @@ jobs:
       PUBLISH_NPM_PACKAGE: "0"
       UPDATE_LATEST_BINARY_POINTER: "0"
       PUBLISH_APPLY_PATCHES: "0"
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: sccache
+      CARGO_PROFILE_RELEASE_DEBUG: "0"
+      CARGO_PROFILE_RELEASE_SPLIT_DEBUGINFO: "off"
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -198,6 +214,9 @@ jobs:
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@v0.0.10
 
       - name: Restore Rust cache
         uses: Swatinem/rust-cache@v2
@@ -226,6 +245,11 @@ jobs:
           export PKG_CONFIG_PATH="$openssl_prefix/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
 
           ./scripts/publish-npm.sh
+
+      - name: Show sccache stats
+        if: always()
+        shell: bash
+        run: ${SCCACHE_PATH} --show-stats
 
   publish:
     needs:
