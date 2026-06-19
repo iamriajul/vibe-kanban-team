@@ -1,0 +1,149 @@
+From 0a3702a6ad18c642d4f5810f2c99a97f8cae929b Mon Sep 17 00:00:00 2001
+From: Riajul Islam <kmriajulislami@gmail.com>
+Date: Fri, 19 Jun 2026 10:51:15 +0000
+Subject: [PATCH] feat: support optional npm binary packages
+
+---
+ npx-cli/package-lock.json | 29 +++++++++++++++++++++++++++++
+ npx-cli/package.json      |  2 ++
+ npx-cli/src/download.ts   | 38 ++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 69 insertions(+)
+
+diff --git a/npx-cli/package-lock.json b/npx-cli/package-lock.json
+index 40a4d2749..639b77655 100644
+--- a/npx-cli/package-lock.json
++++ b/npx-cli/package-lock.json
+@@ -15,6 +15,8 @@
+         "vibe-kanban": "bin/cli.js"
+       },
+       "devDependencies": {
++        "@types/adm-zip": "^0.5.8",
++        "@types/node": "^24.13.2",
+         "esbuild": "^0.27.2"
+       },
+       "engines": {
+@@ -463,6 +465,26 @@
+         "node": ">=18"
+       }
+     },
++    "node_modules/@types/adm-zip": {
++      "version": "0.5.8",
++      "resolved": "https://registry.npmjs.org/@types/adm-zip/-/adm-zip-0.5.8.tgz",
++      "integrity": "sha512-RVVH7QvZYbN+ihqZ4kX/dMiowf6o+Jk1fNwiSdx0NahBJLU787zkULhGhJM8mf/obmLGmgdMM0bXsQTmyfbR7Q==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "@types/node": "*"
++      }
++    },
++    "node_modules/@types/node": {
++      "version": "24.13.2",
++      "resolved": "https://registry.npmjs.org/@types/node/-/node-24.13.2.tgz",
++      "integrity": "sha512-fRa09kZTgu8o71KFcDjUFuc7F+dEbZYZmkI0mg5YBTRs0yMKjYHsq/c0urDKeDb+D5qVgXOdFcuu+DZPKOITwA==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "undici-types": "~7.18.0"
++      }
++    },
+     "node_modules/adm-zip": {
+       "version": "0.5.16",
+       "resolved": "https://registry.npmjs.org/adm-zip/-/adm-zip-0.5.16.tgz",
+@@ -522,6 +544,13 @@
+         "@esbuild/win32-ia32": "0.27.4",
+         "@esbuild/win32-x64": "0.27.4"
+       }
++    },
++    "node_modules/undici-types": {
++      "version": "7.18.2",
++      "resolved": "https://registry.npmjs.org/undici-types/-/undici-types-7.18.2.tgz",
++      "integrity": "sha512-AsuCzffGHJybSaRrmr5eHr81mwJU3kjw6M+uprWvCXiNeN9SOGwQ3Jn8jb8m3Z6izVgknn1R0FTCEAP2QrLY/w==",
++      "dev": true,
++      "license": "MIT"
+     }
+   }
+ }
+diff --git a/npx-cli/package.json b/npx-cli/package.json
+index 375353bac..941cdd092 100644
+--- a/npx-cli/package.json
++++ b/npx-cli/package.json
+@@ -22,6 +22,8 @@
+   "license": "",
+   "description": "NPX wrapper around vibe-kanban and vibe-kanban-mcp",
+   "devDependencies": {
++    "@types/adm-zip": "^0.5.8",
++    "@types/node": "^24.13.2",
+     "esbuild": "^0.27.2"
+   },
+   "dependencies": {
+diff --git a/npx-cli/src/download.ts b/npx-cli/src/download.ts
+index 0be170bee..a7dfcda36 100644
+--- a/npx-cli/src/download.ts
++++ b/npx-cli/src/download.ts
+@@ -3,11 +3,17 @@ import fs from 'fs';
+ import path from 'path';
+ import crypto from 'crypto';
+ import os from 'os';
++import { createRequire } from 'module';
+ 
+ // Replaced during npm pack by workflow
+ export const R2_BASE_URL = '__R2_PUBLIC_URL__';
+ export const BINARY_TAG = '__BINARY_TAG__'; // e.g., v0.0.135-20251215122030
+ export const CACHE_DIR = path.join(os.homedir(), '.vibe-kanban', 'bin');
++const requireFromHere = createRequire(__filename);
++const OPTIONAL_BINARY_PACKAGES: Record<string, string> = {
++  'linux-x64': 'vibe-kanban-team-linux-x64',
++  'macos-arm64': 'vibe-kanban-team-macos-arm64',
++};
+ 
+ // Local development mode: use binaries from npx-cli/dist/ instead of R2
+ // Only activate if dist/ exists (i.e., running from source after local-build.sh)
+@@ -152,6 +158,30 @@ function downloadFile(
+   });
+ }
+ 
++function resolveVendoredBinaryZip(
++  platform: string,
++  binaryName: string
++): string | null {
++  const packageName = OPTIONAL_BINARY_PACKAGES[platform];
++  if (!packageName) return null;
++
++  try {
++    const packageJsonPath = requireFromHere.resolve(
++      `${packageName}/package.json`
++    );
++    const packageRoot = path.dirname(packageJsonPath);
++    const zipPath = path.join(
++      packageRoot,
++      'dist',
++      platform,
++      `${binaryName}.zip`
++    );
++    return fs.existsSync(zipPath) ? zipPath : null;
++  } catch {
++    return null;
++  }
++}
++
+ export async function ensureBinary(
+   platform: string,
+   binaryName: string,
+@@ -173,6 +203,14 @@ export async function ensureBinary(
+     );
+   }
+ 
++  const vendoredZipPath = resolveVendoredBinaryZip(
++    platform,
++    binaryName
++  );
++  if (vendoredZipPath) {
++    return vendoredZipPath;
++  }
++
+   const cacheDir = path.join(CACHE_DIR, BINARY_TAG, platform);
+   const zipPath = path.join(cacheDir, `${binaryName}.zip`);
+ 
+-- 
+2.53.0
+

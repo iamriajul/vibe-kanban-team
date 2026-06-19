@@ -74,9 +74,12 @@ jobs:
     runs-on: ubuntu-latest
     env:
       LIBSQLITE3_SYS_USE_PKG_CONFIG: "1"
+      NPM_PUBLISH_AUTH: oidc
       NPM_VERSION: ${{ needs.prepare.outputs.version }}
       NPM_TAG: ${{ needs.prepare.outputs.npm_tag }}
       PUBLISH_BINARY_ARTIFACTS: "1"
+      PUBLISH_R2_BINARY_ARTIFACTS: "0"
+      PUBLISH_PLATFORM_NPM_PACKAGE: "1"
       PUBLISH_NPM_PACKAGE: "0"
       UPDATE_LATEST_BINARY_POINTER: "0"
     steps:
@@ -90,6 +93,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Update npm for trusted publishing
+        shell: bash
+        run: npm install -g npm@latest
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -142,13 +150,18 @@ jobs:
           ./scripts/publish-npm.sh
 
   build-macos-arm64:
-    needs: prepare
+    needs:
+      - prepare
+      - build-linux-x64
     runs-on: macos-14
     env:
       MACOS_TARGET: aarch64-apple-darwin
+      NPM_PUBLISH_AUTH: oidc
       NPM_VERSION: ${{ needs.prepare.outputs.version }}
       NPM_TAG: ${{ needs.prepare.outputs.npm_tag }}
       PUBLISH_BINARY_ARTIFACTS: "1"
+      PUBLISH_R2_BINARY_ARTIFACTS: "0"
+      PUBLISH_PLATFORM_NPM_PACKAGE: "1"
       PUBLISH_NPM_PACKAGE: "0"
       UPDATE_LATEST_BINARY_POINTER: "0"
     steps:
@@ -162,6 +175,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Update npm for trusted publishing
+        shell: bash
+        run: npm install -g npm@latest
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -198,6 +216,8 @@ jobs:
       NPM_VERSION: ${{ needs.prepare.outputs.version }}
       NPM_TAG: ${{ needs.prepare.outputs.npm_tag }}
       PUBLISH_BINARY_ARTIFACTS: "0"
+      PUBLISH_R2_BINARY_ARTIFACTS: "0"
+      PUBLISH_PLATFORM_NPM_PACKAGE: "0"
       PUBLISH_NPM_PACKAGE: "1"
       UPDATE_LATEST_BINARY_POINTER: "1"
     steps:
