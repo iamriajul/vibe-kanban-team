@@ -65,6 +65,19 @@ log() {
   printf '[publish] %s\n' "$*"
 }
 
+timed_start() {
+  printf '[publish] start %s at %s\n' "$1" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >&2
+  date +%s
+}
+
+timed_end() {
+  local label="$1"
+  local started_at="$2"
+  local ended_at
+  ended_at="$(date +%s)"
+  printf '[publish] end %s after %ss\n' "$label" "$((ended_at - started_at))"
+}
+
 die() {
   log "ERROR: $*"
   exit 1
@@ -460,10 +473,13 @@ ${NODE_CMD} -e "
 "
 
 echo "Installing dependencies..."
-(cd "${VIBE_DIR}" && pnpm install)
+STEP_STARTED="$(timed_start "pnpm install")"
+(cd "${VIBE_DIR}" && pnpm install --prefer-offline)
+timed_end "pnpm install" "${STEP_STARTED}"
 
 if [ "${PUBLISH_BINARY_ARTIFACTS}" -eq 1 ]; then
   echo "Building frontend..."
+  STEP_STARTED="$(timed_start "frontend build")"
   if [ -d "${VIBE_DIR}/packages/local-web" ]; then
     (cd "${VIBE_DIR}" && pnpm --filter @vibe/local-web run build)
   elif [ -d "${VIBE_DIR}/frontend" ]; then
@@ -471,6 +487,7 @@ if [ "${PUBLISH_BINARY_ARTIFACTS}" -eq 1 ]; then
   else
     die "Frontend source directory not found. Expected '${VIBE_DIR}/packages/local-web' or '${VIBE_DIR}/frontend'."
   fi
+  timed_end "frontend build" "${STEP_STARTED}"
 
   HOST_TRIPLE="$(rustc -vV | awk '/host/ {print $2}')"
 
@@ -521,6 +538,7 @@ if [ "${PUBLISH_BINARY_ARTIFACTS}" -eq 1 ]; then
   fi
 
   echo "Resolving MCP binary target..."
+  STEP_STARTED="$(timed_start "cargo metadata")"
   MCP_BIN_TARGET="$(
     cd "${VIBE_DIR}" && cargo metadata --no-deps --format-version 1 | ${NODE_CMD} -e '
       let data = "";
@@ -546,9 +564,11 @@ if [ "${PUBLISH_BINARY_ARTIFACTS}" -eq 1 ]; then
   if [ -z "${MCP_BIN_TARGET}" ]; then
     die "Unable to detect MCP binary target. Expected 'vibe-kanban-mcp' or 'mcp_task_server'."
   fi
+  timed_end "cargo metadata" "${STEP_STARTED}"
   echo "Using MCP binary target: ${MCP_BIN_TARGET}"
 
   echo "Building backend binaries for ${TARGET_TRIPLE}..."
+  STEP_STARTED="$(timed_start "cargo build")"
   if [ "${TARGET_TRIPLE}" = "${HOST_TRIPLE}" ]; then
     (cd "${VIBE_DIR}" && cargo build --release --bin server --bin "${MCP_BIN_TARGET}" --bin review)
     TARGET_DIR="${VIBE_DIR}/target/release"
@@ -556,6 +576,7 @@ if [ "${PUBLISH_BINARY_ARTIFACTS}" -eq 1 ]; then
     (cd "${VIBE_DIR}" && cargo build --release --target "${TARGET_TRIPLE}" --bin server --bin "${MCP_BIN_TARGET}" --bin review)
     TARGET_DIR="${VIBE_DIR}/target/${TARGET_TRIPLE}/release"
   fi
+  timed_end "cargo build" "${STEP_STARTED}"
 
   if [ ! -f "${TARGET_DIR}/server" ]; then
     echo "Expected binary not found at ${TARGET_DIR}/server"
@@ -598,6 +619,7 @@ if [ "${PUBLISH_BINARY_ARTIFACTS}" -eq 1 ]; then
   mkdir -p "${DIST_DIR}"
 
   echo "Packaging binaries..."
+  STEP_STARTED="$(timed_start "package binaries")"
   WORK_DIR="$(mktemp -d)"
 
   cp "${TARGET_DIR}/server" "${WORK_DIR}/vibe-kanban"
@@ -610,8 +632,10 @@ if [ "${PUBLISH_BINARY_ARTIFACTS}" -eq 1 ]; then
   zip -j "${DIST_DIR}/vibe-kanban-review.zip" "${WORK_DIR}/vibe-kanban-review" >/dev/null
 
   rm -rf "${WORK_DIR}"
+  timed_end "package binaries" "${STEP_STARTED}"
 
   echo "Generating manifest..."
+  STEP_STARTED="$(timed_start "generate manifest")"
   PLATFORM_MANIFEST_PATH="${TMP_DIR}/platform-manifest.json"
   MANIFEST_PATH="${TMP_DIR}/version-manifest.json"
   ${NODE_CMD} -e "
@@ -632,8 +656,10 @@ if [ "${PUBLISH_BINARY_ARTIFACTS}" -eq 1 ]; then
     }
     fs.writeFileSync('${PLATFORM_MANIFEST_PATH}', JSON.stringify(manifest, null, 2));
   "
+  timed_end "generate manifest" "${STEP_STARTED}"
 
   echo "Uploading to R2..."
+  STEP_STARTED="$(timed_start "upload binaries")"
   export AWS_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID}"
   export AWS_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY}"
   export AWS_DEFAULT_REGION="${R2_REGION:-auto}"
@@ -695,6 +721,7 @@ if [ "${PUBLISH_BINARY_ARTIFACTS}" -eq 1 ]; then
   else
     log "Skipping binaries/manifest.json update because NPM_TAG=${NPM_TAG} (not 'latest')."
   fi
+  timed_end "upload binaries" "${STEP_STARTED}"
 fi
 
 if [ "${PUBLISH_BINARY_ARTIFACTS}" -eq 0 ]; then
