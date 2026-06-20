@@ -1,0 +1,413 @@
+diff --git a/crates/executors/src/executors/antigravity.rs b/crates/executors/src/executors/antigravity.rs
+index c23bf048f..cc73d90bc 100644
+--- a/crates/executors/src/executors/antigravity.rs
++++ b/crates/executors/src/executors/antigravity.rs
+@@ -58,19 +58,15 @@ const ANTIGRAVITY_BLOCKED_VALUE_ARGS: &[&str] = &[
+     "--prompt",
+     "--conversation",
+     "--model",
++    "--print-timeout",
+     "--log-file",
+ ];
+-const ANTIGRAVITY_BLOCKED_STANDALONE_ARGS: &[&str] =
+-    &["-i", "--prompt-interactive", "-c", "--continue"];
+-const FALLBACK_ANTIGRAVITY_MODELS: &[&str] = &[
+-    "Gemini 3.5 Flash (Medium)",
+-    "Gemini 3.5 Flash (High)",
+-    "Gemini 3.5 Flash (Low)",
+-    "Gemini 3.1 Pro (Low)",
+-    "Gemini 3.1 Pro (High)",
+-    "Claude Sonnet 4.6 (Thinking)",
+-    "Claude Opus 4.6 (Thinking)",
+-    "GPT-OSS 120B (Medium)",
++const ANTIGRAVITY_BLOCKED_STANDALONE_ARGS: &[&str] = &[
++    "-i",
++    "--prompt-interactive",
++    "-c",
++    "--continue",
++    "--dangerously-skip-permissions",
+ ];
+ 
+ const AGY_WRAPPER_SCRIPT: &str = r#"
+@@ -173,7 +169,10 @@ pub struct AntiGravity {
+ }
+ 
+ impl AntiGravity {
+-    fn build_command_builder(&self) -> Result<CommandBuilder, CommandBuildError> {
++    fn build_command_builder(
++        &self,
++        model_arg: Option<&str>,
++    ) -> Result<CommandBuilder, CommandBuildError> {
+         let mut builder = CommandBuilder::new("agy");
+ 
+         if self.dangerously_skip_permissions.unwrap_or(true) {
+@@ -184,8 +183,8 @@ impl AntiGravity {
+             builder = builder.extend_params(["--sandbox"]);
+         }
+ 
+-        if let Some(model) = self.effective_model_arg() {
+-            builder = builder.extend_params(["--model", model.as_str()]);
++        if let Some(model) = model_arg {
++            builder = builder.extend_params(["--model", model]);
+         }
+ 
+         if let Some(timeout) = &self.print_timeout {
+@@ -216,7 +215,7 @@ impl AntiGravity {
+             .canonicalize()
+             .unwrap_or_else(|_| current_dir.to_path_buf());
+         let combined_prompt = self.append_prompt.combine_prompt(prompt);
+-        validate_antigravity_model(
++        let model_arg = validated_antigravity_model_arg(
+             &self.cmd,
+             &workspace_dir,
+             self.effective_model_arg().as_deref(),
+@@ -236,7 +235,7 @@ impl AntiGravity {
+         additional_args.push(combined_prompt.clone());
+ 
+         let command_parts = self
+-            .build_command_builder()?
++            .build_command_builder(model_arg.as_deref())?
+             .build_follow_up(&additional_args)?;
+ 
+         spawn_agy(
+@@ -353,7 +352,7 @@ impl StandardCodingAgentExecutor for AntiGravity {
+             .unwrap_or_else(|| Path::new("."))
+             .to_path_buf();
+         let mut initial_options = ExecutorDiscoveredOptions {
+-            model_selector: antigravity_model_selector_config(&fallback_antigravity_model_lines()),
++            model_selector: antigravity_model_selector_config(&[]),
+             loading_models: true,
+             ..Default::default()
+         };
+@@ -1196,20 +1195,27 @@ fn add_token_usage_entry(
+     );
+ }
+ 
+-async fn validate_antigravity_model(
++async fn validated_antigravity_model_arg(
+     cmd: &CmdOverrides,
+     current_dir: &Path,
+     model: Option<&str>,
+-) -> Result<(), ExecutorError> {
++) -> Result<Option<String>, ExecutorError> {
+     let Some(model) = model.map(str::trim).filter(|model| !model.is_empty()) else {
+-        return Ok(());
++        return Ok(None);
+     };
+-    let Some(catalog) = discover_antigravity_model_catalog(cmd, current_dir).await else {
+-        return Ok(());
++    let catalog = match discover_antigravity_model_catalog(cmd, current_dir).await {
++        Some(catalog) if !catalog.is_empty() => catalog,
++        _ => {
++            tracing::warn!(
++                "Omitting configured Antigravity model {model:?} because `agy models` did not return a live catalog"
++            );
++            return Ok(None);
++        }
+     };
++
+     antigravity_model_error(model, &catalog)
+         .map(|message| Err(ExecutorError::Io(std::io::Error::other(message))))
+-        .unwrap_or(Ok(()))
++        .unwrap_or_else(|| Ok(Some(model.to_string())))
+ }
+ 
+ async fn discover_antigravity_model_catalog(
+@@ -1228,10 +1234,10 @@ async fn discover_antigravity_model_catalog(
+ async fn discover_antigravity_model_lines(cmd: &CmdOverrides, current_dir: &Path) -> Vec<String> {
+     match run_antigravity_models_command(cmd, current_dir).await {
+         Ok(lines) if !lines.is_empty() => lines,
+-        Ok(_) => fallback_antigravity_model_lines(),
++        Ok(_) => Vec::new(),
+         Err(error) => {
+             tracing::warn!("Antigravity model discovery failed: {error}");
+-            fallback_antigravity_model_lines()
++            Vec::new()
+         }
+     }
+ }
+@@ -1371,13 +1377,6 @@ fn antigravity_model_error(model: &str, available: &[String]) -> Option<String>
+     ))
+ }
+ 
+-fn fallback_antigravity_model_lines() -> Vec<String> {
+-    FALLBACK_ANTIGRAVITY_MODELS
+-        .iter()
+-        .map(|line| (*line).to_string())
+-        .collect()
+-}
+-
+ fn antigravity_model_selector_config(lines: &[String]) -> ModelSelectorConfig {
+     let mut models = Vec::<ModelInfo>::new();
+ 
+@@ -1410,10 +1409,6 @@ fn antigravity_model_selector_config(lines: &[String]) -> ModelSelectorConfig {
+         });
+     }
+ 
+-    if models.is_empty() {
+-        return antigravity_model_selector_config(&fallback_antigravity_model_lines());
+-    }
+-
+     ModelSelectorConfig {
+         default_model: models.first().map(|model| model.id.clone()),
+         models,
+@@ -1554,6 +1549,7 @@ fn antigravity_config_dir(cmd: &CmdOverrides) -> Option<PathBuf> {
+ mod tests {
+     use std::collections::BTreeMap;
+ 
++    use tokio::io::AsyncReadExt;
+     use workspace_utils::log_msg::LogMsg;
+ 
+     use super::*;
+@@ -1571,6 +1567,31 @@ mod tests {
+         entries.into_values().collect()
+     }
+ 
++    fn live_model_lines() -> Vec<String> {
++        vec![
++            "Gemini 3.5 Flash (Medium)".to_string(),
++            "Gemini 3.5 Flash (High)".to_string(),
++            "Gemini 3.5 Flash (Low)".to_string(),
++            "Claude Opus 4.6 (Thinking)".to_string(),
++        ]
++    }
++
++    #[cfg(unix)]
++    fn write_fake_agy(script: &str) -> (PathBuf, PathBuf) {
++        use std::os::unix::fs::PermissionsExt;
++
++        let dir = std::env::temp_dir().join(format!(
++            "vibe-kanban-fake-agy-{}-{}",
++            std::process::id(),
++            Uuid::new_v4()
++        ));
++        std::fs::create_dir_all(&dir).unwrap();
++        let path = dir.join("agy");
++        std::fs::write(&path, script).unwrap();
++        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
++        (dir, path)
++    }
++
+     #[test]
+     fn detects_wrapper_conversation_marker() {
+         assert!(is_uuid_like("3df9e047-12aa-4101-93e3-8a30ab0cbe43"));
+@@ -1587,7 +1608,7 @@ mod tests {
+ 
+     #[test]
+     fn groups_model_efforts_for_selector() {
+-        let lines = fallback_antigravity_model_lines();
++        let lines = live_model_lines();
+         let config = antigravity_model_selector_config(&lines);
+ 
+         let flash = config
+@@ -1610,6 +1631,15 @@ mod tests {
+         );
+     }
+ 
++    #[test]
++    fn empty_antigravity_model_lines_expose_no_models() {
++        let config = antigravity_model_selector_config(&[]);
++
++        assert!(config.models.is_empty());
++        assert_eq!(config.default_model, None);
++        assert_eq!(config.permissions, vec![PermissionPolicy::Auto]);
++    }
++
+     #[test]
+     fn composes_cli_model_from_base_and_effort() {
+         assert_eq!(
+@@ -1647,7 +1677,9 @@ mod tests {
+             "--continue",
+             "--conversation bad-id",
+             "--model sneaky-model",
++            "--print-timeout 1s",
+             "--log-file /tmp/elsewhere.log",
++            "--dangerously-skip-permissions",
+             "--add-dir /extra",
+             "--sandbox",
+         ]
+@@ -1659,6 +1691,184 @@ mod tests {
+         assert_eq!(filtered, vec!["--add-dir", "/extra", "--sandbox"]);
+     }
+ 
++    #[cfg(unix)]
++    #[tokio::test]
++    async fn fake_agy_models_are_the_only_discovered_models() {
++        let (_dir, agy) = write_fake_agy(
++            r#"#!/bin/sh
++if [ "$1" = "models" ]; then
++  printf '%s\n' 'Live Model (High)' 'Live Model (Low)'
++  exit 0
++fi
++exit 1
++"#,
++        );
++        let cmd = CmdOverrides {
++            base_command_override: Some(agy.to_string_lossy().to_string()),
++            additional_params: None,
++            env: None,
++        };
++
++        let lines = discover_antigravity_model_lines(&cmd, Path::new(".")).await;
++        assert_eq!(lines, vec!["Live Model (High)", "Live Model (Low)"]);
++    }
++
++    #[cfg(unix)]
++    #[tokio::test]
++    async fn fake_agy_empty_model_discovery_exposes_no_fallback_models() {
++        let (_dir, agy) = write_fake_agy(
++            r#"#!/bin/sh
++if [ "$1" = "models" ]; then
++  exit 0
++fi
++exit 1
++"#,
++        );
++        let cmd = CmdOverrides {
++            base_command_override: Some(agy.to_string_lossy().to_string()),
++            additional_params: None,
++            env: None,
++        };
++
++        let lines = discover_antigravity_model_lines(&cmd, Path::new(".")).await;
++        assert!(lines.is_empty());
++        assert!(antigravity_model_selector_config(&lines).models.is_empty());
++    }
++
++    #[cfg(unix)]
++    #[tokio::test]
++    async fn fake_agy_model_validation_uses_live_catalog() {
++        let (_dir, agy) = write_fake_agy(
++            r#"#!/bin/sh
++if [ "$1" = "models" ]; then
++  printf '%s\n' 'Live Model (High)'
++  exit 0
++fi
++exit 1
++"#,
++        );
++        let cmd = CmdOverrides {
++            base_command_override: Some(agy.to_string_lossy().to_string()),
++            additional_params: None,
++            env: None,
++        };
++
++        let valid =
++            validated_antigravity_model_arg(&cmd, Path::new("."), Some("Live Model (High)"))
++                .await
++                .unwrap();
++        assert_eq!(valid.as_deref(), Some("Live Model (High)"));
++
++        let invalid =
++            validated_antigravity_model_arg(&cmd, Path::new("."), Some("Static Guess (High)"))
++                .await
++                .unwrap_err();
++        assert!(invalid.to_string().contains("Static Guess (High)"));
++    }
++
++    #[cfg(unix)]
++    #[tokio::test]
++    async fn fake_agy_empty_model_discovery_omits_configured_model() {
++        let (_dir, agy) = write_fake_agy(
++            r#"#!/bin/sh
++if [ "$1" = "models" ]; then
++  exit 0
++fi
++exit 1
++"#,
++        );
++        let cmd = CmdOverrides {
++            base_command_override: Some(agy.to_string_lossy().to_string()),
++            additional_params: None,
++            env: None,
++        };
++
++        let model = validated_antigravity_model_arg(&cmd, Path::new("."), Some("Static Guess"))
++            .await
++            .unwrap();
++        assert_eq!(model, None);
++    }
++
++    #[cfg(unix)]
++    #[tokio::test]
++    async fn fake_agy_spawn_emits_stdout_and_conversation_marker() {
++        let (dir, agy) = write_fake_agy(
++            r#"#!/bin/sh
++if [ "$1" = "models" ]; then
++  printf '%s\n' 'Live Model (High)'
++  exit 0
++fi
++
++log_file=
++while [ "$#" -gt 0 ]; do
++  if [ "$1" = "--log-file" ]; then
++    shift
++    log_file=$1
++    break
++  fi
++  shift
++done
++
++printf '%s\n' 'assistant output'
++if [ -n "$log_file" ]; then
++  printf '%s\n' 'I0000 printmode.go:130] Print mode: conversation=3df9e047-12aa-4101-93e3-8a30ab0cbe43, sending message' > "$log_file"
++fi
++"#,
++        );
++        let executor = AntiGravity {
++            append_prompt: AppendPrompt::default(),
++            model: Some("Live Model".to_string()),
++            effort: Some("high".to_string()),
++            dangerously_skip_permissions: Some(true),
++            sandbox: None,
++            print_timeout: None,
++            add_dir: None,
++            context_window: None,
++            cmd: CmdOverrides {
++                base_command_override: Some(agy.to_string_lossy().to_string()),
++                additional_params: Some(vec![
++                    "--model Static Guess".to_string(),
++                    "--print-timeout 1s".to_string(),
++                    "--dangerously-skip-permissions".to_string(),
++                ]),
++                env: None,
++            },
++        };
++        let env = ExecutionEnv::new(crate::env::RepoContext::default(), false, String::new());
++
++        let mut spawned = executor
++            .spawn_internal(&dir, "prompt", None, &env)
++            .await
++            .unwrap();
++        let mut stdout = String::new();
++        spawned
++            .child
++            .inner()
++            .stdout
++            .as_mut()
++            .unwrap()
++            .read_to_string(&mut stdout)
++            .await
++            .unwrap();
++        let mut stderr = String::new();
++        spawned
++            .child
++            .inner()
++            .stderr
++            .as_mut()
++            .unwrap()
++            .read_to_string(&mut stderr)
++            .await
++            .unwrap();
++        let status = spawned.child.inner().wait().await.unwrap();
++
++        assert!(status.success());
++        assert!(stdout.contains("assistant output"));
++        assert!(
++            stderr.contains("VIBE_KANBAN_AGY_CONVERSATION_ID=3df9e047-12aa-4101-93e3-8a30ab0cbe43")
++        );
++    }
++
+     #[test]
+     fn parses_full_model_for_preset_options() {
+         let (model_id, reasoning_id) =
