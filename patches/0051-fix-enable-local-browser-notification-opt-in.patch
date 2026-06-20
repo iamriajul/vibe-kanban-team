@@ -1,0 +1,206 @@
+From 1d07702cbf84128b6d02a7049154dca43a6faae0 Mon Sep 17 00:00:00 2001
+From: Riajul Islam <kmriajulislami@gmail.com>
+Date: Sat, 20 Jun 2026 12:51:25 +0000
+Subject: [PATCH] fix: enable local browser notification opt-in
+
+---
+ .../pages/workspaces/NotificationsPage.tsx    | 154 +++++++++---------
+ .../hooks/useBrowserNotificationPreference.ts |   3 +-
+ 2 files changed, 78 insertions(+), 79 deletions(-)
+
+diff --git a/packages/web-core/src/pages/workspaces/NotificationsPage.tsx b/packages/web-core/src/pages/workspaces/NotificationsPage.tsx
+index c5cd03c2a..f7ffaad4f 100644
+--- a/packages/web-core/src/pages/workspaces/NotificationsPage.tsx
++++ b/packages/web-core/src/pages/workspaces/NotificationsPage.tsx
+@@ -138,14 +138,6 @@ export function NotificationsPage() {
+     ? 'Disable browser notifications'
+     : 'Enable browser notifications';
+ 
+-  if (!enabled) {
+-    return (
+-      <div className="flex items-center justify-center h-full text-low">
+-        Sign in to view notifications
+-      </div>
+-    );
+-  }
+-
+   return (
+     <div className="flex flex-col h-full overflow-hidden">
+       <div className="flex items-center justify-between px-double py-base border-b border-border">
+@@ -187,81 +179,87 @@ export function NotificationsPage() {
+         </div>
+       </div>
+ 
+-      <div className="flex-1 overflow-y-auto">
+-        {groupedNotifications.length === 0 ? (
+-          <div className="flex flex-col items-center justify-center h-full gap-2 text-low">
+-            <BellIcon size={32} weight="light" />
+-            <p className="text-base">No notifications yet</p>
+-          </div>
+-        ) : (
+-          <div className="divide-y divide-border">
+-            {groupedNotifications.map((group) => (
+-              <div
+-                key={group.id}
+-                role="button"
+-                tabIndex={0}
+-                onClick={() => handleClick(group)}
+-                onKeyDown={(e) => {
+-                  if (e.key === 'Enter' || e.key === ' ') {
+-                    e.preventDefault();
+-                    handleClick(group);
+-                  }
+-                }}
+-                className={cn(
+-                  'w-full flex items-center gap-base px-double py-base text-left transition-colors cursor-pointer outline-none',
+-                  'hover:bg-secondary',
+-                  'focus-visible:bg-secondary',
+-                  'focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-brand',
+-                  !group.seen && 'bg-brand/5'
+-                )}
+-              >
+-                <span
++      {!enabled ? (
++        <div className="flex items-center justify-center h-full text-low">
++          Sign in to view notifications
++        </div>
++      ) : (
++        <div className="flex-1 overflow-y-auto">
++          {groupedNotifications.length === 0 ? (
++            <div className="flex flex-col items-center justify-center h-full gap-2 text-low">
++              <BellIcon size={32} weight="light" />
++              <p className="text-base">No notifications yet</p>
++            </div>
++          ) : (
++            <div className="divide-y divide-border">
++              {groupedNotifications.map((group) => (
++                <div
++                  key={group.id}
++                  role="button"
++                  tabIndex={0}
++                  onClick={() => handleClick(group)}
++                  onKeyDown={(e) => {
++                    if (e.key === 'Enter' || e.key === ' ') {
++                      e.preventDefault();
++                      handleClick(group);
++                    }
++                  }}
+                   className={cn(
+-                    'shrink-0 w-2 h-2 rounded-full',
+-                    !group.seen && 'bg-brand'
++                    'w-full flex items-center gap-base px-double py-base text-left transition-colors cursor-pointer outline-none',
++                    'hover:bg-secondary',
++                    'focus-visible:bg-secondary',
++                    'focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-brand',
++                    !group.seen && 'bg-brand/5'
+                   )}
+-                />
+-                <div className="flex-1 min-w-0">
+-                  <p
++                >
++                  <span
+                     className={cn(
+-                      'text-base truncate',
+-                      group.seen ? 'text-normal' : 'text-high'
++                      'shrink-0 w-2 h-2 rounded-full',
++                      !group.seen && 'bg-brand'
+                     )}
+-                  >
+-                    <NotificationMessage
+-                      segments={getGroupedNotificationSegments(group)}
+-                      membersByUserId={membersByUserId}
+-                    />
+-                  </p>
+-                  <p className="text-sm text-low mt-0.5">
+-                    {formatRelativeTime(group.latest.created_at)}
+-                  </p>
++                  />
++                  <div className="flex-1 min-w-0">
++                    <p
++                      className={cn(
++                        'text-base truncate',
++                        group.seen ? 'text-normal' : 'text-high'
++                      )}
++                    >
++                      <NotificationMessage
++                        segments={getGroupedNotificationSegments(group)}
++                        membersByUserId={membersByUserId}
++                      />
++                    </p>
++                    <p className="text-sm text-low mt-0.5">
++                      {formatRelativeTime(group.latest.created_at)}
++                    </p>
++                  </div>
++                  {!group.seen && (
++                    <button
++                      type="button"
++                      onClick={(e) => {
++                        e.stopPropagation();
++                        markGroupSeen(group);
++                      }}
++                      onKeyDown={(e) => e.stopPropagation()}
++                      className={cn(
++                        'shrink-0 inline-flex items-center gap-half rounded-sm px-half py-half text-sm text-low transition-colors cursor-pointer',
++                        'hover:bg-secondary hover:text-normal',
++                        'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brand'
++                      )}
++                      aria-label="Mark notification as read"
++                      title="Mark as read"
++                    >
++                      <CheckIcon size={14} weight="bold" />
++                      <span className="hidden sm:inline">Mark as read</span>
++                    </button>
++                  )}
+                 </div>
+-                {!group.seen && (
+-                  <button
+-                    type="button"
+-                    onClick={(e) => {
+-                      e.stopPropagation();
+-                      markGroupSeen(group);
+-                    }}
+-                    onKeyDown={(e) => e.stopPropagation()}
+-                    className={cn(
+-                      'shrink-0 inline-flex items-center gap-half rounded-sm px-half py-half text-sm text-low transition-colors cursor-pointer',
+-                      'hover:bg-secondary hover:text-normal',
+-                      'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brand'
+-                    )}
+-                    aria-label="Mark notification as read"
+-                    title="Mark as read"
+-                  >
+-                    <CheckIcon size={14} weight="bold" />
+-                    <span className="hidden sm:inline">Mark as read</span>
+-                  </button>
+-                )}
+-              </div>
+-            ))}
+-          </div>
+-        )}
+-      </div>
++              ))}
++            </div>
++          )}
++        </div>
++      )}
+     </div>
+   );
+ }
+diff --git a/packages/web-core/src/shared/hooks/useBrowserNotificationPreference.ts b/packages/web-core/src/shared/hooks/useBrowserNotificationPreference.ts
+index a34252059..199cd83c0 100644
+--- a/packages/web-core/src/shared/hooks/useBrowserNotificationPreference.ts
++++ b/packages/web-core/src/shared/hooks/useBrowserNotificationPreference.ts
+@@ -1,9 +1,10 @@
+ import { useCallback, useEffect, useMemo, useState } from 'react';
+ 
+ const STORAGE_KEY_PREFIX = 'vibe-kanban.browser-notifications.enabled';
++const LOCAL_STORAGE_KEY = `${STORAGE_KEY_PREFIX}.local`;
+ 
+ function getStorageKey(userId: string | null | undefined): string | null {
+-  return userId ? `${STORAGE_KEY_PREFIX}.${userId}` : null;
++  return userId ? `${STORAGE_KEY_PREFIX}.${userId}` : LOCAL_STORAGE_KEY;
+ }
+ 
+ function readPreference(storageKey: string | null): boolean {
+-- 
+2.53.0
+

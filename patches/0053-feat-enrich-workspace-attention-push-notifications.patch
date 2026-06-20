@@ -1,0 +1,311 @@
+From 7d5e0a5a4670cf332ffb2345acd8eb09e59014a3 Mon Sep 17 00:00:00 2001
+From: Riajul Islam <kmriajulislami@gmail.com>
+Date: Sat, 20 Jun 2026 15:50:05 +0000
+Subject: [PATCH] feat: enrich workspace attention push notifications
+
+---
+ crates/server/src/runtime/web_push.rs         | 170 +++++++++++++++++-
+ .../pages/workspaces/NotificationsPage.tsx    |   3 +
+ .../lib/workspaceAttentionNotifications.ts    |  10 ++
+ .../AppWorkspaceAttentionNotifications.tsx    |   3 +
+ 4 files changed, 177 insertions(+), 9 deletions(-)
+
+diff --git a/crates/server/src/runtime/web_push.rs b/crates/server/src/runtime/web_push.rs
+index a75026c35..87e64fd66 100644
+--- a/crates/server/src/runtime/web_push.rs
++++ b/crates/server/src/runtime/web_push.rs
+@@ -34,6 +34,14 @@ const VAPID_PUBLIC_KEY_ENV: &str = "WEB_PUSH_VAPID_PUBLIC_KEY";
+ const VAPID_CONTACT_ENV: &str = "WEB_PUSH_CONTACT";
+ const VAPID_PRIVATE_KEY_FILE: &str = "web_push_vapid_private.pem";
+ const POLL_INTERVAL: Duration = Duration::from_secs(10);
++const WEB_PUSH_MIN_ENCRYPTED_PAYLOAD_BYTES: usize = 4096;
++const WEB_PUSH_AES128GCM_OVERHEAD_BYTES: usize = 103;
++const WEB_PUSH_DESCRIPTION_SAFETY_MARGIN_BYTES: usize = 10;
++const WEB_PUSH_FIXED_PAYLOAD_BUDGET_BYTES: usize = 512;
++const WEB_PUSH_DESCRIPTION_BUDGET_BYTES: usize = WEB_PUSH_MIN_ENCRYPTED_PAYLOAD_BYTES
++    - WEB_PUSH_AES128GCM_OVERHEAD_BYTES
++    - WEB_PUSH_DESCRIPTION_SAFETY_MARGIN_BYTES
++    - WEB_PUSH_FIXED_PAYLOAD_BUDGET_BYTES;
+ 
+ #[derive(Debug, Clone)]
+ pub struct VapidKeys {
+@@ -59,6 +67,7 @@ struct WorkspaceAttention {
+     workspace_name: String,
+     reason: AttentionReason,
+     fingerprint: String,
++    activity_turn_id: Option<Uuid>,
+ }
+ 
+ #[derive(Debug, Clone, Copy)]
+@@ -225,6 +234,7 @@ async fn collect_workspace_attention(
+                     workspace_name: name,
+                     reason: AttentionReason::Approval,
+                     fingerprint: format!("approval:{}", latest.execution_process_id),
++                    activity_turn_id: None,
+                 });
+             }
+ 
+@@ -243,6 +253,7 @@ async fn collect_workspace_attention(
+                     workspace_name: name,
+                     reason: AttentionReason::Activity,
+                     fingerprint: format!("activity:{turn_id}"),
++                    activity_turn_id: Some(turn_id),
+                 });
+             }
+ 
+@@ -318,19 +329,12 @@ async fn send_workspace_attention_pushes(
+             attention.workspace_id, attention.fingerprint
+         ),
+         title: "Workspace needs attention".to_string(),
+-        body: match attention.reason {
+-            AttentionReason::Approval => {
+-                format!("{} is waiting for approval.", attention.workspace_name)
+-            }
+-            AttentionReason::Activity => {
+-                format!("{} has new activity.", attention.workspace_name)
+-            }
+-        },
++        body: build_workspace_attention_body(&deployment.db().pool, attention).await,
+         deeplink_path: format!("/workspaces/{}", attention.workspace_id),
+         sound_url,
+     };
+ 
+-    let payload_bytes = match serde_json::to_vec(&payload) {
++    let payload_bytes = match serialize_workspace_attention_payload(&payload) {
+         Ok(payload) => payload,
+         Err(error) => {
+             tracing::warn!(?error, "failed to encode web push payload");
+@@ -369,6 +373,131 @@ async fn send_workspace_attention_pushes(
+     }
+ }
+ 
++async fn build_workspace_attention_body(
++    pool: &SqlitePool,
++    attention: &WorkspaceAttention,
++) -> String {
++    match attention.reason {
++        AttentionReason::Approval => {
++            format!("{} is waiting for approval.", attention.workspace_name)
++        }
++        AttentionReason::Activity => {
++            let Some(turn_id) = attention.activity_turn_id else {
++                return format!("{} has new activity.", attention.workspace_name);
++            };
++
++            match latest_agent_response_excerpt(pool, turn_id).await {
++                Ok(Some(excerpt)) => {
++                    format!("{} has new activity: {}", attention.workspace_name, excerpt)
++                }
++                Ok(None) => format!("{} has new activity.", attention.workspace_name),
++                Err(error) => {
++                    tracing::warn!(
++                        %turn_id,
++                        ?error,
++                        "failed to load agent response excerpt for workspace attention push"
++                    );
++                    format!("{} has new activity.", attention.workspace_name)
++                }
++            }
++        }
++    }
++}
++
++async fn latest_agent_response_excerpt(
++    pool: &SqlitePool,
++    turn_id: Uuid,
++) -> Result<Option<String>, sqlx::Error> {
++    let summary = sqlx::query_scalar::<_, Option<String>>(
++        r#"
++        SELECT summary
++        FROM coding_agent_turns
++        WHERE id = ?
++        "#,
++    )
++    .bind(turn_id)
++    .fetch_optional(pool)
++    .await?
++    .flatten();
++
++    Ok(summary.and_then(|value| normalize_push_description(&value)))
++}
++
++fn normalize_push_description(value: &str) -> Option<String> {
++    let without_tags = strip_html_tags(value);
++    let decoded = decode_common_html_entities(&without_tags);
++    let normalized = decoded.split_whitespace().collect::<Vec<_>>().join(" ");
++
++    if normalized.is_empty() {
++        None
++    } else {
++        Some(take_utf8_tail(
++            &normalized,
++            WEB_PUSH_DESCRIPTION_BUDGET_BYTES,
++        ))
++    }
++}
++
++fn strip_html_tags(value: &str) -> String {
++    let mut output = String::with_capacity(value.len());
++    let mut in_tag = false;
++
++    for ch in value.chars() {
++        match ch {
++            '<' => in_tag = true,
++            '>' if in_tag => in_tag = false,
++            _ if !in_tag => output.push(ch),
++            _ => {}
++        }
++    }
++
++    output
++}
++
++fn decode_common_html_entities(value: &str) -> String {
++    value
++        .replace("&nbsp;", " ")
++        .replace("&amp;", "&")
++        .replace("&lt;", "<")
++        .replace("&gt;", ">")
++        .replace("&quot;", "\"")
++        .replace("&#39;", "'")
++        .replace("&apos;", "'")
++}
++
++fn take_utf8_tail(value: &str, max_bytes: usize) -> String {
++    if value.len() <= max_bytes {
++        return value.to_string();
++    }
++
++    let mut start = value.len() - max_bytes;
++    while !value.is_char_boundary(start) {
++        start += 1;
++    }
++
++    value[start..].to_string()
++}
++
++fn serialize_workspace_attention_payload(
++    payload: &WorkspaceAttentionPushPayload,
++) -> Result<Vec<u8>, serde_json::Error> {
++    let payload_budget = WEB_PUSH_MIN_ENCRYPTED_PAYLOAD_BYTES
++        - WEB_PUSH_AES128GCM_OVERHEAD_BYTES
++        - WEB_PUSH_DESCRIPTION_SAFETY_MARGIN_BYTES;
++    let mut payload = payload.clone();
++
++    loop {
++        let bytes = serde_json::to_vec(&payload)?;
++        if bytes.len() <= payload_budget || payload.body.is_empty() {
++            return Ok(bytes);
++        }
++
++        let overflow = bytes.len() - payload_budget;
++        let max_body_bytes = payload.body.len().saturating_sub(overflow + 1);
++        payload.body = take_utf8_tail(&payload.body, max_body_bytes);
++    }
++}
++
+ async fn send_web_push(
+     client: &IsahcWebPushClient,
+     vapid_keys: &VapidKeys,
+@@ -395,3 +524,26 @@ async fn send_web_push(
+ 
+     Ok(())
+ }
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    #[test]
++    fn normalizes_push_description_text() {
++        let description =
++            normalize_push_description("<p>Hello&nbsp;<strong>world</strong> &amp; team</p>")
++                .expect("description should not be empty");
++
++        assert_eq!(description, "Hello world & team");
++    }
++
++    #[test]
++    fn takes_utf8_tail_without_splitting_characters() {
++        let tail = take_utf8_tail("abcéfg", 4);
++
++        assert!(tail.is_char_boundary(0));
++        assert_eq!(tail, "éfg");
++        assert!(tail.len() <= 4);
++    }
++}
+diff --git a/packages/web-core/src/pages/workspaces/NotificationsPage.tsx b/packages/web-core/src/pages/workspaces/NotificationsPage.tsx
+index f7ffaad4f..5e0920804 100644
+--- a/packages/web-core/src/pages/workspaces/NotificationsPage.tsx
++++ b/packages/web-core/src/pages/workspaces/NotificationsPage.tsx
+@@ -16,6 +16,7 @@ import {
+   requestBrowserNotificationPermission,
+   type BrowserNotificationPermission,
+ } from '@/shared/lib/browserNotifications';
++import { playWorkspaceAttentionNotificationSoundPreview } from '@/shared/lib/workspaceAttentionNotifications';
+ import { formatRelativeTime } from '@/shared/lib/date';
+ import { cn } from '@/shared/lib/utils';
+ 
+@@ -121,6 +122,8 @@ export function NotificationsPage() {
+       return;
+     }
+ 
++    playWorkspaceAttentionNotificationSoundPreview();
++
+     const permission =
+       browserPermission === 'granted'
+         ? browserPermission
+diff --git a/packages/web-core/src/shared/lib/workspaceAttentionNotifications.ts b/packages/web-core/src/shared/lib/workspaceAttentionNotifications.ts
+index e914cc310..47b002f4c 100644
+--- a/packages/web-core/src/shared/lib/workspaceAttentionNotifications.ts
++++ b/packages/web-core/src/shared/lib/workspaceAttentionNotifications.ts
+@@ -1,8 +1,10 @@
+ import { playSound } from '@/shared/lib/utils';
++import { SoundFile } from 'shared/types';
+ 
+ const SERVICE_WORKER_URL = '/vibe-kanban-notifications-sw.js';
+ const SOUND_DEDUPE_PREFIX = 'vibe-kanban.workspace-attention.sound';
+ const SOUND_DEDUPE_TTL_MS = 60 * 1000;
++const DEFAULT_NOTIFICATION_SOUND = SoundFile.ABSTRACT_SOUND1;
+ 
+ export interface WorkspaceAttentionNotificationPayload {
+   eventId: string;
+@@ -183,6 +185,14 @@ export async function syncWorkspaceAttentionState(
+   });
+ }
+ 
++export function playWorkspaceAttentionNotificationSoundPreview(
++  soundFile: SoundFile = DEFAULT_NOTIFICATION_SOUND
++): void {
++  void playSound(`/api/sounds/${soundFile}`).catch((error) => {
++    console.warn('Failed to unlock workspace attention notification sound:', error);
++  });
++}
++
+ function shouldPlaySound(eventId: string): boolean {
+   if (typeof window === 'undefined') {
+     return false;
+diff --git a/packages/web-core/src/shared/notifications/AppWorkspaceAttentionNotifications.tsx b/packages/web-core/src/shared/notifications/AppWorkspaceAttentionNotifications.tsx
+index 5a5f327a8..4e97f7eb0 100644
+--- a/packages/web-core/src/shared/notifications/AppWorkspaceAttentionNotifications.tsx
++++ b/packages/web-core/src/shared/notifications/AppWorkspaceAttentionNotifications.tsx
+@@ -8,6 +8,7 @@ import {
+   type BrowserNotificationPermission,
+ } from '@/shared/lib/browserNotifications';
+ import {
++  playWorkspaceAttentionNotificationSoundPreview,
+   subscribeToWorkspaceAttentionServiceWorkerMessages,
+   subscribeToWorkspaceAttentionPush,
+   unsubscribeFromWorkspaceAttentionPush,
+@@ -61,6 +62,8 @@ export function AppWorkspaceAttentionNotifications({
+   }, [browserNotificationsEnabled]);
+ 
+   const handleEnableNotifications = useCallback(async () => {
++    playWorkspaceAttentionNotificationSoundPreview();
++
+     const permission = await requestBrowserNotificationPermission();
+     setBrowserPermission(permission);
+     setBrowserNotificationsEnabled(permission === 'granted');
+-- 
+2.53.0
+
