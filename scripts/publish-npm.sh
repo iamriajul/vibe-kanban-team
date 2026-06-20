@@ -7,7 +7,7 @@ VIBE_DIR="${ROOT_DIR}/vibe-kanban"
 SERIES_FILE="${ROOT_DIR}/patches/series"
 
 # Optional local credentials file (intentionally gitignored).
-# If present, it should export NPM_TOKEN/R2_* and other required env vars.
+# If present, it should export NPM_TOKEN and other required env vars.
 CREDENTIALS_FILE="${ROOT_DIR}/scripts/publish-credentials.bashrc"
 if [ -f "${CREDENTIALS_FILE}" ]; then
   # shellcheck disable=SC1090
@@ -396,92 +396,6 @@ NODE
   fi
 }
 
-cleanup_old_binary_artifacts() {
-  if [ "${R2_CLEANUP_BINARY_ARTIFACTS:-1}" != "1" ]; then
-    log "Skipping R2 binary cleanup because R2_CLEANUP_BINARY_ARTIFACTS=${R2_CLEANUP_BINARY_ARTIFACTS:-1}."
-    return
-  fi
-
-  local keep_count="${R2_CLEANUP_KEEP_BUILDS:-10}"
-  local max_age_days="${R2_CLEANUP_MAX_AGE_DAYS:-7}"
-
-  if ! [[ "${keep_count}" =~ ^[0-9]+$ ]] || [ "${keep_count}" -lt 1 ]; then
-    die "R2_CLEANUP_KEEP_BUILDS must be a positive integer."
-  fi
-  if ! [[ "${max_age_days}" =~ ^[0-9]+$ ]]; then
-    die "R2_CLEANUP_MAX_AGE_DAYS must be a non-negative integer."
-  fi
-
-  require_cmd aws
-  require_env R2_ACCESS_KEY_ID
-  require_env R2_SECRET_ACCESS_KEY
-  require_env R2_ENDPOINT
-  require_env R2_BUCKET
-
-  export AWS_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID}"
-  export AWS_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY}"
-  export AWS_DEFAULT_REGION="${R2_REGION:-auto}"
-  export AWS_EC2_METADATA_DISABLED=true
-
-  local list_path="${TMP_DIR}/r2-binary-objects.json"
-  local delete_list_path="${TMP_DIR}/r2-binary-delete-list.txt"
-
-  aws --endpoint-url "${R2_ENDPOINT}" s3api list-objects-v2 \
-    --bucket "${R2_BUCKET}" \
-    --prefix "binaries/" \
-    --output json > "${list_path}"
-
-  ${NODE_CMD} - "${list_path}" "${delete_list_path}" "${keep_count}" "${max_age_days}" <<'NODE'
-const fs = require('fs');
-
-const [listPath, outPath, keepCountRaw, maxAgeDaysRaw] = process.argv.slice(2);
-const keepCount = Number.parseInt(keepCountRaw, 10);
-const maxAgeDays = Number.parseInt(maxAgeDaysRaw, 10);
-const data = JSON.parse(fs.readFileSync(listPath, 'utf8'));
-const cutoff = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000;
-const builds = [];
-
-for (const object of data.Contents || []) {
-  const key = object.Key || '';
-  const match = key.match(/^binaries\/([^/]+)\/manifest\.json$/);
-  if (!match) continue;
-
-  const lastModified = Date.parse(object.LastModified || '');
-  if (!Number.isFinite(lastModified)) continue;
-
-  builds.push({
-    tag: match[1],
-    key,
-    lastModified,
-  });
-}
-
-builds.sort((a, b) => b.lastModified - a.lastModified || b.tag.localeCompare(a.tag));
-
-const protectedTags = new Set(builds.slice(0, keepCount).map((build) => build.tag));
-const deleteTags = builds
-  .filter((build) => build.lastModified < cutoff && !protectedTags.has(build.tag))
-  .map((build) => build.tag);
-
-fs.writeFileSync(outPath, deleteTags.join('\n') + (deleteTags.length ? '\n' : ''));
-NODE
-
-  if [ ! -s "${delete_list_path}" ]; then
-    log "R2 binary cleanup found nothing older than ${max_age_days} days outside the newest ${keep_count} builds."
-    return
-  fi
-
-  while IFS= read -r old_tag; do
-    if [ -z "${old_tag}" ]; then
-      continue
-    fi
-    log "Deleting R2 binary build binaries/${old_tag}/"
-    aws --endpoint-url "${R2_ENDPOINT}" s3 rm \
-      "s3://${R2_BUCKET}/binaries/${old_tag}/" \
-      --recursive
-  done < "${delete_list_path}"
-}
-
 ensure_prereqs
 
 require_cmd git
@@ -490,19 +404,12 @@ require_cmd npm
 require_cmd pnpm
 
 PUBLISH_BINARY_ARTIFACTS="${PUBLISH_BINARY_ARTIFACTS:-1}"
-PUBLISH_R2_BINARY_ARTIFACTS="${PUBLISH_R2_BINARY_ARTIFACTS:-1}"
 PUBLISH_PLATFORM_NPM_PACKAGE="${PUBLISH_PLATFORM_NPM_PACKAGE:-0}"
 PUBLISH_NPM_PACKAGE="${PUBLISH_NPM_PACKAGE:-1}"
-UPDATE_LATEST_BINARY_POINTER="${UPDATE_LATEST_BINARY_POINTER:-1}"
 
 case "${PUBLISH_BINARY_ARTIFACTS}" in
   0|1) ;;
   *) die "PUBLISH_BINARY_ARTIFACTS must be 0 or 1" ;;
-esac
-
-case "${PUBLISH_R2_BINARY_ARTIFACTS}" in
-  0|1) ;;
-  *) die "PUBLISH_R2_BINARY_ARTIFACTS must be 0 or 1" ;;
 esac
 
 case "${PUBLISH_PLATFORM_NPM_PACKAGE}" in
@@ -513,11 +420,6 @@ esac
 case "${PUBLISH_NPM_PACKAGE}" in
   0|1) ;;
   *) die "PUBLISH_NPM_PACKAGE must be 0 or 1" ;;
-esac
-
-case "${UPDATE_LATEST_BINARY_POINTER}" in
-  0|1) ;;
-  *) die "UPDATE_LATEST_BINARY_POINTER must be 0 or 1" ;;
 esac
 
 if [ "${PUBLISH_BINARY_ARTIFACTS}" -eq 0 ] &&
@@ -562,26 +464,6 @@ if [ "${PUBLISH_BINARY_ARTIFACTS}" -eq 1 ]; then
   require_cmd zip
 
   require_env VITE_PUBLIC_REACT_VIRTUOSO_LICENSE_KEY
-
-  if [ "${PUBLISH_R2_BINARY_ARTIFACTS}" -eq 1 ]; then
-    require_cmd aws
-    require_env R2_ACCESS_KEY_ID
-    require_env R2_SECRET_ACCESS_KEY
-    require_env R2_ENDPOINT
-    require_env R2_BUCKET
-    require_env R2_PUBLIC_URL
-  fi
-fi
-
-if [ "${PUBLISH_NPM_PACKAGE}" -eq 1 ]; then
-  require_env R2_PUBLIC_URL
-  if [ "${UPDATE_LATEST_BINARY_POINTER}" -eq 1 ] || [ "${R2_CLEANUP_BINARY_ARTIFACTS:-1}" = "1" ]; then
-    require_cmd aws
-    require_env R2_ACCESS_KEY_ID
-    require_env R2_SECRET_ACCESS_KEY
-    require_env R2_ENDPOINT
-    require_env R2_BUCKET
-  fi
 fi
 
 if [ ! -e "${VIBE_DIR}/.git" ]; then
@@ -624,18 +506,11 @@ if [ -z "${VERSION}" ] || [ "${VERSION}" = "undefined" ] || [ "${VERSION}" = "nu
   die "Failed to determine package version. Set NPM_VERSION to override."
 fi
 
-# Binaries use a v-prefixed tag (historical; download.js expects a leading "v").
-# NPM uses semver without the leading "v".
-BINARY_TAG="v${VERSION}"
-
 echo "Using version: ${VERSION}"
-echo "Using binary tag: ${BINARY_TAG}"
 echo "Using npm dist-tag: ${NPM_TAG}"
 echo "Publish binary artifacts: ${PUBLISH_BINARY_ARTIFACTS}"
-echo "Publish R2 binary artifacts: ${PUBLISH_R2_BINARY_ARTIFACTS}"
 echo "Publish platform npm package: ${PUBLISH_PLATFORM_NPM_PACKAGE}"
 echo "Publish npm package: ${PUBLISH_NPM_PACKAGE}"
-echo "Update latest binary pointer: ${UPDATE_LATEST_BINARY_POINTER}"
 
 echo "Applying downstream patches..."
 "${ROOT_DIR}/scripts/apply-patches.sh" vibe-kanban
@@ -826,133 +701,12 @@ if [ "${PUBLISH_BINARY_ARTIFACTS}" -eq 1 ]; then
 
   rm -rf "${WORK_DIR}"
 
-  echo "Generating manifest..."
-  PLATFORM_MANIFEST_PATH="${TMP_DIR}/platform-manifest.json"
-  MANIFEST_PATH="${TMP_DIR}/version-manifest.json"
-  ${NODE_CMD} -e "
-    const fs = require('fs');
-    const crypto = require('crypto');
-    const tag = '${BINARY_TAG}';
-    const platform = '${PLATFORM_DIR}';
-    const binaries = ['vibe-kanban', 'vibe-kanban-mcp', 'vibe-kanban-review'];
-    const manifest = { version: tag, platforms: { [platform]: {} } };
-    for (const bin of binaries) {
-      const zipPath = '${DIST_DIR}/' + bin + '.zip';
-      if (!fs.existsSync(zipPath)) continue;
-      const data = fs.readFileSync(zipPath);
-      manifest.platforms[platform][bin] = {
-        sha256: crypto.createHash('sha256').update(data).digest('hex'),
-        size: data.length,
-      };
-    }
-    fs.writeFileSync('${PLATFORM_MANIFEST_PATH}', JSON.stringify(manifest, null, 2));
-  "
-
   if [ "${PUBLISH_PLATFORM_NPM_PACKAGE}" -eq 1 ]; then
     publish_platform_package "${PLATFORM_DIR}" "${DIST_DIR}"
-  fi
-
-  if [ "${PUBLISH_R2_BINARY_ARTIFACTS}" -eq 1 ]; then
-    echo "Uploading to R2..."
-    export AWS_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID}"
-    export AWS_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY}"
-    export AWS_DEFAULT_REGION="${R2_REGION:-auto}"
-    export AWS_EC2_METADATA_DISABLED=true
-
-    EXISTING_MANIFEST_PATH="${TMP_DIR}/existing-manifest.json"
-    if aws --endpoint-url "${R2_ENDPOINT}" s3 cp \
-      "s3://${R2_BUCKET}/binaries/${BINARY_TAG}/manifest.json" \
-      "${EXISTING_MANIFEST_PATH}" >/dev/null 2>&1; then
-      echo "Merging with existing manifest for ${BINARY_TAG}..."
-    else
-      rm -f "${EXISTING_MANIFEST_PATH}"
-    fi
-
-    ${NODE_CMD} -e "
-      const fs = require('fs');
-      const outPath = '${MANIFEST_PATH}';
-      const platformPath = '${PLATFORM_MANIFEST_PATH}';
-      const existingPath = '${EXISTING_MANIFEST_PATH}';
-
-      const merged = { version: '${BINARY_TAG}', platforms: {} };
-      if (fs.existsSync(existingPath)) {
-        try {
-          const existing = JSON.parse(fs.readFileSync(existingPath, 'utf8'));
-          if (existing && typeof existing === 'object' && existing.platforms && typeof existing.platforms === 'object') {
-            merged.platforms = existing.platforms;
-          }
-        } catch {}
-      }
-
-      const platformManifest = JSON.parse(fs.readFileSync(platformPath, 'utf8'));
-      merged.version = '${BINARY_TAG}';
-      merged.platforms['${PLATFORM_DIR}'] = platformManifest.platforms?.['${PLATFORM_DIR}'] || {};
-
-      fs.writeFileSync(outPath, JSON.stringify(merged, null, 2));
-    "
-
-    for bin in vibe-kanban vibe-kanban-mcp vibe-kanban-review; do
-      ZIP_PATH="${DIST_DIR}/${bin}.zip"
-      if [ -f "${ZIP_PATH}" ]; then
-        aws --endpoint-url "${R2_ENDPOINT}" s3 cp \
-          "${ZIP_PATH}" \
-          "s3://${R2_BUCKET}/binaries/${BINARY_TAG}/${PLATFORM_DIR}/${bin}.zip"
-      fi
-    done
-
-    aws --endpoint-url "${R2_ENDPOINT}" s3 cp \
-      "${MANIFEST_PATH}" \
-      "s3://${R2_BUCKET}/binaries/${BINARY_TAG}/manifest.json" \
-      --content-type "application/json"
-
-    # Only update the "latest" pointer when publishing under the npm "latest" dist-tag.
-    if [ "${NPM_TAG}" = "latest" ] && [ "${UPDATE_LATEST_BINARY_POINTER}" -eq 1 ]; then
-      echo "{\"latest\": \"${VERSION}\"}" | aws --endpoint-url "${R2_ENDPOINT}" s3 cp \
-        - "s3://${R2_BUCKET}/binaries/manifest.json" \
-        --content-type "application/json"
-    elif [ "${NPM_TAG}" = "latest" ]; then
-      log "Skipping binaries/manifest.json update because UPDATE_LATEST_BINARY_POINTER=0."
-    else
-      log "Skipping binaries/manifest.json update because NPM_TAG=${NPM_TAG} (not 'latest')."
-    fi
-  else
-    log "Skipping R2 binary artifact upload because PUBLISH_R2_BINARY_ARTIFACTS=0."
-  fi
-fi
-
-if [ "${PUBLISH_BINARY_ARTIFACTS}" -eq 0 ]; then
-  # Final publish jobs can update the global pointer after all platform uploads finish.
-  if [ "${NPM_TAG}" = "latest" ] && [ "${UPDATE_LATEST_BINARY_POINTER}" -eq 1 ]; then
-    export AWS_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID}"
-    export AWS_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY}"
-    export AWS_DEFAULT_REGION="${R2_REGION:-auto}"
-    export AWS_EC2_METADATA_DISABLED=true
-
-    echo "{\"latest\": \"${VERSION}\"}" | aws --endpoint-url "${R2_ENDPOINT}" s3 cp \
-      - "s3://${R2_BUCKET}/binaries/manifest.json" \
-      --content-type "application/json"
-  elif [ "${NPM_TAG}" = "latest" ]; then
-    log "Skipping binaries/manifest.json update because UPDATE_LATEST_BINARY_POINTER=0."
-  else
-    log "Skipping binaries/manifest.json update because NPM_TAG=${NPM_TAG} (not 'latest')."
-  fi
-
-  if [ "${UPDATE_LATEST_BINARY_POINTER}" -eq 1 ]; then
-    cleanup_old_binary_artifacts
   fi
 fi
 
 if [ "${PUBLISH_NPM_PACKAGE}" -eq 1 ]; then
-  echo "Injecting R2 URL and tag into download.ts..."
-  ${NODE_CMD} -e "
-    const fs = require('fs');
-    const path = '${VIBE_DIR}/npx-cli/src/download.ts';
-    let data = fs.readFileSync(path, 'utf8');
-    data = data.replace(/__R2_PUBLIC_URL__/g, '${R2_PUBLIC_URL}');
-    data = data.replace(/__BINARY_TAG__/g, '${BINARY_TAG}');
-    fs.writeFileSync(path, data);
-  "
-
   echo "Building npx-cli..."
   (cd "${VIBE_DIR}/npx-cli" && npm install && npm run build)
 
