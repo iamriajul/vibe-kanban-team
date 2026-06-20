@@ -51,3 +51,4 @@
 0050-feat-add-web-push-workspace-attention.patch
 0051-fix-enable-local-browser-notification-opt-in.patch
 0052-fix-surface-browser-notification-permission-prompt.patch
+0053-feat-enrich-workspace-attention-push-notifications.patch
