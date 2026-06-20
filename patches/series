@@ -47,3 +47,5 @@
 0046-fix-Antigravity-live-model-discovery.patch
 0047-feat-add-chat-history-search.patch
 0048-feat-add-agent-steering-support.patch
+0049-fix-dedupe-workspace-attention-notifications.patch
+0050-feat-add-web-push-workspace-attention.patch
