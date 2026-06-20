@@ -1,0 +1,956 @@
+diff --git a/crates/executors/src/executors/acp/harness.rs b/crates/executors/src/executors/acp/harness.rs
+index 13637d486..19648061e 100644
+--- a/crates/executors/src/executors/acp/harness.rs
++++ b/crates/executors/src/executors/acp/harness.rs
+@@ -129,6 +129,7 @@ impl AcpAgentHarness {
+             child,
+             exit_signal: Some(exit_rx),
+             cancel: Some(cancel),
++            steering: None,
+         })
+     }
+ 
+@@ -182,6 +183,7 @@ impl AcpAgentHarness {
+             child,
+             exit_signal: Some(exit_rx),
+             cancel: Some(cancel),
++            steering: None,
+         })
+     }
+ 
+diff --git a/crates/executors/src/executors/claude.rs b/crates/executors/src/executors/claude.rs
+index 41fd371c4..e691c9223 100644
+--- a/crates/executors/src/executors/claude.rs
++++ b/crates/executors/src/executors/claude.rs
+@@ -16,7 +16,7 @@ use async_trait::async_trait;
+ use futures::StreamExt;
+ use schemars::JsonSchema;
+ use serde::{Deserialize, Serialize};
+-use tokio::{io::AsyncWriteExt, process::Command};
++use tokio::{io::AsyncWriteExt, process::Command, sync::mpsc};
+ use tokio_util::sync::CancellationToken;
+ use ts_rs::TS;
+ use workspace_utils::{
+@@ -702,6 +702,7 @@ impl ClaudeCode {
+ 
+         // Create cancellation token for graceful shutdown
+         let cancel = CancellationToken::new();
++        let (steering_tx, mut steering_rx) = mpsc::channel::<String>(16);
+ 
+         // Spawn task to handle the SDK client with control protocol
+         let prompt_clone = combined_prompt.clone();
+@@ -734,6 +735,19 @@ impl ClaudeCode {
+                 tracing::warn!("Failed to set permission mode to {permission_mode}: {e}");
+             }
+ 
++            let steering_peer = protocol_peer.clone();
++            tokio::spawn(async move {
++                while let Some(message) = steering_rx.recv().await {
++                    let message = message.trim();
++                    if message.is_empty() {
++                        continue;
++                    }
++                    if let Err(e) = steering_peer.send_user_message(message.to_string()).await {
++                        tracing::warn!("failed to steer Claude Code process: {e}");
++                    }
++                }
++            });
++
+             // Send user message
+             if let Err(e) = protocol_peer.send_user_message(prompt_clone).await {
+                 tracing::error!("Failed to send prompt: {e}");
+@@ -747,6 +761,7 @@ impl ClaudeCode {
+             child,
+             exit_signal: None,
+             cancel: Some(cancel),
++            steering: Some(steering_tx),
+         })
+     }
+ }
+diff --git a/crates/executors/src/executors/codex.rs b/crates/executors/src/executors/codex.rs
+index 0b61ff658..3348505a6 100644
+--- a/crates/executors/src/executors/codex.rs
++++ b/crates/executors/src/executors/codex.rs
+@@ -70,7 +70,7 @@ use schemars::JsonSchema;
+ use serde::{Deserialize, Serialize};
+ use serde_json::Value;
+ use strum_macros::{AsRefStr, EnumString};
+-use tokio::process::Command;
++use tokio::{process::Command, sync::mpsc};
+ use ts_rs::TS;
+ use workspace_utils::{command_ext::GroupSpawnNoWindowExt, msg_store::MsgStore};
+ 
+@@ -711,6 +711,8 @@ impl Codex {
+         let commit_reminder_prompt = env.commit_reminder_prompt.clone();
+         let cancel_for_task = cancel.clone();
+ 
++        let (steering_tx, mut steering_rx) = mpsc::channel::<String>(16);
++
+         tokio::spawn(async move {
+             let exit_signal_tx = ExitSignalSender::new(exit_signal_tx);
+             let log_writer = LogWriter::new(new_stdout);
+@@ -726,6 +728,7 @@ impl Codex {
+                 commit_reminder_prompt,
+                 cancel_for_task.clone(),
+             );
++            let steering_cancel = cancel_for_task.clone();
+             let rpc_peer = JsonRpcPeer::spawn(
+                 child_stdin,
+                 child_stdout,
+@@ -737,6 +740,20 @@ impl Codex {
+ 
+             let result = async {
+                 client.initialize().await?;
++                let steering_client = client.clone();
++                tokio::spawn(async move {
++                    loop {
++                        tokio::select! {
++                            _ = steering_cancel.cancelled() => break,
++                            Some(message) = steering_rx.recv() => {
++                                if let Err(err) = steering_client.steer(message).await {
++                                    tracing::warn!("failed to steer Codex process: {err}");
++                                }
++                            }
++                            else => break,
++                        }
++                    }
++                });
+                 task(client, exit_signal_tx.clone()).await
+             }
+             .await;
+@@ -777,6 +794,7 @@ impl Codex {
+             child,
+             exit_signal: Some(exit_signal_rx),
+             cancel: Some(cancel),
++            steering: Some(steering_tx),
+         })
+     }
+ }
+diff --git a/crates/executors/src/executors/codex/client.rs b/crates/executors/src/executors/codex/client.rs
+index d03554356..0ee5d0391 100644
+--- a/crates/executors/src/executors/codex/client.rs
++++ b/crates/executors/src/executors/codex/client.rs
+@@ -817,9 +817,25 @@ impl AppServerClient {
+         });
+     }
+ 
+-    fn spawn_user_message(&self, thread_id: String, message: String) {
++    pub fn spawn_user_message(&self, thread_id: String, message: String) {
+         self.spawn_turn_start(thread_id, message, None);
+     }
++
++    pub async fn steer(&self, message: String) -> Result<(), ExecutorError> {
++        let message = message.trim();
++        if message.is_empty() {
++            return Ok(());
++        }
++
++        let Some(thread_id) = self.thread_id.lock().await.clone() else {
++            return Err(ExecutorError::Io(io::Error::other(
++                "Codex thread is not ready for steering",
++            )));
++        };
++
++        self.spawn_user_message(thread_id, message.to_string());
++        Ok(())
++    }
+ }
+ 
+ #[async_trait]
+diff --git a/crates/executors/src/executors/mod.rs b/crates/executors/src/executors/mod.rs
+index b0bc29c61..64d8ed017 100644
+--- a/crates/executors/src/executors/mod.rs
++++ b/crates/executors/src/executors/mod.rs
+@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
+ use sqlx::Type;
+ use strum_macros::{Display, EnumDiscriminants, EnumString, VariantNames};
+ use thiserror::Error;
+-use tokio::task::JoinHandle;
++use tokio::{sync::mpsc, task::JoinHandle};
+ use ts_rs::TS;
+ use workspace_utils::msg_store::MsgStore;
+ 
+@@ -60,6 +60,8 @@ pub struct SlashCommandDescription {
+ #[ts(use_ts_enum)]
+ pub enum BaseAgentCapability {
+     SessionFork,
++    /// Agent can accept new user guidance while an execution process is still running.
++    AgentSteering,
+     /// Agent requires a setup script before it can run (e.g., login, installation)
+     SetupHelper,
+     /// Agent reports context/token usage information
+@@ -189,14 +191,17 @@ impl CodingAgent {
+         match self {
+             Self::ClaudeCode(_) => vec![
+                 BaseAgentCapability::SessionFork,
++                BaseAgentCapability::AgentSteering,
+                 BaseAgentCapability::ContextUsage,
+             ],
+             Self::Opencode(_) => vec![
+                 BaseAgentCapability::SessionFork,
++                BaseAgentCapability::AgentSteering,
+                 BaseAgentCapability::ContextUsage,
+             ],
+             Self::Codex(_) => vec![
+                 BaseAgentCapability::SessionFork,
++                BaseAgentCapability::AgentSteering,
+                 BaseAgentCapability::SetupHelper,
+                 BaseAgentCapability::ContextUsage,
+             ],
+@@ -338,6 +343,8 @@ pub type ExecutorExitSignal = tokio::sync::oneshot::Receiver<ExecutorExitResult>
+ /// When cancelled, the executor should attempt to cancel gracefully before being killed.
+ pub type CancellationToken = tokio_util::sync::CancellationToken;
+ 
++pub type SteeringSender = mpsc::Sender<String>;
++
+ #[derive(Debug)]
+ pub struct SpawnedChild {
+     pub child: AsyncGroupChild,
+@@ -345,6 +352,8 @@ pub struct SpawnedChild {
+     pub exit_signal: Option<ExecutorExitSignal>,
+     /// Container → Executor: signals when container wants to cancel the execution
+     pub cancel: Option<CancellationToken>,
++    /// Container → Executor: sends live user guidance to a running agent.
++    pub steering: Option<SteeringSender>,
+ }
+ 
+ impl From<AsyncGroupChild> for SpawnedChild {
+@@ -353,6 +362,7 @@ impl From<AsyncGroupChild> for SpawnedChild {
+             child,
+             exit_signal: None,
+             cancel: None,
++            steering: None,
+         }
+     }
+ }
+diff --git a/crates/executors/src/executors/opencode.rs b/crates/executors/src/executors/opencode.rs
+index 8293b9b94..18e33055f 100644
+--- a/crates/executors/src/executors/opencode.rs
++++ b/crates/executors/src/executors/opencode.rs
+@@ -8,7 +8,7 @@ use futures::StreamExt;
+ use schemars::JsonSchema;
+ use serde::{Deserialize, Serialize};
+ use serde_json::{Map, Value};
+-use tokio::{io::AsyncBufReadExt, process::Command};
++use tokio::{io::AsyncBufReadExt, process::Command, sync::mpsc};
+ use ts_rs::TS;
+ use workspace_utils::{command_ext::GroupSpawnNoWindowExt, msg_store::MsgStore};
+ 
+@@ -179,6 +179,12 @@ impl Opencode {
+ 
+         let (exit_signal_tx, exit_signal_rx) = tokio::sync::oneshot::channel();
+         let cancel = tokio_util::sync::CancellationToken::new();
++        let (steering_tx, steering_rx) = if slash_command.is_none() {
++            let (tx, rx) = mpsc::channel::<String>(16);
++            (Some(tx), Some(rx))
++        } else {
++            (None, None)
++        };
+ 
+         // Prepare config values that will be moved into the spawned task
+         let directory = current_dir.to_string_lossy().to_string();
+@@ -223,6 +229,7 @@ impl Opencode {
+                 commit_reminder,
+                 commit_reminder_prompt,
+                 repo_context,
++                steering_rx,
+             };
+ 
+             let result = match slash_command {
+@@ -247,6 +254,7 @@ impl Opencode {
+             child,
+             exit_signal: Some(exit_signal_rx),
+             cancel: Some(cancel),
++            steering: steering_tx,
+         })
+     }
+ 
+diff --git a/crates/executors/src/executors/opencode/sdk.rs b/crates/executors/src/executors/opencode/sdk.rs
+index d756a1c24..237d665ee 100644
+--- a/crates/executors/src/executors/opencode/sdk.rs
++++ b/crates/executors/src/executors/opencode/sdk.rs
+@@ -76,7 +76,6 @@ impl LogWriter {
+     }
+ }
+ 
+-#[derive(Clone)]
+ pub(super) struct RunConfig {
+     pub base_url: String,
+     pub directory: String,
+@@ -94,6 +93,7 @@ pub(super) struct RunConfig {
+     pub commit_reminder: bool,
+     pub commit_reminder_prompt: String,
+     pub repo_context: RepoContext,
++    pub steering_rx: Option<mpsc::Receiver<String>>,
+ }
+ 
+ /// Generate a cryptographically secure random password for OpenCode server auth.
+@@ -259,7 +259,7 @@ pub(super) async fn run_slash_command(
+ }
+ 
+ async fn run_session_inner(
+-    config: RunConfig,
++    mut config: RunConfig,
+     log_writer: LogWriter,
+     client: reqwest::Client,
+     cancel: CancellationToken,
+@@ -313,6 +313,40 @@ async fn run_session_inner(
+         },
+         event_resp,
+     ));
++    let steering_handle = config.steering_rx.take().map(|mut steering_rx| {
++        let client = client.clone();
++        let base_url = config.base_url.clone();
++        let directory = config.directory.clone();
++        let session_id = session_id.clone();
++        let model = model.clone();
++        let model_variant = config.model_variant.clone();
++        let agent = config.agent.clone();
++        let cancel = cancel.clone();
++
++        tokio::spawn(async move {
++            while let Some(message) = steering_rx.recv().await {
++                let prompt_fut = prompt(
++                    &client,
++                    &base_url,
++                    &directory,
++                    &session_id,
++                    &message,
++                    model.clone(),
++                    model_variant.clone(),
++                    agent.clone(),
++                );
++
++                tokio::select! {
++                    _ = cancel.cancelled() => break,
++                    result = prompt_fut => {
++                        if let Err(err) = result {
++                            tracing::warn!("failed to steer OpenCode process: {err}");
++                        }
++                    }
++                }
++            }
++        })
++    });
+ 
+     let prompt_fut = Box::pin(prompt(
+         &client,
+@@ -335,12 +369,18 @@ async fn run_session_inner(
+     if cancel.is_cancelled() {
+         send_abort(&client, &config.base_url, &config.directory, &session_id).await;
+         event_handle.abort();
++        if let Some(handle) = steering_handle {
++            handle.abort();
++        }
+         return Ok(());
+     }
+ 
+     if let Err(err) = prompt_result {
+         let _ = pending_approvals.wait(cancel.clone()).await;
+         event_handle.abort();
++        if let Some(handle) = steering_handle {
++            handle.abort();
++        }
+         return Err(err);
+     }
+ 
+@@ -391,6 +431,9 @@ async fn run_session_inner(
+     }
+ 
+     event_handle.abort();
++    if let Some(handle) = steering_handle {
++        handle.abort();
++    }
+ 
+     log_writer.log_event(&OpencodeExecutorEvent::Done).await?;
+ 
+diff --git a/crates/executors/src/stdout_dup.rs b/crates/executors/src/stdout_dup.rs
+index 5214a3c10..c912e5647 100644
+--- a/crates/executors/src/stdout_dup.rs
++++ b/crates/executors/src/stdout_dup.rs
+@@ -80,6 +80,7 @@ pub fn spawn_local_output_process()
+         child,
+         exit_signal: None,
+         cancel: None,
++        steering: None,
+     };
+ 
+     Ok((spawned, writer))
+diff --git a/crates/local-deployment/src/container.rs b/crates/local-deployment/src/container.rs
+index 2d211ff55..6a4af5602 100644
+--- a/crates/local-deployment/src/container.rs
++++ b/crates/local-deployment/src/container.rs
+@@ -33,7 +33,9 @@ use executors::{
+     },
+     approvals::{ExecutorApprovalService, NoopExecutorApprovalService},
+     env::{ExecutionEnv, RepoContext},
+-    executors::{BaseCodingAgent, CancellationToken, ExecutorExitResult, ExecutorExitSignal},
++    executors::{
++        BaseCodingAgent, CancellationToken, ExecutorExitResult, ExecutorExitSignal, SteeringSender,
++    },
+     logs::{NormalizedEntryType, utils::patch::extract_normalized_entry_from_patch},
+ };
+ use futures::{FutureExt, TryStreamExt, stream::select};
+@@ -71,6 +73,7 @@ pub struct LocalContainerService {
+     db: DBService,
+     workspace_manager: WorkspaceManager,
+     child_store: Arc<RwLock<HashMap<Uuid, Arc<RwLock<AsyncGroupChild>>>>>,
++    steering_senders: Arc<RwLock<HashMap<Uuid, SteeringSender>>>,
+     cancellation_tokens: Arc<RwLock<HashMap<Uuid, CancellationToken>>>,
+     msg_stores: Arc<RwLock<HashMap<Uuid, Arc<MsgStore>>>>,
+     /// Tracks background tasks that stream logs to the database.
+@@ -106,6 +109,7 @@ impl LocalContainerService {
+         remote_client: Option<RemoteClient>,
+     ) -> Self {
+         let child_store = Arc::new(RwLock::new(HashMap::new()));
++        let steering_senders = Arc::new(RwLock::new(HashMap::new()));
+         let cancellation_tokens = Arc::new(RwLock::new(HashMap::new()));
+         let db_stream_handles = Arc::new(RwLock::new(HashMap::new()));
+         let exit_monitor_handles = Arc::new(RwLock::new(HashMap::new()));
+@@ -117,6 +121,7 @@ impl LocalContainerService {
+             db,
+             workspace_manager,
+             child_store,
++            steering_senders,
+             cancellation_tokens,
+             msg_stores,
+             db_stream_handles,
+@@ -215,6 +220,21 @@ impl LocalContainerService {
+         map.remove(id);
+     }
+ 
++    async fn add_steering_sender(&self, id: Uuid, sender: SteeringSender) {
++        let mut map = self.steering_senders.write().await;
++        map.insert(id, sender);
++    }
++
++    async fn get_steering_sender(&self, id: &Uuid) -> Option<SteeringSender> {
++        let map = self.steering_senders.read().await;
++        map.get(id).cloned()
++    }
++
++    async fn remove_steering_sender(&self, id: &Uuid) {
++        let mut map = self.steering_senders.write().await;
++        map.remove(id);
++    }
++
+     async fn add_cancellation_token(&self, id: Uuid, token: CancellationToken) {
+         let mut map = self.cancellation_tokens.write().await;
+         map.insert(id, token);
+@@ -569,6 +589,7 @@ impl LocalContainerService {
+     ) -> JoinHandle<()> {
+         let exec_id = *exec_id;
+         let child_store = self.child_store.clone();
++        let steering_senders = self.steering_senders.clone();
+         let msg_stores = self.msg_stores.clone();
+         let db = self.db.clone();
+         let config = self.config.clone();
+@@ -753,11 +774,15 @@ impl LocalContainerService {
+                                 container
+                                     .auth_context
+                                     .run_with_session(auth_session_id, async {
+-                                        container.start_queued_follow_up(&ctx, &queued_msg.data).await
++                                        container
++                                            .start_queued_follow_up(&ctx, &queued_msg.data)
++                                            .await
+                                     })
+                                     .await
+                             } else {
+-                                container.start_queued_follow_up(&ctx, &queued_msg.data).await
++                                container
++                                    .start_queued_follow_up(&ctx, &queued_msg.data)
++                                    .await
+                             };
+ 
+                             if let Err(e) = queued_follow_up_result {
+@@ -916,6 +941,7 @@ impl LocalContainerService {
+                 let _ = child.start_kill();
+             }
+             child_store.write().await.remove(&exec_id);
++            steering_senders.write().await.remove(&exec_id);
+             let _ = container.take_execution_auth_session(&exec_id).await;
+         })
+     }
+@@ -1508,6 +1534,11 @@ impl ContainerService for LocalContainerService {
+         self.add_child_to_store(execution_process.id, spawned.child)
+             .await;
+ 
++        if let Some(steering) = spawned.steering {
++            self.add_steering_sender(execution_process.id, steering)
++                .await;
++        }
++
+         // Store cancellation token for graceful shutdown
+         if let Some(cancel) = spawned.cancel {
+             self.add_cancellation_token(execution_process.id, cancel)
+@@ -1577,6 +1608,7 @@ impl ContainerService for LocalContainerService {
+             }
+         }
+         self.remove_child_from_store(&execution_process.id).await;
++        self.remove_steering_sender(&execution_process.id).await;
+ 
+         // Mark the process finished in the MsgStore and wait for DB persistence
+         let db_stream_handle = self.take_db_stream_handle(&execution_process.id).await;
+@@ -1598,6 +1630,41 @@ impl ContainerService for LocalContainerService {
+         Ok(())
+     }
+ 
++    async fn steer_execution(
++        &self,
++        execution_process: &ExecutionProcess,
++        message: &str,
++    ) -> Result<(), ContainerError> {
++        if execution_process.status != ExecutionProcessStatus::Running {
++            return Err(ContainerError::Other(anyhow!(
++                "Execution process is not running"
++            )));
++        }
++
++        let message = message.trim();
++        if message.is_empty() {
++            return Err(ContainerError::Other(anyhow!(
++                "Steering message cannot be empty"
++            )));
++        }
++
++        let sender = self
++            .get_steering_sender(&execution_process.id)
++            .await
++            .ok_or_else(|| {
++                ContainerError::Other(anyhow!(
++                    "Agent steering is not supported for this execution process"
++                ))
++            })?;
++
++        sender
++            .send(message.to_string())
++            .await
++            .map_err(|_| ContainerError::Other(anyhow!("Agent steering channel is closed")))?;
++
++        Ok(())
++    }
++
+     async fn stream_diff(
+         &self,
+         workspace: &Workspace,
+@@ -1696,7 +1763,9 @@ impl ContainerService for LocalContainerService {
+             return Ok(false);
+         }
+ 
+-        let git_identity = self.git_identity_for_execution(ctx.execution_process.id).await;
++        let git_identity = self
++            .git_identity_for_execution(ctx.execution_process.id)
++            .await;
+         Ok(self.commit_repos(repos_with_changes, &message, git_identity.as_ref()))
+     }
+ 
+diff --git a/crates/server/src/routes/execution_processes.rs b/crates/server/src/routes/execution_processes.rs
+index 45c746a01..6c11c1f6a 100644
+--- a/crates/server/src/routes/execution_processes.rs
++++ b/crates/server/src/routes/execution_processes.rs
+@@ -2,7 +2,7 @@ use std::time::Duration;
+ 
+ use anyhow;
+ use axum::{
+-    Extension, Router,
++    Extension, Json, Router,
+     extract::{Path, Query, State, ws::Message},
+     middleware::from_fn_with_state,
+     response::{IntoResponse, Json as ResponseJson},
+@@ -36,6 +36,11 @@ struct SessionExecutionProcessQuery {
+     pub show_soft_deleted: Option<bool>,
+ }
+ 
++#[derive(Debug, Deserialize)]
++struct SteerExecutionProcessRequest {
++    pub message: String,
++}
++
+ async fn get_execution_process_by_id(
+     Extension(execution_process): Extension<ExecutionProcess>,
+     State(_deployment): State<DeploymentImpl>,
+@@ -231,6 +236,19 @@ async fn stop_execution_process(
+     Ok(ResponseJson(ApiResponse::success(())))
+ }
+ 
++async fn steer_execution_process(
++    Extension(execution_process): Extension<ExecutionProcess>,
++    State(deployment): State<DeploymentImpl>,
++    Json(payload): Json<SteerExecutionProcessRequest>,
++) -> Result<ResponseJson<ApiResponse<()>>, ApiError> {
++    deployment
++        .container()
++        .steer_execution(&execution_process, &payload.message)
++        .await?;
++
++    Ok(ResponseJson(ApiResponse::success(())))
++}
++
+ async fn stream_execution_processes_by_session_ws(
+     ws: SignedWsUpgrade,
+     State(deployment): State<DeploymentImpl>,
+@@ -314,6 +332,7 @@ pub(super) fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
+     let workspace_id_router = Router::new()
+         .route("/", get(get_execution_process_by_id))
+         .route("/stop", post(stop_execution_process))
++        .route("/steer", post(steer_execution_process))
+         .route("/repo-states", get(get_execution_process_repo_states))
+         .route("/raw-logs/ws", get(stream_raw_logs_ws))
+         .route("/normalized-logs/ws", get(stream_normalized_logs_ws))
+diff --git a/crates/services/src/services/container.rs b/crates/services/src/services/container.rs
+index 40497b53d..32d71c731 100644
+--- a/crates/services/src/services/container.rs
++++ b/crates/services/src/services/container.rs
+@@ -759,6 +759,16 @@ pub trait ContainerService {
+         status: ExecutionProcessStatus,
+     ) -> Result<(), ContainerError>;
+ 
++    async fn steer_execution(
++        &self,
++        _execution_process: &ExecutionProcess,
++        _message: &str,
++    ) -> Result<(), ContainerError> {
++        Err(ContainerError::Other(anyhow!(
++            "Agent steering is not supported by this deployment"
++        )))
++    }
++
+     async fn try_commit_changes(&self, ctx: &ExecutionContext) -> Result<bool, ContainerError>;
+ 
+     async fn copy_project_files(
+diff --git a/packages/ui/src/components/SessionChatBox.tsx b/packages/ui/src/components/SessionChatBox.tsx
+index d79ff865a..dc7f85bcc 100644
+--- a/packages/ui/src/components/SessionChatBox.tsx
++++ b/packages/ui/src/components/SessionChatBox.tsx
+@@ -51,6 +51,7 @@ export type ExecutionStatus =
+ 
+ interface ActionsProps {
+   onSend: () => void;
++  onSteer?: () => void;
+   onQueue: () => void;
+   onCancelQueue: () => void;
+   onStop: () => void;
+@@ -198,6 +199,7 @@ interface SessionChatBoxProps<TExecutor extends string = string> {
+   getActiveTurnPatchKey?: () => string | null;
+   tokenUsageInfo?: ContextUsageInfo | null;
+   supportsContextUsage?: boolean;
++  canSteer?: boolean;
+   dropzone?: DropzoneProps;
+ }
+ 
+@@ -261,6 +263,7 @@ export function SessionChatBox<TExecutor extends string = string>({
+   getActiveTurnPatchKey,
+   tokenUsageInfo,
+   supportsContextUsage,
++  canSteer = false,
+   dropzone,
+ }: SessionChatBoxProps<TExecutor>) {
+   const { t } = useTranslation('tasks');
+@@ -546,6 +549,14 @@ export function SessionChatBox<TExecutor extends string = string>({
+ 
+         return (
+           <>
++            {canSteer && (
++              <PrimaryButton
++                onClick={actions.onSteer}
++                disabled={!canSend || !actions.onSteer}
++                variant="secondary"
++                value={t('conversation.actions.steer')}
++              />
++            )}
+             <PrimaryButton
+               onClick={actions.onQueue}
+               disabled={!canSend}
+diff --git a/packages/web-core/src/features/workspace-chat/ui/SessionChatBoxContainer.tsx b/packages/web-core/src/features/workspace-chat/ui/SessionChatBoxContainer.tsx
+index 0e87f7625..90efcfaa1 100644
+--- a/packages/web-core/src/features/workspace-chat/ui/SessionChatBoxContainer.tsx
++++ b/packages/web-core/src/features/workspace-chat/ui/SessionChatBoxContainer.tsx
+@@ -1,5 +1,5 @@
+ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+-import { useQueryClient } from '@tanstack/react-query';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { useDropzone } from 'react-dropzone';
+ import {
+   type AskUserQuestionItem,
+@@ -62,7 +62,7 @@ import { useActionVisibilityContext } from '@/shared/hooks/useActionVisibilityCo
+ import { PrCommentsDialog } from '@/shared/dialogs/tasks/PrCommentsDialog';
+ import type { NormalizedComment } from '@vibe/ui/components/pr-comment-node';
+ import { useAppNavigation } from '@/shared/hooks/useAppNavigation';
+-import { sessionsApi } from '@/shared/lib/api';
++import { executionProcessesApi, sessionsApi } from '@/shared/lib/api';
+ import { RenameSessionDialog } from '@vibe/ui/components/RenameSessionDialog';
+ import type { TurnNavigationItem } from '@vibe/ui/components/TurnNavigationPopup';
+ import type { PatchTypeWithKey } from '@/shared/hooks/useConversationHistory/types';
+@@ -328,8 +328,9 @@ export function SessionChatBoxContainer(props: SessionChatBoxContainerProps) {
+   const hostId = useHostId();
+   const [migrationHistorySelection, setMigrationHistorySelection] =
+     useState<MigrationHistorySelection>(DEFAULT_MIGRATION_HISTORY_SELECTION);
+   const [isMigratingToNewSession, setIsMigratingToNewSession] =
+     useState(false);
++  const [steerError, setSteerError] = useState<string | null>(null);
+ 
+   const handleRenameSession = useCallback(
+     (targetSessionId: string, currentName: string) => {
+@@ -709,6 +710,28 @@ export function SessionChatBoxContainer(props: SessionChatBoxContainerProps) {
+       BaseAgentCapability.CONTEXT_USAGE
+     );
+ 
++  const runningSteerableProcess = useMemo(() => {
++    return (
++      processes.find((process) => {
++        if (process.status !== ExecutionProcessStatus.running) return false;
++        const action = process.executor_action.typ;
++        const executor =
++          action.type === 'CodingAgentInitialRequest' ||
++          action.type === 'CodingAgentFollowUpRequest' ||
++          action.type === 'ReviewRequest'
++            ? action.executor_config.executor
++            : null;
++        return (
++          !!executor &&
++          capabilities?.[executor]?.includes(BaseAgentCapability.AGENT_STEERING)
++        );
++      }) ?? null
++    );
++  }, [capabilities, processes]);
++
++  const canSteerRunningAgent =
++    !!runningSteerableProcess && !isMigrationMode && !pendingApproval;
++
+   // Navigate to agent settings to customise variants
+   const handleCustomise = () => {
+     SettingsDialog.show({ initialSection: 'agents' });
+@@ -739,6 +762,16 @@ export function SessionChatBoxContainer(props: SessionChatBoxContainerProps) {
+     executorConfig,
+   });
+ 
++  const steerMutation = useMutation({
++    mutationFn: ({
++      processId,
++      message,
++    }: {
++      processId: string;
++      message: string;
++    }) => executionProcessesApi.steerExecutionProcess(processId, message),
++  });
++
+   const handleSend = useCallback(async () => {
+     const { prompt, isSlashCommand } = buildAgentPrompt(localMessage, [
+       reviewMarkdown,
+@@ -788,6 +821,43 @@ export function SessionChatBoxContainer(props: SessionChatBoxContainerProps) {
+     reviewContext,
+   ]);
+ 
++  const handleSteer = useCallback(async () => {
++    if (!runningSteerableProcess) return;
++    const { prompt, isSlashCommand } = buildAgentPrompt(localMessage, [
++      reviewMarkdown,
++    ]);
++    const trimmed = prompt.trim();
++    if (!trimmed) return;
++
++    try {
++      setSteerError(null);
++      await steerMutation.mutateAsync({
++        processId: runningSteerableProcess.id,
++        message: trimmed,
++      });
++      cancelDebouncedSave();
++      setLocalMessage('');
++      clearUploadedAttachments();
++      if (!isSlashCommand) {
++        reviewContext?.clearComments();
++      }
++      onScrollToBottom('auto');
++    } catch (e: unknown) {
++      const err = e as { message?: string };
++      setSteerError(`Failed to steer agent: ${err.message ?? 'Unknown error'}`);
++    }
++  }, [
++    runningSteerableProcess,
++    localMessage,
++    reviewMarkdown,
++    steerMutation,
++    cancelDebouncedSave,
++    setLocalMessage,
++    clearUploadedAttachments,
++    reviewContext,
++    onScrollToBottom,
++  ]);
++
+   // Track previous process count for queue refresh
+   const prevProcessCountRef = useRef(processes.length);
+ 
+@@ -845,6 +915,7 @@ export function SessionChatBoxContainer(props: SessionChatBoxContainerProps) {
+         setLocalMessage(value);
+       }
+       if (sendError) clearError();
++      if (steerError) setSteerError(null);
+     },
+     [
+       isQueued,
+@@ -853,6 +924,7 @@ export function SessionChatBoxContainer(props: SessionChatBoxContainerProps) {
+       executorConfig,
+       sendError,
+       clearError,
++      steerError,
+       setLocalMessage,
+     ]
+   );
+@@ -1137,7 +1209,7 @@ export function SessionChatBoxContainer(props: SessionChatBoxContainerProps) {
+     isInEditMode,
+     isStopping,
+     isQueueLoading,
+-    isSendingFollowUp: isSending,
++    isSendingFollowUp: isSending || steerMutation.isPending,
+     isQueued,
+     isAttemptRunning,
+   });
+@@ -1231,6 +1303,7 @@ export function SessionChatBoxContainer(props: SessionChatBoxContainerProps) {
+         }}
+         actions={{
+           onSend: () => {},
++          onSteer: () => {},
+           onQueue: () => {},
+           onCancelQueue: () => {},
+           onStop: () => {},
+@@ -1286,6 +1359,7 @@ export function SessionChatBoxContainer(props: SessionChatBoxContainerProps) {
+       }}
+       actions={{
+         onSend: handleSend,
++        onSteer: handleSteer,
+         onQueue: handleQueueMessage,
+         onCancelQueue: handleCancelQueue,
+         onStop: stopExecution,
+@@ -1317,7 +1391,8 @@ export function SessionChatBoxContainer(props: SessionChatBoxContainerProps) {
+         conflictedFilesCount,
+         onResolveConflicts: handleResolveConflicts,
+       }}
+-      error={sendError}
++      error={sendError ?? steerError}
++      canSteer={canSteerRunningAgent}
+       agent={effectiveExecutor}
+       todos={todos}
+       inProgressTodo={inProgressTodo}
+diff --git a/packages/web-core/src/i18n/locales/en/tasks.json b/packages/web-core/src/i18n/locales/en/tasks.json
+index fc7e45215..9015ea1b2 100644
+--- a/packages/web-core/src/i18n/locales/en/tasks.json
++++ b/packages/web-core/src/i18n/locales/en/tasks.json
+@@ -142,6 +142,7 @@
+       "loading": "Loading",
+       "send": "Send",
+       "sending": "Sending",
++      "steer": "Steer",
+       "queue": "Queue",
+       "cancelQueue": "Cancel Queue",
+       "requestChanges": "Request Changes",
+diff --git a/packages/web-core/src/i18n/locales/es/tasks.json b/packages/web-core/src/i18n/locales/es/tasks.json
+index 5e5e7d214..91b33a2d5 100644
+--- a/packages/web-core/src/i18n/locales/es/tasks.json
++++ b/packages/web-core/src/i18n/locales/es/tasks.json
+@@ -395,6 +395,7 @@
+       "loading": "Cargando",
+       "send": "Enviar",
+       "sending": "Enviando",
++      "steer": "Steer",
+       "queue": "Poner en cola",
+       "cancelQueue": "Cancelar cola",
+       "requestChanges": "Solicitar cambios",
+diff --git a/packages/web-core/src/i18n/locales/fr/tasks.json b/packages/web-core/src/i18n/locales/fr/tasks.json
+index 866747e90..c1f9bfa5b 100644
+--- a/packages/web-core/src/i18n/locales/fr/tasks.json
++++ b/packages/web-core/src/i18n/locales/fr/tasks.json
+@@ -138,6 +138,7 @@
+       "loading": "Chargement",
+       "send": "Envoyer",
+       "sending": "Envoi en cours",
++      "steer": "Steer",
+       "queue": "File d'attente",
+       "cancelQueue": "Annuler la file",
+       "requestChanges": "Demander des modifications",
+diff --git a/packages/web-core/src/i18n/locales/ja/tasks.json b/packages/web-core/src/i18n/locales/ja/tasks.json
+index 9f7026b08..adaca7b74 100644
+--- a/packages/web-core/src/i18n/locales/ja/tasks.json
++++ b/packages/web-core/src/i18n/locales/ja/tasks.json
+@@ -395,6 +395,7 @@
+       "loading": "読み込み中",
+       "send": "送信",
+       "sending": "送信中",
++      "steer": "Steer",
+       "queue": "キューに追加",
+       "cancelQueue": "キューをキャンセル",
+       "requestChanges": "変更を依頼",
+diff --git a/packages/web-core/src/i18n/locales/ko/tasks.json b/packages/web-core/src/i18n/locales/ko/tasks.json
+index 397a2cad5..557b343d6 100644
+--- a/packages/web-core/src/i18n/locales/ko/tasks.json
++++ b/packages/web-core/src/i18n/locales/ko/tasks.json
+@@ -395,6 +395,7 @@
+       "loading": "로딩 중",
+       "send": "보내기",
+       "sending": "보내는 중",
++      "steer": "Steer",
+       "queue": "대기열에 추가",
+       "cancelQueue": "대기열 취소",
+       "requestChanges": "변경 요청",
+diff --git a/packages/web-core/src/i18n/locales/zh-Hans/tasks.json b/packages/web-core/src/i18n/locales/zh-Hans/tasks.json
+index 2b86430f2..a38ecac49 100644
+--- a/packages/web-core/src/i18n/locales/zh-Hans/tasks.json
++++ b/packages/web-core/src/i18n/locales/zh-Hans/tasks.json
+@@ -395,6 +395,7 @@
+       "loading": "加载中",
+       "send": "发送",
+       "sending": "发送中",
++      "steer": "Steer",
+       "queue": "加入队列",
+       "cancelQueue": "取消队列",
+       "requestChanges": "请求更改",
+diff --git a/packages/web-core/src/i18n/locales/zh-Hant/tasks.json b/packages/web-core/src/i18n/locales/zh-Hant/tasks.json
+index 8ff9464c1..8175955d5 100644
+--- a/packages/web-core/src/i18n/locales/zh-Hant/tasks.json
++++ b/packages/web-core/src/i18n/locales/zh-Hant/tasks.json
+@@ -395,6 +395,7 @@
+       "loading": "載入中",
+       "send": "傳送",
+       "sending": "傳送中",
++      "steer": "Steer",
+       "queue": "加入佇列",
+       "cancelQueue": "取消佇列",
+       "requestChanges": "請求變更",
+diff --git a/packages/web-core/src/shared/lib/api.ts b/packages/web-core/src/shared/lib/api.ts
+index f06780f8b..7c0f29fcb 100644
+--- a/packages/web-core/src/shared/lib/api.ts
++++ b/packages/web-core/src/shared/lib/api.ts
+@@ -810,6 +810,20 @@ export const executionProcessesApi = {
+     );
+     return handleApiResponse<void>(response);
+   },
++
++  steerExecutionProcess: async (
++    processId: string,
++    message: string
++  ): Promise<void> => {
++    const response = await makeRequest(
++      `/api/execution-processes/${processId}/steer`,
++      {
++        method: 'POST',
++        body: JSON.stringify({ message }),
++      }
++    );
++    return handleApiResponse<void>(response);
++  },
+ };
+ 
+ // File System APIs
+diff --git a/shared/types.ts b/shared/types.ts
+index cfdcd4532..e864d2434 100644
+--- a/shared/types.ts
++++ b/shared/types.ts
+@@ -619,7 +619,7 @@ export type ExecutorProfile = { recently_used_models?: ExecutorRecentModels | nu
+ 
+ export type ExecutorConfigs = { executors: { [key in BaseCodingAgent]?: ExecutorProfile }, };
+ 
+-export enum BaseAgentCapability { SESSION_FORK = "SESSION_FORK", SETUP_HELPER = "SETUP_HELPER", CONTEXT_USAGE = "CONTEXT_USAGE" }
++export enum BaseAgentCapability { SESSION_FORK = "SESSION_FORK", AGENT_STEERING = "AGENT_STEERING", SETUP_HELPER = "SETUP_HELPER", CONTEXT_USAGE = "CONTEXT_USAGE" }
+ 
+ export type ClaudeEffort = "low" | "medium" | "high" | "xhigh" | "max";
+ 
