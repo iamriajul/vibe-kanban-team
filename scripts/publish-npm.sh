@@ -7,7 +7,7 @@ VIBE_DIR="${ROOT_DIR}/vibe-kanban"
 SERIES_FILE="${ROOT_DIR}/patches/series"
 
 # Optional local credentials file (intentionally gitignored).
-# If present, it should export NPM_TOKEN/R2_* and other required env vars.
+# If present, it should export NPM_TOKEN and other required env vars.
 CREDENTIALS_FILE="${ROOT_DIR}/scripts/publish-credentials.bashrc"
 if [ -f "${CREDENTIALS_FILE}" ]; then
   # shellcheck disable=SC1090
@@ -290,6 +290,112 @@ require_env() {
   fi
 }
 
+platform_package_alias() {
+  case "$1" in
+    linux-x64) printf '%s\n' "vibe-kanban-team-linux-x64" ;;
+    macos-arm64) printf '%s\n' "vibe-kanban-team-macos-arm64" ;;
+    *) return 1 ;;
+  esac
+}
+
+platform_package_os() {
+  case "$1" in
+    linux-*) printf '%s\n' "linux" ;;
+    macos-*) printf '%s\n' "darwin" ;;
+    windows-*) printf '%s\n' "win32" ;;
+    *) return 1 ;;
+  esac
+}
+
+platform_package_cpu() {
+  case "$1" in
+    *-x64) printf '%s\n' "x64" ;;
+    *-arm64) printf '%s\n' "arm64" ;;
+    *) return 1 ;;
+  esac
+}
+
+configure_npm_publish_auth() {
+  if [ "${NPM_PUBLISH_AUTH}" = "token" ]; then
+    NPMRC_BAK="${TMP_DIR}/.npmrc"
+    umask 077
+    printf "//registry.npmjs.org/:_authToken=%s\n" "${NPM_TOKEN}" > "${NPMRC_BAK}"
+  else
+    echo "Using npm trusted publishing (OIDC)."
+    # setup-node writes a token-based .npmrc when registry-url is configured.
+    # In OIDC mode, keep npm from falling back to stale token auth.
+    unset NODE_AUTH_TOKEN
+    unset NPM_CONFIG_USERCONFIG
+    unset npm_config_userconfig
+  fi
+}
+
+npm_with_auth() {
+  if [ "${NPM_PUBLISH_AUTH}" = "token" ]; then
+    npm --userconfig "${NPMRC_BAK}" "$@"
+  else
+    npm "$@"
+  fi
+}
+
+publish_platform_package() {
+  local platform_dir="$1"
+  local dist_dir="$2"
+  local package_alias=""
+  local package_os=""
+  local package_cpu=""
+  local package_version="${VERSION}-${platform_dir}"
+  local package_tag="${NPM_TAG}-${platform_dir}"
+
+  if ! package_alias="$(platform_package_alias "${platform_dir}")"; then
+    log "Skipping npm platform package for unsupported platform ${platform_dir}."
+    return
+  fi
+  package_os="$(platform_package_os "${platform_dir}")"
+  package_cpu="$(platform_package_cpu "${platform_dir}")"
+
+  local package_dir="${TMP_DIR}/platform-package-${platform_dir}"
+  rm -rf "${package_dir}"
+  mkdir -p "${package_dir}/dist/${platform_dir}"
+  cp "${dist_dir}"/*.zip "${package_dir}/dist/${platform_dir}/"
+
+  ${NODE_CMD} - "${package_dir}/package.json" "${package_version}" "${package_os}" "${package_cpu}" <<'NODE'
+const fs = require('fs');
+
+const [path, version, os, cpu] = process.argv.slice(2);
+const pkg = {
+  name: 'vibe-kanban-team',
+  version,
+  description: `Platform binaries for vibe-kanban-team (${os}-${cpu})`,
+  license: 'UNLICENSED',
+  private: false,
+  os: [os],
+  cpu: [cpu],
+  files: ['dist'],
+  repository: {
+    type: 'git',
+    url: 'git+https://github.com/iamriajul/vibe-kanban-team.git',
+  },
+  publishConfig: {
+    access: 'public',
+    registry: 'https://registry.npmjs.org',
+  },
+};
+
+fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + '\n');
+NODE
+
+  printf '# %s\n\nPlatform binaries for vibe-kanban-team.\n' "${package_alias}" > "${package_dir}/README.md"
+
+  configure_npm_publish_auth
+  if (cd "${package_dir}" && npm_with_auth view "vibe-kanban-team@${package_version}" version >/dev/null 2>&1); then
+    echo "npm platform package vibe-kanban-team@${package_version} already exists; skipping publish."
+  else
+    echo "Publishing npm platform package vibe-kanban-team@${package_version} for alias ${package_alias} with dist-tag: ${package_tag}"
+    (cd "${package_dir}" && npm_with_auth publish --ignore-scripts --access public --tag "${package_tag}")
+  fi
+}
+
 ensure_prereqs
 
 require_cmd git
@@ -298,12 +404,17 @@ require_cmd npm
 require_cmd pnpm
 
 PUBLISH_BINARY_ARTIFACTS="${PUBLISH_BINARY_ARTIFACTS:-1}"
+PUBLISH_PLATFORM_NPM_PACKAGE="${PUBLISH_PLATFORM_NPM_PACKAGE:-0}"
 PUBLISH_NPM_PACKAGE="${PUBLISH_NPM_PACKAGE:-1}"
-UPDATE_LATEST_BINARY_POINTER="${UPDATE_LATEST_BINARY_POINTER:-1}"
 
 case "${PUBLISH_BINARY_ARTIFACTS}" in
   0|1) ;;
   *) die "PUBLISH_BINARY_ARTIFACTS must be 0 or 1" ;;
+esac
+
+case "${PUBLISH_PLATFORM_NPM_PACKAGE}" in
+  0|1) ;;
+  *) die "PUBLISH_PLATFORM_NPM_PACKAGE must be 0 or 1" ;;
 esac
 
 case "${PUBLISH_NPM_PACKAGE}" in
@@ -311,17 +422,18 @@ case "${PUBLISH_NPM_PACKAGE}" in
   *) die "PUBLISH_NPM_PACKAGE must be 0 or 1" ;;
 esac
 
-case "${UPDATE_LATEST_BINARY_POINTER}" in
-  0|1) ;;
-  *) die "UPDATE_LATEST_BINARY_POINTER must be 0 or 1" ;;
-esac
+if [ "${PUBLISH_BINARY_ARTIFACTS}" -eq 0 ] &&
+   [ "${PUBLISH_PLATFORM_NPM_PACKAGE}" -eq 0 ] &&
+   [ "${PUBLISH_NPM_PACKAGE}" -eq 0 ]; then
+  die "Nothing to do: enable PUBLISH_BINARY_ARTIFACTS, PUBLISH_PLATFORM_NPM_PACKAGE, and/or PUBLISH_NPM_PACKAGE"
+fi
 
-if [ "${PUBLISH_BINARY_ARTIFACTS}" -eq 0 ] && [ "${PUBLISH_NPM_PACKAGE}" -eq 0 ]; then
-  die "Nothing to do: enable PUBLISH_BINARY_ARTIFACTS and/or PUBLISH_NPM_PACKAGE"
+if [ "${PUBLISH_PLATFORM_NPM_PACKAGE}" -eq 1 ] && [ "${PUBLISH_BINARY_ARTIFACTS}" -eq 0 ]; then
+  die "PUBLISH_PLATFORM_NPM_PACKAGE=1 requires PUBLISH_BINARY_ARTIFACTS=1"
 fi
 
 NPM_PUBLISH_AUTH="${NPM_PUBLISH_AUTH:-}"
-if [ "${PUBLISH_NPM_PACKAGE}" -eq 1 ]; then
+if [ "${PUBLISH_NPM_PACKAGE}" -eq 1 ] || [ "${PUBLISH_PLATFORM_NPM_PACKAGE}" -eq 1 ]; then
   if [ -z "${NPM_PUBLISH_AUTH}" ]; then
     if [ -n "${NPM_TOKEN:-}" ]; then
       NPM_PUBLISH_AUTH="token"
@@ -350,18 +462,8 @@ if [ "${PUBLISH_BINARY_ARTIFACTS}" -eq 1 ]; then
   require_cmd cargo
   require_cmd rustc
   require_cmd zip
-  require_cmd aws
 
-  require_env R2_ACCESS_KEY_ID
-  require_env R2_SECRET_ACCESS_KEY
-  require_env R2_ENDPOINT
-  require_env R2_BUCKET
-  require_env R2_PUBLIC_URL
   require_env VITE_PUBLIC_REACT_VIRTUOSO_LICENSE_KEY
-fi
-
-if [ "${PUBLISH_NPM_PACKAGE}" -eq 1 ]; then
-  require_env R2_PUBLIC_URL
 fi
 
 if [ ! -e "${VIBE_DIR}/.git" ]; then
@@ -404,16 +506,11 @@ if [ -z "${VERSION}" ] || [ "${VERSION}" = "undefined" ] || [ "${VERSION}" = "nu
   die "Failed to determine package version. Set NPM_VERSION to override."
 fi
 
-# Binaries use a v-prefixed tag (historical; download.js expects a leading "v").
-# NPM uses semver without the leading "v".
-BINARY_TAG="v${VERSION}"
-
 echo "Using version: ${VERSION}"
-echo "Using binary tag: ${BINARY_TAG}"
 echo "Using npm dist-tag: ${NPM_TAG}"
 echo "Publish binary artifacts: ${PUBLISH_BINARY_ARTIFACTS}"
+echo "Publish platform npm package: ${PUBLISH_PLATFORM_NPM_PACKAGE}"
 echo "Publish npm package: ${PUBLISH_NPM_PACKAGE}"
-echo "Update latest binary pointer: ${UPDATE_LATEST_BINARY_POINTER}"
 
 echo "Applying downstream patches..."
 "${ROOT_DIR}/scripts/apply-patches.sh" vibe-kanban
@@ -437,6 +534,10 @@ ${NODE_CMD} -e "
   pkg.publishConfig = { access: 'public', registry: 'https://registry.npmjs.org' };
   pkg.author = 'iamriajul';
   pkg.repository = { type: 'git', url: 'git+https://github.com/iamriajul/vibe-kanban-team.git' };
+  pkg.optionalDependencies = {
+    'vibe-kanban-team-linux-x64': 'npm:vibe-kanban-team@${VERSION}-linux-x64',
+    'vibe-kanban-team-macos-arm64': 'npm:vibe-kanban-team@${VERSION}-macos-arm64',
+  };
   fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + '\\n');
 "
 
@@ -600,121 +701,12 @@ if [ "${PUBLISH_BINARY_ARTIFACTS}" -eq 1 ]; then
 
   rm -rf "${WORK_DIR}"
 
-  echo "Generating manifest..."
-  PLATFORM_MANIFEST_PATH="${TMP_DIR}/platform-manifest.json"
-  MANIFEST_PATH="${TMP_DIR}/version-manifest.json"
-  ${NODE_CMD} -e "
-    const fs = require('fs');
-    const crypto = require('crypto');
-    const tag = '${BINARY_TAG}';
-    const platform = '${PLATFORM_DIR}';
-    const binaries = ['vibe-kanban', 'vibe-kanban-mcp', 'vibe-kanban-review'];
-    const manifest = { version: tag, platforms: { [platform]: {} } };
-    for (const bin of binaries) {
-      const zipPath = '${DIST_DIR}/' + bin + '.zip';
-      if (!fs.existsSync(zipPath)) continue;
-      const data = fs.readFileSync(zipPath);
-      manifest.platforms[platform][bin] = {
-        sha256: crypto.createHash('sha256').update(data).digest('hex'),
-        size: data.length,
-      };
-    }
-    fs.writeFileSync('${PLATFORM_MANIFEST_PATH}', JSON.stringify(manifest, null, 2));
-  "
-
-  echo "Uploading to R2..."
-  export AWS_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID}"
-  export AWS_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY}"
-  export AWS_DEFAULT_REGION="${R2_REGION:-auto}"
-  export AWS_EC2_METADATA_DISABLED=true
-
-  EXISTING_MANIFEST_PATH="${TMP_DIR}/existing-manifest.json"
-  if aws --endpoint-url "${R2_ENDPOINT}" s3 cp \
-    "s3://${R2_BUCKET}/binaries/${BINARY_TAG}/manifest.json" \
-    "${EXISTING_MANIFEST_PATH}" >/dev/null 2>&1; then
-    echo "Merging with existing manifest for ${BINARY_TAG}..."
-  else
-    rm -f "${EXISTING_MANIFEST_PATH}"
-  fi
-
-  ${NODE_CMD} -e "
-    const fs = require('fs');
-    const outPath = '${MANIFEST_PATH}';
-    const platformPath = '${PLATFORM_MANIFEST_PATH}';
-    const existingPath = '${EXISTING_MANIFEST_PATH}';
-
-    const merged = { version: '${BINARY_TAG}', platforms: {} };
-    if (fs.existsSync(existingPath)) {
-      try {
-        const existing = JSON.parse(fs.readFileSync(existingPath, 'utf8'));
-        if (existing && typeof existing === 'object' && existing.platforms && typeof existing.platforms === 'object') {
-          merged.platforms = existing.platforms;
-        }
-      } catch {}
-    }
-
-    const platformManifest = JSON.parse(fs.readFileSync(platformPath, 'utf8'));
-    merged.version = '${BINARY_TAG}';
-    merged.platforms['${PLATFORM_DIR}'] = platformManifest.platforms?.['${PLATFORM_DIR}'] || {};
-
-    fs.writeFileSync(outPath, JSON.stringify(merged, null, 2));
-  "
-
-  for bin in vibe-kanban vibe-kanban-mcp vibe-kanban-review; do
-    ZIP_PATH="${DIST_DIR}/${bin}.zip"
-    if [ -f "${ZIP_PATH}" ]; then
-      aws --endpoint-url "${R2_ENDPOINT}" s3 cp \
-        "${ZIP_PATH}" \
-        "s3://${R2_BUCKET}/binaries/${BINARY_TAG}/${PLATFORM_DIR}/${bin}.zip"
-    fi
-  done
-
-  aws --endpoint-url "${R2_ENDPOINT}" s3 cp \
-    "${MANIFEST_PATH}" \
-    "s3://${R2_BUCKET}/binaries/${BINARY_TAG}/manifest.json" \
-    --content-type "application/json"
-
-  # Only update the "latest" pointer when publishing under the npm "latest" dist-tag.
-  if [ "${NPM_TAG}" = "latest" ] && [ "${UPDATE_LATEST_BINARY_POINTER}" -eq 1 ]; then
-    echo "{\"latest\": \"${VERSION}\"}" | aws --endpoint-url "${R2_ENDPOINT}" s3 cp \
-      - "s3://${R2_BUCKET}/binaries/manifest.json" \
-      --content-type "application/json"
-  elif [ "${NPM_TAG}" = "latest" ]; then
-    log "Skipping binaries/manifest.json update because UPDATE_LATEST_BINARY_POINTER=0."
-  else
-    log "Skipping binaries/manifest.json update because NPM_TAG=${NPM_TAG} (not 'latest')."
-  fi
-fi
-
-if [ "${PUBLISH_BINARY_ARTIFACTS}" -eq 0 ]; then
-  # Final publish jobs can update the global pointer after all platform uploads finish.
-  if [ "${NPM_TAG}" = "latest" ] && [ "${UPDATE_LATEST_BINARY_POINTER}" -eq 1 ]; then
-    export AWS_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID}"
-    export AWS_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY}"
-    export AWS_DEFAULT_REGION="${R2_REGION:-auto}"
-    export AWS_EC2_METADATA_DISABLED=true
-
-    echo "{\"latest\": \"${VERSION}\"}" | aws --endpoint-url "${R2_ENDPOINT}" s3 cp \
-      - "s3://${R2_BUCKET}/binaries/manifest.json" \
-      --content-type "application/json"
-  elif [ "${NPM_TAG}" = "latest" ]; then
-    log "Skipping binaries/manifest.json update because UPDATE_LATEST_BINARY_POINTER=0."
-  else
-    log "Skipping binaries/manifest.json update because NPM_TAG=${NPM_TAG} (not 'latest')."
+  if [ "${PUBLISH_PLATFORM_NPM_PACKAGE}" -eq 1 ]; then
+    publish_platform_package "${PLATFORM_DIR}" "${DIST_DIR}"
   fi
 fi
 
 if [ "${PUBLISH_NPM_PACKAGE}" -eq 1 ]; then
-  echo "Injecting R2 URL and tag into download.ts..."
-  ${NODE_CMD} -e "
-    const fs = require('fs');
-    const path = '${VIBE_DIR}/npx-cli/src/download.ts';
-    let data = fs.readFileSync(path, 'utf8');
-    data = data.replace(/__R2_PUBLIC_URL__/g, '${R2_PUBLIC_URL}');
-    data = data.replace(/__BINARY_TAG__/g, '${BINARY_TAG}');
-    fs.writeFileSync(path, data);
-  "
-
   echo "Building npx-cli..."
   (cd "${VIBE_DIR}/npx-cli" && npm install && npm run build)
 
@@ -722,27 +714,13 @@ if [ "${PUBLISH_NPM_PACKAGE}" -eq 1 ]; then
   rm -rf "${VIBE_DIR}/npx-cli/dist"
 
   echo "Publishing to npm..."
-  NPM_ARGS=()
+  configure_npm_publish_auth
 
-  if [ "${NPM_PUBLISH_AUTH}" = "token" ]; then
-    NPMRC_BAK="${TMP_DIR}/.npmrc"
-    umask 077
-    printf "//registry.npmjs.org/:_authToken=%s\n" "${NPM_TOKEN}" > "${NPMRC_BAK}"
-    NPM_ARGS=(--userconfig "${NPMRC_BAK}")
-  else
-    echo "Using npm trusted publishing (OIDC)."
-    # setup-node writes a token-based .npmrc when registry-url is configured.
-    # In OIDC mode, keep npm from falling back to stale token auth.
-    unset NODE_AUTH_TOKEN
-    unset NPM_CONFIG_USERCONFIG
-    unset npm_config_userconfig
-  fi
-
-  if (cd "${VIBE_DIR}/npx-cli" && npm "${NPM_ARGS[@]}" view "vibe-kanban-team@${VERSION}" version >/dev/null 2>&1); then
+  if (cd "${VIBE_DIR}/npx-cli" && npm_with_auth view "vibe-kanban-team@${VERSION}" version >/dev/null 2>&1); then
     echo "npm version ${VERSION} already exists; skipping publish."
   else
     echo "Publishing to npm with dist-tag: ${NPM_TAG}"
-    (cd "${VIBE_DIR}/npx-cli" && npm "${NPM_ARGS[@]}" publish --ignore-scripts --access public --tag "${NPM_TAG}")
+    (cd "${VIBE_DIR}/npx-cli" && npm_with_auth publish --ignore-scripts --access public --tag "${NPM_TAG}")
   fi
 else
   log "Skipping npm package publish because PUBLISH_NPM_PACKAGE=0."

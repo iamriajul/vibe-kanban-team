@@ -1,0 +1,450 @@
+From f9606b375bc997e834d0614b211e3af8c4dec138 Mon Sep 17 00:00:00 2001
+From: Riajul Islam <kmriajulislami@gmail.com>
+Date: Sat, 20 Jun 2026 00:10:50 +0000
+Subject: [PATCH] feat: support npm platform binary packages
+
+---
+ npx-cli/package-lock.json |  29 +++++
+ npx-cli/package.json      |   2 +
+ npx-cli/src/cli.ts        |  27 +----
+ npx-cli/src/download.ts   | 240 +++++++-------------------------------
+ 4 files changed, 77 insertions(+), 221 deletions(-)
+
+diff --git a/npx-cli/package-lock.json b/npx-cli/package-lock.json
+index 40a4d2749..639b77655 100644
+--- a/npx-cli/package-lock.json
++++ b/npx-cli/package-lock.json
+@@ -15,6 +15,8 @@
+         "vibe-kanban": "bin/cli.js"
+       },
+       "devDependencies": {
++        "@types/adm-zip": "^0.5.8",
++        "@types/node": "^24.13.2",
+         "esbuild": "^0.27.2"
+       },
+       "engines": {
+@@ -463,6 +465,26 @@
+         "node": ">=18"
+       }
+     },
++    "node_modules/@types/adm-zip": {
++      "version": "0.5.8",
++      "resolved": "https://registry.npmjs.org/@types/adm-zip/-/adm-zip-0.5.8.tgz",
++      "integrity": "sha512-RVVH7QvZYbN+ihqZ4kX/dMiowf6o+Jk1fNwiSdx0NahBJLU787zkULhGhJM8mf/obmLGmgdMM0bXsQTmyfbR7Q==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "@types/node": "*"
++      }
++    },
++    "node_modules/@types/node": {
++      "version": "24.13.2",
++      "resolved": "https://registry.npmjs.org/@types/node/-/node-24.13.2.tgz",
++      "integrity": "sha512-fRa09kZTgu8o71KFcDjUFuc7F+dEbZYZmkI0mg5YBTRs0yMKjYHsq/c0urDKeDb+D5qVgXOdFcuu+DZPKOITwA==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "undici-types": "~7.18.0"
++      }
++    },
+     "node_modules/adm-zip": {
+       "version": "0.5.16",
+       "resolved": "https://registry.npmjs.org/adm-zip/-/adm-zip-0.5.16.tgz",
+@@ -522,6 +544,13 @@
+         "@esbuild/win32-ia32": "0.27.4",
+         "@esbuild/win32-x64": "0.27.4"
+       }
++    },
++    "node_modules/undici-types": {
++      "version": "7.18.2",
++      "resolved": "https://registry.npmjs.org/undici-types/-/undici-types-7.18.2.tgz",
++      "integrity": "sha512-AsuCzffGHJybSaRrmr5eHr81mwJU3kjw6M+uprWvCXiNeN9SOGwQ3Jn8jb8m3Z6izVgknn1R0FTCEAP2QrLY/w==",
++      "dev": true,
++      "license": "MIT"
+     }
+   }
+ }
+diff --git a/npx-cli/package.json b/npx-cli/package.json
+index 375353bac..941cdd092 100644
+--- a/npx-cli/package.json
++++ b/npx-cli/package.json
+@@ -22,6 +22,8 @@
+   "license": "",
+   "description": "NPX wrapper around vibe-kanban and vibe-kanban-mcp",
+   "devDependencies": {
++    "@types/adm-zip": "^0.5.8",
++    "@types/node": "^24.13.2",
+     "esbuild": "^0.27.2"
+   },
+   "dependencies": {
+diff --git a/npx-cli/src/cli.ts b/npx-cli/src/cli.ts
+index 11c8272b3..afb3a9f5f 100644
+--- a/npx-cli/src/cli.ts
++++ b/npx-cli/src/cli.ts
+@@ -10,8 +10,6 @@ import {
+   DESKTOP_CACHE_DIR,
+   LOCAL_DEV_MODE,
+   LOCAL_DIST_DIR,
+-  R2_BASE_URL,
+-  getLatestVersion,
+ } from "./download";
+ import {
+   getTauriPlatform,
+@@ -130,6 +128,7 @@ async function extractAndRun(
+   const binName = getBinaryName(baseName);
+   const binPath = path.join(versionCacheDir, binName);
+   const zipPath = path.join(versionCacheDir, `${baseName}.zip`);
++  let sourceZipPath = zipPath;
+ 
+   // Clean old binary if exists
+   try {
+@@ -147,7 +146,7 @@ async function extractAndRun(
+   if (!fs.existsSync(zipPath)) {
+     console.error(`Downloading ${baseName}...`);
+     try {
+-      await ensureBinary(platformDir, baseName, showProgress);
++      sourceZipPath = await ensureBinary(platformDir, baseName, showProgress);
+       console.error(""); // newline after progress
+     } catch (err: unknown) {
+       const msg = err instanceof Error ? err.message : String(err);
+@@ -160,7 +159,7 @@ async function extractAndRun(
+   if (!fs.existsSync(binPath)) {
+     try {
+       const { default: AdmZip } = await import("adm-zip");
+-      const zip = new AdmZip(zipPath);
++      const zip = new AdmZip(sourceZipPath);
+       zip.extractAllTo(versionCacheDir, true);
+     } catch (err: unknown) {
+       const msg = err instanceof Error ? err.message : String(err);
+@@ -195,24 +194,6 @@ async function extractAndRun(
+   return launch(binPath);
+ }
+ 
+-function checkForUpdates(): void {
+-  const hasValidR2Url = !R2_BASE_URL.startsWith("__");
+-  if (LOCAL_DEV_MODE || !hasValidR2Url) {
+-    return;
+-  }
+-
+-  getLatestVersion()
+-    .then((latest) => {
+-      if (latest && latest !== CLI_VERSION) {
+-        setTimeout(() => {
+-          console.log(`\nUpdate available: ${CLI_VERSION} -> ${latest}`);
+-          console.log(`Run: npx vibe-kanban@latest`);
+-        }, 2000);
+-      }
+-    })
+-    .catch(() => {});
+-}
+-
+ async function runMcp(args: string[]): Promise<void> {
+   await extractAndRun("vibe-kanban-mcp", (bin) => {
+     const proc = spawn(bin, buildMcpArgs(args), {
+@@ -242,8 +223,6 @@ async function runReview(args: string[]): Promise<void> {
+ }
+ 
+ async function runMain(desktopMode: boolean): Promise<void> {
+-  checkForUpdates();
+-
+   const modeLabel = LOCAL_DEV_MODE ? " (local dev)" : "";
+   const tauriPlatform = getTauriPlatform(platformDir);
+ 
+diff --git a/npx-cli/src/download.ts b/npx-cli/src/download.ts
+index 0be170bee..a2687ea23 100644
+--- a/npx-cli/src/download.ts
++++ b/npx-cli/src/download.ts
+@@ -1,41 +1,23 @@
+-import https from 'https';
+ import fs from 'fs';
+ import path from 'path';
+-import crypto from 'crypto';
+ import os from 'os';
++import { createRequire } from 'module';
+ 
+-// Replaced during npm pack by workflow
+-export const R2_BASE_URL = '__R2_PUBLIC_URL__';
+-export const BINARY_TAG = '__BINARY_TAG__'; // e.g., v0.0.135-20251215122030
++export const BINARY_TAG = require('../package.json').version as string;
+ export const CACHE_DIR = path.join(os.homedir(), '.vibe-kanban', 'bin');
++const requireFromHere = createRequire(__filename);
++const OPTIONAL_BINARY_PACKAGES: Record<string, string> = {
++  'linux-x64': 'vibe-kanban-team-linux-x64',
++  'macos-arm64': 'vibe-kanban-team-macos-arm64',
++};
+ 
+-// Local development mode: use binaries from npx-cli/dist/ instead of R2
++// Local development mode: use binaries from npx-cli/dist/
+ // Only activate if dist/ exists (i.e., running from source after local-build.sh)
+ export const LOCAL_DIST_DIR = path.join(__dirname, '..', 'dist');
+ export const LOCAL_DEV_MODE =
+   fs.existsSync(LOCAL_DIST_DIR) ||
+   process.env.VIBE_KANBAN_LOCAL === '1';
+ 
+-export interface BinaryInfo {
+-  sha256: string;
+-  size: number;
+-}
+-
+-export interface BinaryManifest {
+-  latest?: string;
+-  platforms: Record<string, Record<string, BinaryInfo>>;
+-}
+-
+-export interface DesktopPlatformInfo {
+-  file: string;
+-  sha256: string;
+-  type: string | null;
+-}
+-
+-export interface DesktopManifest {
+-  platforms: Record<string, DesktopPlatformInfo>;
+-}
+-
+ export interface DesktopBundleInfo {
+   archivePath: string | null;
+   dir: string;
+@@ -44,118 +26,34 @@ export interface DesktopBundleInfo {
+ 
+ type ProgressCallback = (downloaded: number, total: number) => void;
+ 
+-function fetchJson<T>(url: string): Promise<T> {
+-  return new Promise((resolve, reject) => {
+-    https
+-      .get(url, (res) => {
+-        if (res.statusCode === 301 || res.statusCode === 302) {
+-          return fetchJson<T>(res.headers.location!)
+-            .then(resolve)
+-            .catch(reject);
+-        }
+-        if (res.statusCode !== 200) {
+-          return reject(new Error(`HTTP ${res.statusCode} fetching ${url}`));
+-        }
+-        let data = '';
+-        res.on('data', (chunk: string) => (data += chunk));
+-        res.on('end', () => {
+-          try {
+-            resolve(JSON.parse(data) as T);
+-          } catch {
+-            reject(new Error(`Failed to parse JSON from ${url}`));
+-          }
+-        });
+-      })
+-      .on('error', reject);
+-  });
+-}
+-
+-function downloadFile(
+-  url: string,
+-  destPath: string,
+-  expectedSha256: string | undefined,
+-  onProgress?: ProgressCallback
+-): Promise<string> {
+-  const tempPath = destPath + '.tmp';
+-  return new Promise((resolve, reject) => {
+-    const file = fs.createWriteStream(tempPath);
+-    const hash = crypto.createHash('sha256');
+-
+-    const cleanup = () => {
+-      try {
+-        fs.unlinkSync(tempPath);
+-      } catch {}
+-    };
+-
+-    https
+-      .get(url, (res) => {
+-        if (res.statusCode === 301 || res.statusCode === 302) {
+-          file.close();
+-          cleanup();
+-          return downloadFile(
+-            res.headers.location!,
+-            destPath,
+-            expectedSha256,
+-            onProgress
+-          )
+-            .then(resolve)
+-            .catch(reject);
+-        }
+-
+-        if (res.statusCode !== 200) {
+-          file.close();
+-          cleanup();
+-          return reject(
+-            new Error(`HTTP ${res.statusCode} downloading ${url}`)
+-          );
+-        }
+-
+-        const totalSize = parseInt(
+-          res.headers['content-length'] || '0',
+-          10
+-        );
+-        let downloadedSize = 0;
+-
+-        res.on('data', (chunk: Buffer) => {
+-          downloadedSize += chunk.length;
+-          hash.update(chunk);
+-          if (onProgress) onProgress(downloadedSize, totalSize);
+-        });
+-        res.pipe(file);
+-
+-        file.on('finish', () => {
+-          file.close();
+-          const actualSha256 = hash.digest('hex');
+-          if (expectedSha256 && actualSha256 !== expectedSha256) {
+-            cleanup();
+-            reject(
+-              new Error(
+-                `Checksum mismatch: expected ${expectedSha256}, got ${actualSha256}`
+-              )
+-            );
+-          } else {
+-            try {
+-              fs.renameSync(tempPath, destPath);
+-              resolve(destPath);
+-            } catch (err) {
+-              cleanup();
+-              reject(err);
+-            }
+-          }
+-        });
+-      })
+-      .on('error', (err) => {
+-        file.close();
+-        cleanup();
+-        reject(err);
+-      });
+-  });
++function resolveVendoredBinaryZip(
++  platform: string,
++  binaryName: string
++): string | null {
++  const packageName = OPTIONAL_BINARY_PACKAGES[platform];
++  if (!packageName) return null;
++
++  try {
++    const packageJsonPath = requireFromHere.resolve(
++      `${packageName}/package.json`
++    );
++    const packageRoot = path.dirname(packageJsonPath);
++    const zipPath = path.join(
++      packageRoot,
++      'dist',
++      platform,
++      `${binaryName}.zip`
++    );
++    return fs.existsSync(zipPath) ? zipPath : null;
++  } catch {
++    return null;
++  }
+ }
+ 
+ export async function ensureBinary(
+   platform: string,
+   binaryName: string,
+-  onProgress?: ProgressCallback
++  _onProgress?: ProgressCallback
+ ): Promise<string> {
+   // In local dev mode, use binaries directly from npx-cli/dist/
+   if (LOCAL_DEV_MODE) {
+@@ -173,28 +71,18 @@ export async function ensureBinary(
+     );
+   }
+ 
+-  const cacheDir = path.join(CACHE_DIR, BINARY_TAG, platform);
+-  const zipPath = path.join(cacheDir, `${binaryName}.zip`);
+-
+-  if (fs.existsSync(zipPath)) return zipPath;
+-
+-  fs.mkdirSync(cacheDir, { recursive: true });
+-
+-  const manifest = await fetchJson<BinaryManifest>(
+-    `${R2_BASE_URL}/binaries/${BINARY_TAG}/manifest.json`
++  const vendoredZipPath = resolveVendoredBinaryZip(
++    platform,
++    binaryName
+   );
+-  const binaryInfo = manifest.platforms?.[platform]?.[binaryName];
+-
+-  if (!binaryInfo) {
+-    throw new Error(
+-      `Binary ${binaryName} not available for ${platform}`
+-    );
++  if (vendoredZipPath) {
++    return vendoredZipPath;
+   }
+ 
+-  const url = `${R2_BASE_URL}/binaries/${BINARY_TAG}/${platform}/${binaryName}.zip`;
+-  await downloadFile(url, zipPath, binaryInfo.sha256, onProgress);
+-
+-  return zipPath;
++  throw new Error(
++    `Binary ${binaryName} not available for ${platform}. ` +
++      `Install the npm package with optional dependencies enabled.`
++  );
+ }
+ 
+ export const DESKTOP_CACHE_DIR = path.join(
+@@ -205,7 +93,7 @@ export const DESKTOP_CACHE_DIR = path.join(
+ 
+ export async function ensureDesktopBundle(
+   tauriPlatform: string,
+-  onProgress?: ProgressCallback
++  _onProgress?: ProgressCallback
+ ): Promise<DesktopBundleInfo> {
+   // In local dev mode, use Tauri bundle from npx-cli/dist/tauri/<platform>/
+   if (LOCAL_DEV_MODE) {
+@@ -227,49 +115,7 @@ export async function ensureDesktopBundle(
+     );
+   }
+ 
+-  const cacheDir = path.join(
+-    DESKTOP_CACHE_DIR,
+-    BINARY_TAG,
+-    tauriPlatform
+-  );
+-
+-  // Check if already installed (sentinel file from previous run)
+-  const sentinelPath = path.join(cacheDir, '.installed');
+-  if (fs.existsSync(sentinelPath)) {
+-    return { dir: cacheDir, archivePath: null, type: null };
+-  }
+-
+-  fs.mkdirSync(cacheDir, { recursive: true });
+-
+-  // Fetch the desktop manifest
+-  const manifest = await fetchJson<DesktopManifest>(
+-    `${R2_BASE_URL}/binaries/${BINARY_TAG}/tauri/desktop-manifest.json`
+-  );
+-  const platformInfo = manifest.platforms?.[tauriPlatform];
+-  if (!platformInfo) {
+-    throw new Error(
+-      `Desktop app not available for platform: ${tauriPlatform}`
+-    );
+-  }
+-
+-  const destPath = path.join(cacheDir, platformInfo.file);
+-
+-  // Skip download if file already exists (e.g. previous failed install)
+-  if (!fs.existsSync(destPath)) {
+-    const url = `${R2_BASE_URL}/binaries/${BINARY_TAG}/tauri/${tauriPlatform}/${platformInfo.file}`;
+-    await downloadFile(url, destPath, platformInfo.sha256, onProgress);
+-  }
+-
+-  return {
+-    archivePath: destPath,
+-    dir: cacheDir,
+-    type: platformInfo.type,
+-  };
+-}
+-
+-export async function getLatestVersion(): Promise<string | undefined> {
+-  const manifest = await fetchJson<BinaryManifest>(
+-    `${R2_BASE_URL}/binaries/manifest.json`
++  throw new Error(
++    `Desktop app is not available from the npm package for ${tauriPlatform}.`
+   );
+-  return manifest.latest;
+ }
+-- 
+2.53.0
+

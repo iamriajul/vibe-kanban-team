@@ -43,3 +43,4 @@
 0042-feat-add-quick-effort-selector.patch
 0043-feat-add-session-migration.patch
 0044-fix-Antigravity-model-and-arg-stability.patch
+0045-feat-support-optional-npm-binary-packages.patch
