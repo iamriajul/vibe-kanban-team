@@ -1,0 +1,516 @@
+diff --git a/packages/public/vibe-kanban-notifications-sw.js b/packages/public/vibe-kanban-notifications-sw.js
+new file mode 100644
+index 000000000..3088920ff
+--- /dev/null
++++ b/packages/public/vibe-kanban-notifications-sw.js
+@@ -0,0 +1,210 @@
++const DB_NAME = 'vibe-kanban-notifications';
++const DB_VERSION = 1;
++const DEDUPE_STORE = 'dedupe';
++const STATE_STORE = 'workspace-state';
++const DEDUPE_TTL_MS = 24 * 60 * 60 * 1000;
++
++function openDb() {
++  return new Promise((resolve, reject) => {
++    const request = indexedDB.open(DB_NAME, DB_VERSION);
++
++    request.onupgradeneeded = () => {
++      const db = request.result;
++      if (!db.objectStoreNames.contains(DEDUPE_STORE)) {
++        db.createObjectStore(DEDUPE_STORE);
++      }
++      if (!db.objectStoreNames.contains(STATE_STORE)) {
++        db.createObjectStore(STATE_STORE);
++      }
++    };
++    request.onsuccess = () => resolve(request.result);
++    request.onerror = () => reject(request.error);
++  });
++}
++
++async function withStore(storeName, mode, callback) {
++  const db = await openDb();
++  try {
++    return await new Promise((resolve, reject) => {
++      const tx = db.transaction(storeName, mode);
++      const store = tx.objectStore(storeName);
++      let callbackResult;
++
++      tx.oncomplete = () => resolve(callbackResult);
++      tx.onerror = () => reject(tx.error);
++      tx.onabort = () => reject(tx.error);
++
++      callbackResult = callback(store);
++    });
++  } finally {
++    db.close();
++  }
++}
++
++function getValue(store, key) {
++  return new Promise((resolve, reject) => {
++    const request = store.get(key);
++    request.onsuccess = () => resolve(request.result);
++    request.onerror = () => reject(request.error);
++  });
++}
++
++function putValue(store, key, value) {
++  return new Promise((resolve, reject) => {
++    const request = store.put(value, key);
++    request.onsuccess = () => resolve();
++    request.onerror = () => reject(request.error);
++  });
++}
++
++function deleteValue(store, key) {
++  return new Promise((resolve, reject) => {
++    const request = store.delete(key);
++    request.onsuccess = () => resolve();
++    request.onerror = () => reject(request.error);
++  });
++}
++
++async function claimWorkspaceAttentionEvent(payload) {
++  const now = Date.now();
++  const stateKey = `${payload.scopeKey}:${payload.workspaceId}`;
++  const eventKey = `${stateKey}:${payload.attentionVersion}`;
++
++  return withStore(DEDUPE_STORE, 'readwrite', async (store) => {
++    const existingEvent = await getValue(store, eventKey);
++    if (existingEvent && now - existingEvent.createdAt < DEDUPE_TTL_MS) {
++      return false;
++    }
++
++    await putValue(store, eventKey, { createdAt: now });
++    return true;
++  }).then(async (claimed) => {
++    if (!claimed) {
++      return false;
++    }
++
++    await withStore(STATE_STORE, 'readwrite', async (store) => {
++      await putValue(store, stateKey, {
++        needsAttention: true,
++        attentionVersion: payload.attentionVersion,
++        updatedAt: now,
++      });
++    });
++
++    return true;
++  });
++}
++
++async function updateWorkspaceAttentionState(payload) {
++  const stateKey = `${payload.scopeKey}:${payload.workspaceId}`;
++
++  await withStore(STATE_STORE, 'readwrite', async (store) => {
++    if (payload.needsAttention) {
++      await putValue(store, stateKey, {
++        needsAttention: true,
++        attentionVersion: payload.attentionVersion,
++        updatedAt: Date.now(),
++      });
++    } else {
++      await deleteValue(store, stateKey);
++    }
++  });
++}
++
++async function postSoundToOneClient(payload) {
++  const clientList = await self.clients.matchAll({
++    type: 'window',
++    includeUncontrolled: true,
++  });
++
++  const target =
++    clientList.find((client) => client.focused) ?? clientList[0] ?? null;
++
++  if (!target) {
++    return;
++  }
++
++  target.postMessage({
++    type: 'WORKSPACE_ATTENTION_PLAY_SOUND',
++    soundUrl: payload.soundUrl,
++    eventId: payload.eventId,
++  });
++}
++
++self.addEventListener('install', (event) => {
++  event.waitUntil(self.skipWaiting());
++});
++
++self.addEventListener('activate', (event) => {
++  event.waitUntil(self.clients.claim());
++});
++
++self.addEventListener('message', (event) => {
++  const message = event.data;
++  if (!message || typeof message !== 'object') {
++    return;
++  }
++
++  if (message.type === 'WORKSPACE_ATTENTION_STATE') {
++    event.waitUntil(updateWorkspaceAttentionState(message.payload));
++    return;
++  }
++
++  if (message.type !== 'WORKSPACE_ATTENTION_EVENT') {
++    return;
++  }
++
++  event.waitUntil(
++    (async () => {
++      const payload = message.payload;
++      const claimed = await claimWorkspaceAttentionEvent(payload);
++      if (!claimed) {
++        return;
++      }
++
++      if (payload.showNotification) {
++        await self.registration.showNotification(payload.title, {
++          body: payload.body,
++          icon: '/favicon.png',
++          tag: payload.eventId,
++          data: {
++            deeplinkPath: payload.deeplinkPath,
++          },
++        });
++      }
++
++      if (payload.soundUrl) {
++        await postSoundToOneClient(payload);
++      }
++    })()
++  );
++});
++
++self.addEventListener('notificationclick', (event) => {
++  event.notification.close();
++
++  const deeplinkPath = event.notification.data?.deeplinkPath ?? '/';
++
++  event.waitUntil(
++    (async () => {
++      const clientList = await self.clients.matchAll({
++        type: 'window',
++        includeUncontrolled: true,
++      });
++
++      for (const client of clientList) {
++        const clientUrl = new URL(client.url);
++        if (clientUrl.origin === self.location.origin) {
++          await client.focus();
++          client.postMessage({
++            type: 'WORKSPACE_ATTENTION_OPEN',
++            deeplinkPath,
++          });
++          return;
++        }
++      }
++
++      await self.clients.openWindow(deeplinkPath);
++    })()
++  );
++});
+diff --git a/packages/web-core/src/shared/lib/browserNotifications.ts b/packages/web-core/src/shared/lib/browserNotifications.ts
+index 5394b0546..c25267b29 100644
+--- a/packages/web-core/src/shared/lib/browserNotifications.ts
++++ b/packages/web-core/src/shared/lib/browserNotifications.ts
+@@ -1,3 +1,5 @@
++import { getWorkspaceNotificationWorkerRegistration } from '@/shared/lib/workspaceAttentionNotifications';
++
+ export type BrowserNotificationPermission =
+   | NotificationPermission
+   | 'unsupported';
+@@ -22,7 +24,12 @@ export async function requestBrowserNotificationPermission(): Promise<BrowserNot
+     return 'unsupported';
+   }
+ 
+-  return window.Notification.requestPermission();
++  const permission = await window.Notification.requestPermission();
++  if (permission === 'granted') {
++    await getWorkspaceNotificationWorkerRegistration();
++  }
++
++  return permission;
+ }
+ 
+ export function showBrowserNotification({
+diff --git a/packages/web-core/src/shared/lib/workspaceAttentionNotifications.ts b/packages/web-core/src/shared/lib/workspaceAttentionNotifications.ts
+new file mode 100644
+index 000000000..e7ca05b44
+--- /dev/null
++++ b/packages/web-core/src/shared/lib/workspaceAttentionNotifications.ts
+@@ -0,0 +1,144 @@
++import { playSound } from '@/shared/lib/utils';
++
++const SERVICE_WORKER_URL = '/vibe-kanban-notifications-sw.js';
++const SOUND_DEDUPE_PREFIX = 'vibe-kanban.workspace-attention.sound';
++const SOUND_DEDUPE_TTL_MS = 60 * 1000;
++
++export interface WorkspaceAttentionNotificationPayload {
++  eventId: string;
++  scopeKey: string;
++  workspaceId: string;
++  attentionVersion: string;
++  title: string;
++  body: string;
++  deeplinkPath: string;
++  showNotification: boolean;
++  soundUrl?: string;
++}
++
++interface WorkspaceAttentionStatePayload {
++  scopeKey: string;
++  workspaceId: string;
++  needsAttention: boolean;
++  attentionVersion: string;
++}
++
++function supportsNotificationWorker(): boolean {
++  return (
++    typeof window !== 'undefined' &&
++    'serviceWorker' in navigator &&
++    'Notification' in window
++  );
++}
++
++export async function getWorkspaceNotificationWorkerRegistration(): Promise<ServiceWorkerRegistration | null> {
++  if (!supportsNotificationWorker()) {
++    return null;
++  }
++
++  try {
++    const existing = await navigator.serviceWorker.getRegistration('/');
++    if (existing?.active?.scriptURL.endsWith(SERVICE_WORKER_URL)) {
++      return existing;
++    }
++
++    const registration = await navigator.serviceWorker.register(
++      SERVICE_WORKER_URL,
++      { scope: '/' }
++    );
++    await navigator.serviceWorker.ready;
++    return registration;
++  } catch (error) {
++    console.warn('Failed to register notification service worker:', error);
++    return null;
++  }
++}
++
++async function postToNotificationWorker(message: unknown): Promise<boolean> {
++  const registration = await getWorkspaceNotificationWorkerRegistration();
++  const worker =
++    registration?.active ?? registration?.waiting ?? registration?.installing;
++
++  if (!worker) {
++    return false;
++  }
++
++  worker.postMessage(message);
++  return true;
++}
++
++export async function notifyWorkspaceAttention(
++  payload: WorkspaceAttentionNotificationPayload
++): Promise<boolean> {
++  return postToNotificationWorker({
++    type: 'WORKSPACE_ATTENTION_EVENT',
++    payload,
++  });
++}
++
++export async function syncWorkspaceAttentionState(
++  payload: WorkspaceAttentionStatePayload
++): Promise<boolean> {
++  return postToNotificationWorker({
++    type: 'WORKSPACE_ATTENTION_STATE',
++    payload,
++  });
++}
++
++function shouldPlaySound(eventId: string): boolean {
++  if (typeof window === 'undefined') {
++    return false;
++  }
++
++  const storageKey = `${SOUND_DEDUPE_PREFIX}.${eventId}`;
++  const now = Date.now();
++  const previous = Number(window.localStorage.getItem(storageKey) ?? '0');
++
++  if (Number.isFinite(previous) && now - previous < SOUND_DEDUPE_TTL_MS) {
++    return false;
++  }
++
++  window.localStorage.setItem(storageKey, String(now));
++  return true;
++}
++
++export function subscribeToWorkspaceAttentionServiceWorkerMessages() {
++  if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
++    return () => {};
++  }
++
++  const handleMessage = (event: MessageEvent) => {
++    const message = event.data;
++    if (!message || typeof message !== 'object') {
++      return;
++    }
++
++    if (message.type === 'WORKSPACE_ATTENTION_OPEN') {
++      const deeplinkPath = String(message.deeplinkPath ?? '');
++      if (deeplinkPath) {
++        window.location.assign(deeplinkPath);
++      }
++      return;
++    }
++
++    if (message.type !== 'WORKSPACE_ATTENTION_PLAY_SOUND') {
++      return;
++    }
++
++    const eventId = String(message.eventId ?? '');
++    const soundUrl = String(message.soundUrl ?? '');
++    if (!eventId || !soundUrl || !shouldPlaySound(eventId)) {
++      return;
++    }
++
++    void playSound(soundUrl).catch((error) => {
++      console.warn('Failed to play workspace attention sound:', error);
++    });
++  };
++
++  navigator.serviceWorker.addEventListener('message', handleMessage);
++
++  return () => {
++    navigator.serviceWorker.removeEventListener('message', handleMessage);
++  };
++}
+diff --git a/packages/web-core/src/shared/notifications/AppWorkspaceAttentionNotifications.tsx b/packages/web-core/src/shared/notifications/AppWorkspaceAttentionNotifications.tsx
+index d8afd49cb..0024c93d8 100644
+--- a/packages/web-core/src/shared/notifications/AppWorkspaceAttentionNotifications.tsx
++++ b/packages/web-core/src/shared/notifications/AppWorkspaceAttentionNotifications.tsx
+@@ -7,11 +7,12 @@ import {
+   useWorkspaces,
+   type SidebarWorkspace,
+ } from '@/shared/hooks/useWorkspaces';
++import { getBrowserNotificationPermission } from '@/shared/lib/browserNotifications';
+ import {
+-  getBrowserNotificationPermission,
+-  showBrowserNotification,
+-} from '@/shared/lib/browserNotifications';
+-import { playSound } from '@/shared/lib/utils';
++  notifyWorkspaceAttention,
++  subscribeToWorkspaceAttentionServiceWorkerMessages,
++  syncWorkspaceAttentionState,
++} from '@/shared/lib/workspaceAttentionNotifications';
+ 
+ interface AppWorkspaceAttentionNotificationsProps {
+   hostId?: string | null;
+@@ -41,6 +42,18 @@ function getWorkspaceDeeplinkPath(
+     : `/workspaces/${encodeURIComponent(workspaceId)}`;
+ }
+ 
++function getWorkspaceAttentionReason(workspace: SidebarWorkspace): string {
++  return workspace.hasPendingApproval ? 'approval' : 'activity';
++}
++
++function getWorkspaceAttentionVersion(workspace: SidebarWorkspace): string {
++  return [
++    getWorkspaceAttentionReason(workspace),
++    workspace.latestProcessStatus ?? 'unknown',
++    workspace.latestProcessCompletedAt ?? workspace.updatedAt,
++  ].join(':');
++}
++
+ export function AppWorkspaceAttentionNotifications({
+   hostId,
+ }: AppWorkspaceAttentionNotificationsProps) {
+@@ -52,7 +65,9 @@ export function AppWorkspaceAttentionNotifications({
+     enabled: isSignedIn,
+     hostId,
+   });
+-  const attentionByWorkspaceIdRef = useRef(new Map<string, boolean>());
++  const attentionByWorkspaceIdRef = useRef(new Map<string, string | null>());
++
++  useEffect(() => subscribeToWorkspaceAttentionServiceWorkerMessages(), []);
+ 
+   useEffect(() => {
+     attentionByWorkspaceIdRef.current.clear();
+@@ -74,34 +89,55 @@ export function AppWorkspaceAttentionNotifications({
+ 
+     for (const workspace of workspaces) {
+       const needsAttention = workspaceNeedsAttention(workspace);
+-      const previousNeedsAttention = attentionByWorkspaceIdRef.current.get(
++      const attentionVersion = needsAttention
++        ? getWorkspaceAttentionVersion(workspace)
++        : '';
++      const previousAttentionVersion = attentionByWorkspaceIdRef.current.get(
+         workspace.id
+       );
+-      attentionByWorkspaceIdRef.current.set(workspace.id, needsAttention);
++      attentionByWorkspaceIdRef.current.set(
++        workspace.id,
++        needsAttention ? attentionVersion : null
++      );
+ 
+-      if (previousNeedsAttention !== false || !needsAttention) {
+-        continue;
+-      }
++      void syncWorkspaceAttentionState({
++        scopeKey: hostId ?? 'local',
++        workspaceId: workspace.id,
++        needsAttention,
++        attentionVersion,
++      });
+ 
+       if (
+-        browserNotificationsEnabled &&
+-        getBrowserNotificationPermission() === 'granted'
++        previousAttentionVersion !== null ||
++        !needsAttention ||
++        !attentionVersion
+       ) {
+-        showBrowserNotification({
+-          id: `workspace-attention:${workspace.id}`,
+-          title: 'Workspace needs attention',
+-          body: getWorkspaceAttentionBody(workspace),
+-          deeplinkPath: getWorkspaceDeeplinkPath(workspace.id, hostId),
+-        });
++        continue;
+       }
+ 
+-      if (config?.notifications.sound_enabled !== false) {
+-        const soundFile =
+-          config?.notifications.sound_file ?? SoundFile.ABSTRACT_SOUND1;
+-        void playSound(`/api/sounds/${soundFile}`).catch((error) => {
+-          console.warn('Failed to play workspace attention sound:', error);
+-        });
++      const eventId = `workspace-attention:${hostId ?? 'local'}:${workspace.id}:${attentionVersion}`;
++      const shouldShowNotification =
++        browserNotificationsEnabled &&
++        getBrowserNotificationPermission() === 'granted';
++      const shouldPlaySound = config?.notifications.sound_enabled !== false;
++      const soundFile =
++        config?.notifications.sound_file ?? SoundFile.ABSTRACT_SOUND1;
++
++      if (!shouldShowNotification && !shouldPlaySound) {
++        continue;
+       }
++
++      void notifyWorkspaceAttention({
++        eventId,
++        scopeKey: hostId ?? 'local',
++        workspaceId: workspace.id,
++        attentionVersion,
++        title: 'Workspace needs attention',
++        body: getWorkspaceAttentionBody(workspace),
++        deeplinkPath: getWorkspaceDeeplinkPath(workspace.id, hostId),
++        showNotification: shouldShowNotification,
++        soundUrl: shouldPlaySound ? `/api/sounds/${soundFile}` : undefined,
++      });
+     }
+   }, [
+     browserNotificationsEnabled,
