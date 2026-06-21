@@ -1,0 +1,530 @@
+From ef04d86d313a99c9cce2b8ca7c1c0d4305158ae1 Mon Sep 17 00:00:00 2001
+From: Riajul Islam <kmriajulislami@gmail.com>
+Date: Sun, 21 Jun 2026 15:20:22 +0000
+Subject: [PATCH] fix: auto-continue after agent session limits
+
+---
+ Cargo.lock                               |   1 +
+ crates/local-deployment/Cargo.toml       |   1 +
+ crates/local-deployment/src/container.rs | 442 ++++++++++++++++++++++-
+ 3 files changed, 443 insertions(+), 1 deletion(-)
+
+diff --git a/Cargo.lock b/Cargo.lock
+index e5ff42bbf..a02e5e7b7 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -5302,6 +5302,7 @@ dependencies = [
+  "api-types",
+  "async-trait",
+  "base64 0.22.1",
++ "chrono",
+  "client-info",
+  "command-group",
+  "db",
+diff --git a/crates/local-deployment/Cargo.toml b/crates/local-deployment/Cargo.toml
+index 957bd0094..ca3287131 100644
+--- a/crates/local-deployment/Cargo.toml
++++ b/crates/local-deployment/Cargo.toml
+@@ -29,6 +29,7 @@ serde = { workspace = true }
+ base64 = "0.22"
+ ed25519-dalek = "2.2.0"
+ anyhow = { workspace = true }
++chrono = { version = "0.4", features = ["serde"] }
+ tracing = { workspace = true }
+ uuid = { version = "1.0", features = ["v4", "serde"] }
+ async-trait = { workspace = true }
+diff --git a/crates/local-deployment/src/container.rs b/crates/local-deployment/src/container.rs
+index 6a4af5602..14e0a4b7a 100644
+--- a/crates/local-deployment/src/container.rs
++++ b/crates/local-deployment/src/container.rs
+@@ -8,6 +8,7 @@ use std::{
+ 
+ use anyhow::anyhow;
+ use async_trait::async_trait;
++use chrono::{DateTime, Duration as ChronoDuration, NaiveTime, Utc};
+ use command_group::AsyncGroupChild;
+ use db::{
+     DBService,
+@@ -67,6 +68,9 @@ use workspace_manager::{RepoWorkspaceInput, WorkspaceError, WorkspaceManager};
+ use crate::{LocalDeployment, command, copy};
+ 
+ const WORKSPACE_TOUCH_DEBOUNCE: Duration = Duration::from_mins(2);
++const AUTO_CONTINUE_PROMPT: &str = "Continue";
++const AUTO_CONTINUE_RESET_BUFFER: Duration = Duration::from_secs(30);
++const AUTO_CONTINUE_MAX_DELAY: Duration = Duration::from_secs(7 * 24 * 60 * 60);
+ 
+ #[derive(Clone)]
+ pub struct LocalContainerService {
+@@ -736,6 +740,9 @@ impl LocalContainerService {
+                         .and_then(|action| action.next_action())
+                         .is_some();
+                     let mut started_queued_follow_up = false;
++                    let scheduled_auto_continue = container
++                        .maybe_schedule_session_limit_auto_continue(&ctx, exec_id)
++                        .await;
+ 
+                     // Only execute queued messages if the execution succeeded
+                     // If it failed or was killed, just clear the queue and finalize
+@@ -802,7 +809,9 @@ impl LocalContainerService {
+                             container.finalize_task(&ctx).await;
+                         }
+                     } else {
+-                        container.finalize_task(&ctx).await;
++                        if !scheduled_auto_continue {
++                            container.finalize_task(&ctx).await;
++                        }
+                     }
+ 
+                     let should_mark_turn_unseen = matches!(
+@@ -1058,6 +1067,149 @@ impl LocalContainerService {
+         None
+     }
+ 
++    async fn maybe_schedule_session_limit_auto_continue(
++        &self,
++        ctx: &ExecutionContext,
++        exec_id: Uuid,
++    ) -> bool {
++        if !matches!(
++            ctx.execution_process.run_reason,
++            ExecutionProcessRunReason::CodingAgent
++        ) {
++            return false;
++        }
++
++        let executor_config =
++            match ctx
++                .execution_process
++                .executor_action()
++                .ok()
++                .and_then(|action| match &action.typ {
++                    ExecutorActionType::CodingAgentInitialRequest(request) => {
++                        Some(request.executor_config.clone())
++                    }
++                    ExecutorActionType::CodingAgentFollowUpRequest(request) => {
++                        Some(request.executor_config.clone())
++                    }
++                    _ => None,
++                }) {
++                Some(config) => config,
++                None => return false,
++            };
++
++        let plan = {
++            let msg_stores = self.msg_stores.read().await;
++            let Some(msg_store) = msg_stores.get(&exec_id) else {
++                return false;
++            };
++            detect_session_limit_auto_continue(&msg_store.get_history(), Utc::now())
++        };
++
++        let Some(plan) = plan else {
++            return false;
++        };
++
++        let session_id = ctx.session.id;
++        let container = self.clone();
++        let auth_session_id = self.auth_session_for_execution(exec_id).await;
++        tracing::info!(
++            "Scheduling automatic Continue for session {} in {:?}: {}",
++            session_id,
++            plan.delay,
++            plan.reason
++        );
++
++        tokio::spawn(async move {
++            tokio::time::sleep(plan.delay).await;
++
++            let run = async {
++                if container.queued_message_service.has_queued(session_id) {
++                    tracing::info!(
++                        "Skipping automatic Continue for session {} because a queued message exists",
++                        session_id
++                    );
++                    return;
++                }
++
++                if ExecutionProcess::has_running_coding_agent_for_session(
++                    &container.db.pool,
++                    session_id,
++                )
++                .await
++                .unwrap_or(true)
++                {
++                    tracing::info!(
++                        "Skipping automatic Continue for session {} because an agent is running",
++                        session_id
++                    );
++                    return;
++                }
++
++                let processes = match ExecutionProcess::find_by_session_id(
++                    &container.db.pool,
++                    session_id,
++                    false,
++                )
++                .await
++                {
++                    Ok(processes) => processes,
++                    Err(err) => {
++                        tracing::warn!(
++                            "Failed to inspect session {} before automatic Continue: {}",
++                            session_id,
++                            err
++                        );
++                        return;
++                    }
++                };
++
++                if processes.last().map(|process| process.id) != Some(exec_id) {
++                    tracing::info!(
++                        "Skipping automatic Continue for session {} because the session has moved on",
++                        session_id
++                    );
++                    return;
++                }
++
++                let ctx = match ExecutionProcess::load_context(&container.db.pool, exec_id).await {
++                    Ok(ctx) => ctx,
++                    Err(err) => {
++                        tracing::warn!(
++                            "Failed to load execution context for automatic Continue {}: {}",
++                            exec_id,
++                            err
++                        );
++                        return;
++                    }
++                };
++
++                let data = DraftFollowUpData {
++                    message: AUTO_CONTINUE_PROMPT.to_string(),
++                    executor_config,
++                };
++
++                if let Err(err) = container.start_queued_follow_up(&ctx, &data).await {
++                    tracing::error!(
++                        "Failed to start automatic Continue for session {}: {}",
++                        session_id,
++                        err
++                    );
++                }
++            };
++
++            if let Some(auth_session_id) = auth_session_id {
++                container
++                    .auth_context
++                    .run_with_session(auth_session_id, run)
++                    .await;
++            } else {
++                run.await;
++            }
++        });
++
++        true
++    }
++
+     /// Update the coding agent turn summary with the final assistant message
+     async fn update_executor_session_summary(&self, exec_id: &Uuid) -> Result<(), anyhow::Error> {
+         // Check if there's a coding agent turn for this execution process
+@@ -1824,6 +1976,243 @@ impl ContainerService for LocalContainerService {
+         Ok(())
+     }
+ }
++
++#[derive(Debug, Clone)]
++struct AutoContinuePlan {
++    delay: Duration,
++    reason: String,
++}
++
++fn detect_session_limit_auto_continue(
++    history: &[LogMsg],
++    now: DateTime<Utc>,
++) -> Option<AutoContinuePlan> {
++    let text = history
++        .iter()
++        .filter_map(log_msg_text)
++        .collect::<Vec<_>>()
++        .join("\n");
++    let lower = text.to_lowercase();
++
++    if !looks_like_session_limit(&lower) {
++        return None;
++    }
++
++    if let Some(delay) = parse_relative_delay(&lower) {
++        return bounded_auto_continue_delay(delay).map(|delay| AutoContinuePlan {
++            delay,
++            reason: "relative session-limit reset delay".to_string(),
++        });
++    }
++
++    if let Some(delay) = parse_utc_reset_delay(&lower, now) {
++        return bounded_auto_continue_delay(delay).map(|delay| AutoContinuePlan {
++            delay,
++            reason: "UTC session-limit reset time".to_string(),
++        });
++    }
++
++    tracing::info!("Detected session-limit output but could not parse a reset time");
++    None
++}
++
++fn log_msg_text(msg: &LogMsg) -> Option<String> {
++    match msg {
++        LogMsg::Stdout(value) | LogMsg::Stderr(value) => Some(value.clone()),
++        LogMsg::JsonPatch(patch) => serde_json::to_string(patch).ok(),
++        _ => None,
++    }
++}
++
++fn looks_like_session_limit(value: &str) -> bool {
++    value.contains("hit your session limit")
++        || value.contains("session limit reached")
++        || value.contains("session limit")
++            && (value.contains("reset") || value.contains("try again") || value.contains("retry"))
++        || value.contains("usage limit")
++            && (value.contains("reached") || value.contains("exceeded") || value.contains("reset"))
++        || value.contains("rate limit")
++            && (value.contains("reached")
++                || value.contains("exceeded")
++                || value.contains("try again")
++                || value.contains("retry after"))
++        || value.contains("quota exceeded")
++        || value.contains("resource exhausted")
++}
++
++fn parse_relative_delay(value: &str) -> Option<Duration> {
++    for marker in [
++        "retry after ",
++        "try again in ",
++        "resets in ",
++        "reset in ",
++        "available in ",
++    ] {
++        if let Some(index) = value.find(marker) {
++            let fragment = value[index + marker.len()..]
++                .chars()
++                .take(96)
++                .collect::<String>();
++            if let Some(delay) = parse_duration_fragment(&fragment) {
++                return Some(delay + AUTO_CONTINUE_RESET_BUFFER);
++            }
++        }
++    }
++    None
++}
++
++fn parse_duration_fragment(fragment: &str) -> Option<Duration> {
++    let normalized = fragment
++        .chars()
++        .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { ' ' })
++        .collect::<String>();
++    let tokens = normalized.split_whitespace().collect::<Vec<_>>();
++    let mut seconds = 0u64;
++    let mut index = 0usize;
++
++    while index < tokens.len() {
++        let token = tokens[index];
++        if let Some((amount, unit)) = parse_compact_duration_token(token) {
++            seconds = seconds.saturating_add(duration_unit_seconds(amount, unit)?);
++            index += 1;
++            continue;
++        }
++
++        let amount = match token.parse::<u64>() {
++            Ok(amount) => amount,
++            Err(_) => {
++                if seconds > 0 {
++                    break;
++                }
++                index += 1;
++                continue;
++            }
++        };
++
++        let unit = tokens.get(index + 1).copied().unwrap_or("seconds");
++        seconds = seconds.saturating_add(duration_unit_seconds(amount, unit)?);
++        index += 2;
++    }
++
++    (seconds > 0).then(|| Duration::from_secs(seconds))
++}
++
++fn parse_compact_duration_token(token: &str) -> Option<(u64, &str)> {
++    let split = token
++        .char_indices()
++        .find_map(|(idx, ch)| (!ch.is_ascii_digit()).then_some(idx))?;
++    if split == 0 {
++        return None;
++    }
++    let amount = token[..split].parse::<u64>().ok()?;
++    Some((amount, &token[split..]))
++}
++
++fn duration_unit_seconds(amount: u64, unit: &str) -> Option<u64> {
++    let multiplier = match unit {
++        "s" | "sec" | "secs" | "second" | "seconds" => 1,
++        "m" | "min" | "mins" | "minute" | "minutes" => 60,
++        "h" | "hr" | "hrs" | "hour" | "hours" => 60 * 60,
++        "d" | "day" | "days" => 24 * 60 * 60,
++        _ => return None,
++    };
++    amount.checked_mul(multiplier)
++}
++
++fn parse_utc_reset_delay(value: &str, now: DateTime<Utc>) -> Option<Duration> {
++    if !(value.contains("reset") || value.contains("resets")) {
++        return None;
++    }
++
++    let reset_time = find_time_of_day(value)?;
++    let reset_date = now.date_naive();
++    let reset_at = reset_date.and_time(reset_time);
++    let mut reset_at = DateTime::<Utc>::from_naive_utc_and_offset(reset_at, Utc);
++    if reset_at <= now {
++        reset_at += ChronoDuration::days(1);
++    }
++
++    (reset_at - now)
++        .to_std()
++        .ok()
++        .map(|delay| delay + AUTO_CONTINUE_RESET_BUFFER)
++}
++
++fn find_time_of_day(value: &str) -> Option<NaiveTime> {
++    let bytes = value.as_bytes();
++    let mut index = 0usize;
++    while index < bytes.len() {
++        if !bytes[index].is_ascii_digit() {
++            index += 1;
++            continue;
++        }
++
++        if let Some((time, _consumed)) = parse_time_at(&value[index..]) {
++            return Some(time);
++        }
++        index += 1;
++    }
++    None
++}
++
++fn parse_time_at(value: &str) -> Option<(NaiveTime, usize)> {
++    let bytes = value.as_bytes();
++    let mut index = 0usize;
++    let hour_start = index;
++    while index < bytes.len() && bytes[index].is_ascii_digit() && index - hour_start < 2 {
++        index += 1;
++    }
++    if index == hour_start {
++        return None;
++    }
++    let hour = value[hour_start..index].parse::<u32>().ok()?;
++    let mut minute = 0u32;
++
++    if bytes.get(index) == Some(&b':') {
++        index += 1;
++        let minute_start = index;
++        while index < bytes.len() && bytes[index].is_ascii_digit() && index - minute_start < 2 {
++            index += 1;
++        }
++        if index - minute_start != 2 {
++            return None;
++        }
++        minute = value[minute_start..index].parse::<u32>().ok()?;
++    }
++
++    while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
++        index += 1;
++    }
++
++    let suffix = value[index..].get(..2).unwrap_or_default();
++    let hour = match suffix {
++        "am" => {
++            index += 2;
++            if hour == 12 { 0 } else { hour }
++        }
++        "pm" => {
++            index += 2;
++            if hour == 12 { 12 } else { hour + 12 }
++        }
++        _ if value.contains("utc") && hour < 24 => hour,
++        _ => return None,
++    };
++
++    NaiveTime::from_hms_opt(hour, minute, 0).map(|time| (time, index))
++}
++
++fn bounded_auto_continue_delay(delay: Duration) -> Option<Duration> {
++    if delay > AUTO_CONTINUE_MAX_DELAY {
++        tracing::info!(
++            "Ignoring parsed session-limit reset delay {:?}; exceeds maximum {:?}",
++            delay,
++            AUTO_CONTINUE_MAX_DELAY
++        );
++        return None;
++    }
++    Some(delay)
++}
++
+ fn success_exit_status() -> std::process::ExitStatus {
+     #[cfg(unix)]
+     {
+@@ -1836,3 +2225,54 @@ fn success_exit_status() -> std::process::ExitStatus {
+         ExitStatusExt::from_raw(0)
+     }
+ }
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    fn utc_now(value: &str) -> DateTime<Utc> {
++        DateTime::parse_from_rfc3339(value)
++            .unwrap()
++            .with_timezone(&Utc)
++    }
++
++    #[test]
++    fn detects_claude_style_session_limit_reset_time() {
++        let history = vec![LogMsg::Stdout(
++            "You've hit your session limit · resets 6:30am (UTC)".to_string(),
++        )];
++        let plan = detect_session_limit_auto_continue(&history, utc_now("2026-06-21T06:00:00Z"))
++            .expect("expected auto-continue plan");
++
++        assert_eq!(plan.delay, Duration::from_secs(30 * 60 + 30));
++    }
++
++    #[test]
++    fn rolls_reset_time_to_tomorrow_when_today_has_passed() {
++        let history = vec![LogMsg::Stderr(
++            "Session limit reached. Resets 6:30am UTC.".to_string(),
++        )];
++        let plan = detect_session_limit_auto_continue(&history, utc_now("2026-06-21T06:31:00Z"))
++            .expect("expected auto-continue plan");
++
++        assert_eq!(plan.delay, Duration::from_secs(23 * 60 * 60 + 59 * 60 + 30));
++    }
++
++    #[test]
++    fn detects_relative_retry_delay() {
++        let history = vec![LogMsg::Stdout(
++            "Rate limit reached, try again in 1h 15m.".to_string(),
++        )];
++        let plan = detect_session_limit_auto_continue(&history, utc_now("2026-06-21T06:00:00Z"))
++            .expect("expected auto-continue plan");
++
++        assert_eq!(plan.delay, Duration::from_secs(75 * 60 + 30));
++    }
++
++    #[test]
++    fn ignores_limit_text_without_reset_time() {
++        let history = vec![LogMsg::Stdout("Session limit reached.".to_string())];
++
++        assert!(detect_session_limit_auto_continue(&history, Utc::now()).is_none());
++    }
++}
+-- 
+2.53.0
+
