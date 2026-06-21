@@ -1,0 +1,116 @@
+From d2c88d1d6c165b43db53b671016c371f33d2b39d Mon Sep 17 00:00:00 2001
+From: Riajul Islam <kmriajulislami@gmail.com>
+Date: Sun, 21 Jun 2026 08:36:51 +0000
+Subject: [PATCH] fix: reuse unlocked browser audio context for notifications
+
+---
+ packages/web-core/src/shared/lib/utils.ts     | 69 ++++++++++++++++++-
+ .../lib/workspaceAttentionNotifications.ts    |  4 +-
+ 2 files changed, 68 insertions(+), 5 deletions(-)
+
+diff --git a/packages/web-core/src/shared/lib/utils.ts b/packages/web-core/src/shared/lib/utils.ts
+index 4986f0922..ecfc67dbc 100644
+--- a/packages/web-core/src/shared/lib/utils.ts
++++ b/packages/web-core/src/shared/lib/utils.ts
+@@ -12,8 +12,72 @@ export function cn(...inputs: ClassValue[]) {
+  * Play a sound file.  In the Tauri desktop app we use AudioContext (Web
+  * Audio API) because `new Audio()` registers with macOS NowPlaying /
+  * MediaRemote, triggering an "access Apple Music" TCC prompt.  In the
+- * browser the standard HTMLAudioElement works fine.
++ * browser we keep a shared AudioContext so the notification opt-in click can
++ * unlock the same audio path used by later service-worker sound messages.
+  */
++let browserAudioContext: AudioContext | null = null;
++const browserAudioBuffers = new Map<string, Promise<AudioBuffer>>();
++
++function getBrowserAudioContext(): AudioContext | null {
++  if (browserAudioContext) {
++    return browserAudioContext;
++  }
++
++  const AudioContextCtor =
++    window.AudioContext ??
++    (window as Window & { webkitAudioContext?: typeof AudioContext })
++      .webkitAudioContext;
++
++  if (!AudioContextCtor) {
++    return null;
++  }
++
++  browserAudioContext = new AudioContextCtor();
++  return browserAudioContext;
++}
++
++async function loadBrowserAudioBuffer(
++  ctx: AudioContext,
++  url: string
++): Promise<AudioBuffer> {
++  const existing = browserAudioBuffers.get(url);
++  if (existing) {
++    return existing;
++  }
++
++  const pending = (async () => {
++    const res = await fetch(url);
++    const buf = await res.arrayBuffer();
++    return ctx.decodeAudioData(buf);
++  })();
++
++  browserAudioBuffers.set(url, pending);
++  return pending;
++}
++
++async function playBrowserSound(url: string): Promise<void> {
++  const ctx = getBrowserAudioContext();
++  if (!ctx) {
++    const audio = new Audio(url);
++    await audio.play();
++    return;
++  }
++
++  if (ctx.state === 'suspended') {
++    await ctx.resume();
++  }
++
++  const audio = await loadBrowserAudioBuffer(ctx, url);
++  const src = ctx.createBufferSource();
++  src.buffer = audio;
++  src.connect(ctx.destination);
++  src.start();
++
++  await new Promise<void>((resolve) => {
++    src.onended = () => resolve();
++  });
++}
++
+ export async function playSound(url: string): Promise<void> {
+   if ('__TAURI_INTERNALS__' in window) {
+     const ctx = new AudioContext();
+@@ -32,8 +96,7 @@ export async function playSound(url: string): Promise<void> {
+       await ctx.close();
+     }
+   } else {
+-    const audio = new Audio(url);
+-    await audio.play();
++    await playBrowserSound(url);
+   }
+ }
+ 
+diff --git a/packages/web-core/src/shared/lib/workspaceAttentionNotifications.ts b/packages/web-core/src/shared/lib/workspaceAttentionNotifications.ts
+index 47b002f4c..f4c942f7a 100644
+--- a/packages/web-core/src/shared/lib/workspaceAttentionNotifications.ts
++++ b/packages/web-core/src/shared/lib/workspaceAttentionNotifications.ts
+@@ -187,8 +187,8 @@ export async function syncWorkspaceAttentionState(
+ 
+ export function playWorkspaceAttentionNotificationSoundPreview(
+   soundFile: SoundFile = DEFAULT_NOTIFICATION_SOUND
+-): void {
+-  void playSound(`/api/sounds/${soundFile}`).catch((error) => {
++): Promise<void> {
++  return playSound(`/api/sounds/${soundFile}`).catch((error) => {
+     console.warn('Failed to unlock workspace attention notification sound:', error);
+   });
+ }
+-- 
+2.53.0
+
