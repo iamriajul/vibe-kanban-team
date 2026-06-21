@@ -1,0 +1,98 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Codex <codex@openai.com>
+Date: Sat, 20 Jun 2026 04:00:00 +0000
+Subject: [PATCH] feat: expand subagent activity entries
+
+---
+ packages/ui/src/components/ChatSubagentEntry.tsx                 | 9 +++++++--
+ .../src/features/workspace-chat/ui/DisplayConversationEntry.tsx  | 9 ++++++---
+ 2 files changed, 13 insertions(+), 5 deletions(-)
+
+diff --git a/packages/ui/src/components/ChatSubagentEntry.tsx b/packages/ui/src/components/ChatSubagentEntry.tsx
+index 75d98fb5a..b9bd4b049 100644
+--- a/packages/ui/src/components/ChatSubagentEntry.tsx
++++ b/packages/ui/src/components/ChatSubagentEntry.tsx
+@@ -24,6 +24,7 @@ interface ChatSubagentEntryProps {
+   description: string;
+   subagentType?: string | null;
+   result?: ChatSubagentResultLike | null;
++  fallbackContent?: string | null;
+   expanded?: boolean;
+   onToggle?: () => void;
+   className?: string;
+@@ -41,6 +42,7 @@ export function ChatSubagentEntry({
+   description,
+   subagentType,
+   result,
++  fallbackContent,
+   expanded = false,
+   onToggle,
+   className,
+@@ -97,7 +99,10 @@ export function ChatSubagentEntry({
+ 
+   // Extract the result content for display
+   const resultContent = useMemo(() => {
+-    if (!result?.value) return null;
++    if (result?.value == null) {
++      const fallback = fallbackContent?.trim();
++      return fallback || null;
++    }
+ 
+     // Handle both string and object values
+     if (typeof result.value === 'string') {
+@@ -106,7 +111,7 @@ export function ChatSubagentEntry({
+ 
+     // For JSON results, stringify with formatting
+     return JSON.stringify(result.value, null, 2);
+-  }, [result]);
++  }, [result, fallbackContent]);
+ 
+   // Determine if we have content to show
+   const hasContent = Boolean(resultContent);
+diff --git a/packages/web-core/src/features/workspace-chat/ui/DisplayConversationEntry.tsx b/packages/web-core/src/features/workspace-chat/ui/DisplayConversationEntry.tsx
+index 6d0b898d6..4b0821771 100644
+--- a/packages/web-core/src/features/workspace-chat/ui/DisplayConversationEntry.tsx
++++ b/packages/web-core/src/features/workspace-chat/ui/DisplayConversationEntry.tsx
+@@ -225,6 +225,7 @@ function renderToolUseEntry(
+         description={action_type.description}
+         subagentType={action_type.subagent_type}
+         result={action_type.result}
++        fallbackContent={entry.content}
+         expansionKey={expansionKey}
+         status={status}
+         workspaceId={workspaceWithSession?.id}
+@@ -980,6 +981,7 @@ function SubagentEntry({
+   description,
+   subagentType,
+   result,
++  fallbackContent,
+   expansionKey,
+   status,
+   workspaceId,
+@@ -988,13 +990,13 @@ function SubagentEntry({
+   description: string;
+   subagentType: string | null | undefined;
+   result: ToolResult | null | undefined;
++  fallbackContent: string;
+   expansionKey: string;
+   status: ToolStatus;
+   workspaceId: string | undefined;
+   sessionId: string | undefined;
+ }) {
+-  // Only auto-expand if there's a result to show
+-  const hasResult = Boolean(result?.value);
++  const hasContent = result?.value != null || Boolean(fallbackContent.trim());
+   const [expanded, toggle] = usePersistedExpanded(
+     `subagent:${expansionKey}`,
+     false
+@@ -1005,8 +1007,9 @@ function SubagentEntry({
+       description={description}
+       subagentType={subagentType}
+       result={result}
++      fallbackContent={fallbackContent}
+       expanded={expanded}
+-      onToggle={hasResult ? toggle : undefined}
++      onToggle={hasContent ? toggle : undefined}
+       status={status}
+       workspaceId={workspaceId}
+       renderMarkdown={({ content, workspaceId }) => (

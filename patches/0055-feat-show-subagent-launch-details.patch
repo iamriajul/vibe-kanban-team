@@ -1,0 +1,515 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Codex <codex@openai.com>
+Date: Sat, 20 Jun 2026 09:45:00 +0000
+Subject: [PATCH] feat: show subagent launch details
+
+---
+ crates/executors/src/executors/claude.rs           | 63 ++++++++++++-------
+ .../src/executors/codex/normalize_logs.rs          |  3 +
+ .../src/executors/opencode/normalize_logs.rs       |  3 +
+ crates/executors/src/logs/mod.rs                   |  6 ++
+ packages/ui/src/components/ChatSubagentEntry.tsx   | 70 ++++++++++++++++++----
+ .../ui/ConversationListContainer.tsx               |  3 +
+ .../workspace-chat/ui/DisplayConversationEntry.tsx | 14 ++++-
+ packages/web-core/src/i18n/locales/en/common.json  |  5 +-
+ packages/web-core/src/i18n/locales/es/common.json  |  5 +-
+ packages/web-core/src/i18n/locales/fr/common.json  |  5 +-
+ packages/web-core/src/i18n/locales/ja/common.json  |  5 +-
+ packages/web-core/src/i18n/locales/ko/common.json  |  5 +-
+ .../web-core/src/i18n/locales/zh-Hans/common.json  |  5 +-
+ .../web-core/src/i18n/locales/zh-Hant/common.json  |  5 +-
+ shared/types.ts                                    |  2 +-
+ 15 files changed, 158 insertions(+), 41 deletions(-)
+
+diff --git a/crates/executors/src/executors/claude.rs b/crates/executors/src/executors/claude.rs
+index 41fd371c4..e37e535be 100644
+--- a/crates/executors/src/executors/claude.rs
++++ b/crates/executors/src/executors/claude.rs
+@@ -798,6 +798,22 @@ impl ClaudeLogProcessor {
+         }
+     }
+ 
++    fn task_details_from_tool_data(
++        tool_data: &ClaudeToolData,
++    ) -> (Option<String>, Option<String>, Option<String>) {
++        if let ClaudeToolData::Task {
++            subagent_type,
++            prompt,
++            model,
++            ..
++        } = tool_data
++        {
++            (subagent_type.clone(), prompt.clone(), model.clone())
++        } else {
++            (None, None, None)
++        }
++    }
++
+     /// Process raw logs and convert them to normalized entries with patches
+     pub fn process_logs(
+         msg_store: Arc<MsgStore>,
+@@ -1166,6 +1182,7 @@ impl ClaudeLogProcessor {
+                 description,
+                 prompt,
+                 subagent_type,
++                model,
+             } => {
+                 let task_description = if let Some(desc) = description {
+                     desc.clone()
+@@ -1175,6 +1192,9 @@ impl ClaudeLogProcessor {
+                 ActionType::TaskCreate {
+                     description: task_description,
+                     subagent_type: subagent_type.clone(),
++                    prompt: prompt.clone(),
++                    model: model.clone(),
++                    effort: None,
+                     result: None,
+                 }
+             }
+@@ -1326,6 +1346,9 @@ impl ClaudeLogProcessor {
+                                 ActionType::TaskCreate {
+                                     description: desc.clone(),
+                                     subagent_type: subagent_type.clone(),
++                                    prompt: prompt.clone(),
++                                    model: model.clone(),
++                                    effort: None,
+                                     result: None,
+                                 },
+                                 ToolStatus::Created,
+@@ -1342,6 +1365,7 @@ impl ClaudeLogProcessor {
+                                         subagent_type,
+                                         description: description.clone(),
+                                         prompt: prompt.clone(),
++                                        model: model.clone(),
+                                     },
+                                     content: desc,
+                                 },
+@@ -1352,18 +1376,16 @@ impl ClaudeLogProcessor {
+                         if let (Some(tool_use_id), Some(desc)) = (tool_use_id, description)
+                             && let Some(info) = self.tool_map.get(tool_use_id).cloned()
+                         {
+-                            let subagent_type =
+-                                if let ClaudeToolData::Task { subagent_type, .. } = &info.tool_data
+-                                {
+-                                    subagent_type.clone()
+-                                } else {
+-                                    None
+-                                };
++                            let (subagent_type, prompt, model) =
++                                Self::task_details_from_tool_data(&info.tool_data);
+                             let entry = Self::tool_use_entry(
+                                 info.tool_name.clone(),
+                                 ActionType::TaskCreate {
+                                     description: info.content.clone(),
+                                     subagent_type,
++                                    prompt,
++                                    model,
++                                    effort: None,
+                                     result: None,
+                                 },
+                                 ToolStatus::Created,
+@@ -1380,13 +1402,8 @@ impl ClaudeLogProcessor {
+                                 Some("failed") | Some("error") => ToolStatus::Failed,
+                                 _ => ToolStatus::Success,
+                             };
+-                            let subagent_type =
+-                                if let ClaudeToolData::Task { subagent_type, .. } = &info.tool_data
+-                                {
+-                                    subagent_type.clone()
+-                                } else {
+-                                    None
+-                                };
++                            let (subagent_type, prompt, model) =
++                                Self::task_details_from_tool_data(&info.tool_data);
+                             let desc = summary
+                                 .clone()
+                                 .or(description.clone())
+@@ -1396,6 +1413,9 @@ impl ClaudeLogProcessor {
+                                 ActionType::TaskCreate {
+                                     description: desc.clone(),
+                                     subagent_type,
++                                    prompt,
++                                    model,
++                                    effort: None,
+                                     result: None,
+                                 },
+                                 task_status,
+@@ -1647,20 +1667,17 @@ impl ClaudeLogProcessor {
+                                 ToolStatus::Success
+                             };
+ 
+-                            // Extract subagent_type from the original tool_data
+-                            let subagent_type =
+-                                if let ClaudeToolData::Task { subagent_type, .. } = &info.tool_data
+-                                {
+-                                    subagent_type.clone()
+-                                } else {
+-                                    None
+-                                };
++                            let (subagent_type, prompt, model) =
++                                Self::task_details_from_tool_data(&info.tool_data);
+ 
+                             let entry = Self::tool_use_entry(
+                                 info.tool_name.clone(),
+                                 ActionType::TaskCreate {
+                                     description: info.content.clone(),
+                                     subagent_type,
++                                    prompt,
++                                    model,
++                                    effort: None,
+                                     result: Some(crate::logs::ToolResult {
+                                         r#type: res_type,
+                                         value: res_value,
+@@ -2572,6 +2589,8 @@ pub enum ClaudeToolData {
+         subagent_type: Option<String>,
+         description: Option<String>,
+         prompt: Option<String>,
++        #[serde(default)]
++        model: Option<String>,
+     },
+     #[serde(rename = "Glob", alias = "glob")]
+     Glob {
+diff --git a/crates/executors/src/executors/codex/normalize_logs.rs b/crates/executors/src/executors/codex/normalize_logs.rs
+index 6802c1be6..5ca6e5375 100644
+--- a/crates/executors/src/executors/codex/normalize_logs.rs
++++ b/crates/executors/src/executors/codex/normalize_logs.rs
+@@ -323,6 +323,9 @@ impl ToNormalizedEntry for ReviewState {
+                 action_type: ActionType::TaskCreate {
+                     description: self.description.clone(),
+                     subagent_type: Some("review".to_string()),
++                    prompt: Some(self.description.clone()),
++                    model: None,
++                    effort: None,
+                     result: self.result.clone(),
+                 },
+                 status: self.status.clone(),
+diff --git a/crates/executors/src/executors/opencode/normalize_logs.rs b/crates/executors/src/executors/opencode/normalize_logs.rs
+index c4b42f150..37c02d397 100644
+--- a/crates/executors/src/executors/opencode/normalize_logs.rs
++++ b/crates/executors/src/executors/opencode/normalize_logs.rs
+@@ -1353,6 +1353,9 @@ impl ToolCallState {
+             } => ActionType::TaskCreate {
+                 description: description.clone().unwrap_or_default(),
+                 subagent_type: subagent_type.clone(),
++                prompt: description.clone(),
++                model: None,
++                effort: None,
+                 result: output
+                     .as_deref()
+                     .map(|o| ToolResult::markdown(o.to_string())),
+diff --git a/crates/executors/src/logs/mod.rs b/crates/executors/src/logs/mod.rs
+index 4d894bd6e..0d47f229b 100644
+--- a/crates/executors/src/logs/mod.rs
++++ b/crates/executors/src/logs/mod.rs
+@@ -201,6 +201,12 @@ pub enum ActionType {
+         #[serde(default)]
+         subagent_type: Option<String>,
+         #[serde(default)]
++        prompt: Option<String>,
++        #[serde(default)]
++        model: Option<String>,
++        #[serde(default)]
++        effort: Option<String>,
++        #[serde(default)]
+         result: Option<ToolResult>,
+     },
+     PlanPresentation {
+diff --git a/packages/ui/src/components/ChatSubagentEntry.tsx b/packages/ui/src/components/ChatSubagentEntry.tsx
+index b9bd4b049..c898a7388 100644
+--- a/packages/ui/src/components/ChatSubagentEntry.tsx
++++ b/packages/ui/src/components/ChatSubagentEntry.tsx
+@@ -20,9 +20,16 @@ export interface ChatSubagentEntryRenderProps {
+   workspaceId?: string;
+ }
+ 
++export interface ChatSubagentDetails {
++  model?: string | null;
++  effort?: string | null;
++  prompt?: string | null;
++}
++
+ interface ChatSubagentEntryProps {
+   description: string;
+   subagentType?: string | null;
++  details?: ChatSubagentDetails | null;
+   result?: ChatSubagentResultLike | null;
+   fallbackContent?: string | null;
+   expanded?: boolean;
+@@ -41,6 +48,7 @@ interface ChatSubagentEntryProps {
+ export function ChatSubagentEntry({
+   description,
+   subagentType,
++  details,
+   result,
+   fallbackContent,
+   expanded = false,
+@@ -113,9 +121,23 @@ export function ChatSubagentEntry({
+     return JSON.stringify(result.value, null, 2);
+   }, [result, fallbackContent]);
+ 
++  const detailRows = useMemo(
++    () =>
++      [
++        { label: t('conversation.subagent.model'), value: details?.model },
++        { label: t('conversation.subagent.effort'), value: details?.effort },
++      ].filter(
++        (row): row is { label: string; value: string } =>
++          typeof row.value === 'string' && row.value.trim().length > 0
++      ),
++    [details?.effort, details?.model, t]
++  );
++  const prompt = details?.prompt?.trim() || null;
++  const hasDetails = detailRows.length > 0 || Boolean(prompt);
++
+   // Determine if we have content to show
+   const hasContent = Boolean(resultContent);
+-  const isInteractive = Boolean(onToggle && hasContent);
++  const isInteractive = Boolean(onToggle && (hasContent || hasDetails));
+   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+     if (!isInteractive || event.target !== event.currentTarget) return;
+     if (event.key !== 'Enter' && event.key !== ' ') return;
+@@ -172,15 +194,43 @@ export function ChatSubagentEntry({
+         )}
+       </div>
+ 
+-      {/* Expanded content - shows subagent output */}
+-      {expanded && hasContent && (
+-        <div className="border-t p-double bg-panel/50">
+-          <div className="text-xs font-medium text-low pb-base uppercase tracking-wide">
+-            {t('conversation.output')}
+-          </div>
+-          <div className="prose prose-sm dark:prose-invert max-w-none">
+-            {renderMarkdown({ content: resultContent!, workspaceId })}
+-          </div>
++      {/* Expanded content - shows subagent launch details and output */}
++      {expanded && (hasDetails || hasContent) && (
++        <div className="border-t p-double bg-panel/50 space-y-double">
++          {hasDetails && (
++            <div className="space-y-base">
++              {detailRows.length > 0 && (
++                <dl className="grid grid-cols-[max-content_1fr] gap-x-double gap-y-small text-xs">
++                  {detailRows.map((row) => (
++                    <div key={row.label} className="contents">
++                      <dt className="text-low">{row.label}</dt>
++                      <dd className="text-normal break-words">{row.value}</dd>
++                    </div>
++                  ))}
++                </dl>
++              )}
++              {prompt && (
++                <div className="space-y-small">
++                  <div className="text-xs font-medium text-low uppercase tracking-wide">
++                    {t('conversation.subagent.prompt')}
++                  </div>
++                  <pre className="whitespace-pre-wrap break-words rounded-sm border bg-background/50 p-base text-xs text-normal font-mono">
++                    {prompt}
++                  </pre>
++                </div>
++              )}
++            </div>
++          )}
++          {hasContent && (
++            <div>
++              <div className="text-xs font-medium text-low pb-base uppercase tracking-wide">
++                {t('conversation.output')}
++              </div>
++              <div className="prose prose-sm dark:prose-invert max-w-none">
++                {renderMarkdown({ content: resultContent!, workspaceId })}
++              </div>
++            </div>
++          )}
+         </div>
+       )}
+     </div>
+diff --git a/packages/web-core/src/features/workspace-chat/ui/ConversationListContainer.tsx b/packages/web-core/src/features/workspace-chat/ui/ConversationListContainer.tsx
+index 7067d53ec..958140bca 100644
+--- a/packages/web-core/src/features/workspace-chat/ui/ConversationListContainer.tsx
++++ b/packages/web-core/src/features/workspace-chat/ui/ConversationListContainer.tsx
+@@ -122,6 +122,9 @@ function getActionSearchText(action: ActionType): string {
+       return [
+         action.description,
+         action.subagent_type,
++        action.prompt,
++        action.model,
++        action.effort,
+         stringifySearchValue(action.result?.value),
+       ].join(' ');
+     case 'plan_presentation':
+diff --git a/packages/web-core/src/features/workspace-chat/ui/DisplayConversationEntry.tsx b/packages/web-core/src/features/workspace-chat/ui/DisplayConversationEntry.tsx
+index 4b0821771..c98740003 100644
+--- a/packages/web-core/src/features/workspace-chat/ui/DisplayConversationEntry.tsx
++++ b/packages/web-core/src/features/workspace-chat/ui/DisplayConversationEntry.tsx
+@@ -224,6 +224,9 @@ function renderToolUseEntry(
+       <SubagentEntry
+         description={action_type.description}
+         subagentType={action_type.subagent_type}
++        model={action_type.model}
++        effort={action_type.effort}
++        prompt={action_type.prompt}
+         result={action_type.result}
+         fallbackContent={entry.content}
+         expansionKey={expansionKey}
+@@ -980,6 +983,9 @@ function TodoManagementEntry({
+ function SubagentEntry({
+   description,
+   subagentType,
++  model,
++  effort,
++  prompt,
+   result,
+   fallbackContent,
+   expansionKey,
+@@ -989,6 +995,9 @@ function SubagentEntry({
+ }: {
+   description: string;
+   subagentType: string | null | undefined;
++  model: string | null | undefined;
++  effort: string | null | undefined;
++  prompt: string | null | undefined;
+   result: ToolResult | null | undefined;
+   fallbackContent: string;
+   expansionKey: string;
+@@ -996,7 +1005,9 @@ function SubagentEntry({
+   workspaceId: string | undefined;
+   sessionId: string | undefined;
+ }) {
+-  const hasContent = result?.value != null || Boolean(fallbackContent.trim());
++  const hasDetails = Boolean(model?.trim() || effort?.trim() || prompt?.trim());
++  const hasContent =
++    result?.value != null || Boolean(fallbackContent.trim()) || hasDetails;
+   const [expanded, toggle] = usePersistedExpanded(
+     `subagent:${expansionKey}`,
+     false
+@@ -1006,6 +1017,7 @@ function SubagentEntry({
+     <ChatSubagentEntry
+       description={description}
+       subagentType={subagentType}
++      details={{ model, effort, prompt }}
+       result={result}
+       fallbackContent={fallbackContent}
+       expanded={expanded}
+diff --git a/packages/web-core/src/i18n/locales/en/common.json b/packages/web-core/src/i18n/locales/en/common.json
+index 4816faaf2..a087245cc 100644
+--- a/packages/web-core/src/i18n/locales/en/common.json
++++ b/packages/web-core/src/i18n/locales/en/common.json
+@@ -52,7 +52,10 @@
+       "todoOperation": "{{operation}} todos"
+     },
+     "subagent": {
+-      "defaultType": "Subagent"
++      "defaultType": "Subagent",
++      "model": "Model",
++      "effort": "Effort",
++      "prompt": "Prompt"
+     },
+     "loadingEarlierMessages": "Loading earlier messages"
+   },
+diff --git a/packages/web-core/src/i18n/locales/es/common.json b/packages/web-core/src/i18n/locales/es/common.json
+index 283e6b4ef..c65e11e43 100644
+--- a/packages/web-core/src/i18n/locales/es/common.json
++++ b/packages/web-core/src/i18n/locales/es/common.json
+@@ -60,7 +60,10 @@
+       "todoOperation": "{{operation}} tareas pendientes"
+     },
+     "subagent": {
+-      "defaultType": "Subagente"
++      "defaultType": "Subagente",
++      "model": "Modelo",
++      "effort": "Esfuerzo",
++      "prompt": "Prompt"
+     },
+     "loadingEarlierMessages": "Cargando mensajes anteriores"
+   },
+diff --git a/packages/web-core/src/i18n/locales/fr/common.json b/packages/web-core/src/i18n/locales/fr/common.json
+index faa3707fe..75452e3fb 100644
+--- a/packages/web-core/src/i18n/locales/fr/common.json
++++ b/packages/web-core/src/i18n/locales/fr/common.json
+@@ -47,7 +47,10 @@
+       "todoOperation": "{{operation}} tâches à faire"
+     },
+     "subagent": {
+-      "defaultType": "Sous-agent"
++      "defaultType": "Sous-agent",
++      "model": "Modèle",
++      "effort": "Effort",
++      "prompt": "Prompt"
+     },
+     "loadingEarlierMessages": "Chargement des messages pr\u00e9c\u00e9dents"
+   },
+diff --git a/packages/web-core/src/i18n/locales/ja/common.json b/packages/web-core/src/i18n/locales/ja/common.json
+index 36b94f872..d3b7e4aeb 100644
+--- a/packages/web-core/src/i18n/locales/ja/common.json
++++ b/packages/web-core/src/i18n/locales/ja/common.json
+@@ -60,7 +60,10 @@
+       "todoOperation": "{{operation}} Todo"
+     },
+     "subagent": {
+-      "defaultType": "サブエージェント"
++      "defaultType": "サブエージェント",
++      "model": "モデル",
++      "effort": "エフォート",
++      "prompt": "プロンプト"
+     },
+     "loadingEarlierMessages": "以前のメッセージを読み込み中"
+   },
+diff --git a/packages/web-core/src/i18n/locales/ko/common.json b/packages/web-core/src/i18n/locales/ko/common.json
+index 79a16e1dc..d68ff1540 100644
+--- a/packages/web-core/src/i18n/locales/ko/common.json
++++ b/packages/web-core/src/i18n/locales/ko/common.json
+@@ -60,7 +60,10 @@
+       "todoOperation": "{{operation}} 할 일"
+     },
+     "subagent": {
+-      "defaultType": "서브에이전트"
++      "defaultType": "서브에이전트",
++      "model": "모델",
++      "effort": "노력",
++      "prompt": "프롬프트"
+     },
+     "loadingEarlierMessages": "이전 메시지 불러오는 중"
+   },
+diff --git a/packages/web-core/src/i18n/locales/zh-Hans/common.json b/packages/web-core/src/i18n/locales/zh-Hans/common.json
+index 27776ede9..62273a37c 100644
+--- a/packages/web-core/src/i18n/locales/zh-Hans/common.json
++++ b/packages/web-core/src/i18n/locales/zh-Hans/common.json
+@@ -47,7 +47,10 @@
+       "todoOperation": "{{operation}} 待办事项"
+     },
+     "subagent": {
+-      "defaultType": "子代理"
++      "defaultType": "子代理",
++      "model": "模型",
++      "effort": "推理强度",
++      "prompt": "提示词"
+     },
+     "loadingEarlierMessages": "正在加载早期消息"
+   },
+diff --git a/packages/web-core/src/i18n/locales/zh-Hant/common.json b/packages/web-core/src/i18n/locales/zh-Hant/common.json
+index 9796ed068..46a58bc52 100644
+--- a/packages/web-core/src/i18n/locales/zh-Hant/common.json
++++ b/packages/web-core/src/i18n/locales/zh-Hant/common.json
+@@ -47,7 +47,10 @@
+       "todoOperation": "{{operation}} 待辦事項"
+     },
+     "subagent": {
+-      "defaultType": "子代理"
++      "defaultType": "子代理",
++      "model": "模型",
++      "effort": "推理強度",
++      "prompt": "提示詞"
+     },
+     "loadingEarlierMessages": "正在載入先前的訊息"
+   },
+diff --git a/shared/types.ts b/shared/types.ts
+index cfdcd4532..15667f1a8 100644
+--- a/shared/types.ts
++++ b/shared/types.ts
+@@ -729,7 +729,7 @@ unified_diff: string,
+  */
+ has_line_numbers: boolean, };
+ 
+-export type ActionType = { "action": "file_read", path: string, } | { "action": "file_edit", path: string, changes: Array<FileChange>, } | { "action": "command_run", command: string, result: CommandRunResult | null, category: CommandCategory, } | { "action": "search", query: string, } | { "action": "web_fetch", url: string, } | { "action": "tool", tool_name: string, arguments: JsonValue | null, result: ToolResult | null, } | { "action": "task_create", description: string, subagent_type: string | null, result: ToolResult | null, } | { "action": "plan_presentation", plan: string, } | { "action": "todo_management", todos: Array<TodoItem>, operation: string, } | { "action": "ask_user_question", questions: Array<AskUserQuestionItem>, } | { "action": "other", description: string, };
++export type ActionType = { "action": "file_read", path: string, } | { "action": "file_edit", path: string, changes: Array<FileChange>, } | { "action": "command_run", command: string, result: CommandRunResult | null, category: CommandCategory, } | { "action": "search", query: string, } | { "action": "web_fetch", url: string, } | { "action": "tool", tool_name: string, arguments: JsonValue | null, result: ToolResult | null, } | { "action": "task_create", description: string, subagent_type: string | null, prompt: string | null, model: string | null, effort: string | null, result: ToolResult | null, } | { "action": "plan_presentation", plan: string, } | { "action": "todo_management", todos: Array<TodoItem>, operation: string, } | { "action": "ask_user_question", questions: Array<AskUserQuestionItem>, } | { "action": "other", description: string, };
+ 
+ export type AnsweredQuestion = { question: string, answer: Array<string>, };
+ 

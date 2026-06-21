@@ -52,3 +52,5 @@
 0051-fix-enable-local-browser-notification-opt-in.patch
 0052-fix-surface-browser-notification-permission-prompt.patch
 0053-feat-enrich-workspace-attention-push-notifications.patch
+0054-feat-expand-subagent-activity-entries.patch
+0055-feat-show-subagent-launch-details.patch
