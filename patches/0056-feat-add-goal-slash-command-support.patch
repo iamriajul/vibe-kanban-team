@@ -1,0 +1,42 @@
+From 858ff3a5cb5392e15173ec5ab0177e5bf3a5fac3 Mon Sep 17 00:00:00 2001
+From: Riajul Islam <kmriajulislami@gmail.com>
+Date: Mon, 29 Jun 2026 09:16:20 +0000
+Subject: [PATCH] feat: add goal slash command support
+
+---
+ crates/executors/src/executors/claude/slash_commands.rs | 4 ++++
+ crates/executors/src/executors/codex.rs                 | 4 ++++
+ 2 files changed, 8 insertions(+)
+
+diff --git a/crates/executors/src/executors/claude/slash_commands.rs b/crates/executors/src/executors/claude/slash_commands.rs
+index c7a889bc0..4639d0ce4 100644
+--- a/crates/executors/src/executors/claude/slash_commands.rs
++++ b/crates/executors/src/executors/claude/slash_commands.rs
+@@ -154,6 +154,10 @@ impl ClaudeCode {
+                     name: "review".to_string(),
+                     description: Some("Review a pull request".to_string()),
+                 },
++                SlashCommandDescription {
++                    name: "goal".to_string(),
++                    description: Some("Manage a long-running agent goal".to_string()),
++                },
+                 SlashCommandDescription {
+                     name: "security-review".to_string(),
+                     description: Some(
+diff --git a/crates/executors/src/executors/codex.rs b/crates/executors/src/executors/codex.rs
+index 3348505a6..5b962f535 100644
+--- a/crates/executors/src/executors/codex.rs
++++ b/crates/executors/src/executors/codex.rs
+@@ -408,6 +408,10 @@ impl StandardCodingAgentExecutor for Codex {
+                         "create an AGENTS.md file with instructions for Codex".to_string(),
+                     ),
+                 },
++                SlashCommandDescription {
++                    name: "goal".to_string(),
++                    description: Some("manage a long-running Codex goal".to_string()),
++                },
+                 SlashCommandDescription {
+                     name: "status".to_string(),
+                     description: Some(
+-- 
+2.53.0
