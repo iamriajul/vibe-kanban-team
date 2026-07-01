@@ -13,6 +13,7 @@ Downstream deployment and integration layer for Vibe Kanban. Owns the Helm chart
 ## Ownership
 
 - `helm/vibe-kanban-team/`: Helm chart for Remote, Relay, ElectricSQL, and optional Frontend
+- `docker-compose.yml`, `.env.example`, `standalone/`, `STANDALONE.md`: single-machine Docker Compose deployment
 - `.github/workflows/`: GitHub Actions for image/chart/npm releases and nightly upstream checks
 - `scripts/`: `apply-patches.sh`, `update-vibe-kanban.sh`, `deploy.sh`, `publish-npm.sh`, `nightly-check-release.sh`
 - `patches/`: linear downstream patch stack (`series` + `*.patch`)
@@ -42,7 +43,7 @@ Downstream deployment and integration layer for Vibe Kanban. Owns the Helm chart
 
 ## Agent Operating Model
 
-1. Deployment and integration first. Prefer `helm/`, `scripts/`, `patches/`, release docs.
+1. Deployment and integration first. Prefer `helm/`, `docker-compose.yml`, `standalone/`, `scripts/`, `patches/`, release docs.
 2. Submodule edits are intermediate only. Durable changes belong in patches or top-level repo files.
 3. Never leave final changes only in the submodule working tree.
 4. Every change must pass verification before committing.
@@ -72,6 +73,13 @@ Edit `vibe-kanban/` → commit → `git -C vibe-kanban format-patch -1 -o ../pat
 ```bash
 helm template test helm/vibe-kanban-team/ \
   -f helm/vibe-kanban-team/values-example.yaml > /dev/null
+```
+
+**Standalone Docker Compose changes**:
+```bash
+docker compose --env-file .env.example config > /dev/null
+docker compose --env-file .env.example --profile relay config > /dev/null
+docker run --rm -v "$PWD/standalone/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile
 ```
 
 **Patch or submodule changes**:
