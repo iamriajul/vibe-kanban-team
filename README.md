@@ -2,19 +2,21 @@
 
 Open-source deployment and release layer for [Vibe Kanban](https://github.com/BloopAI/vibe-kanban).
 
-This project has **three parts**:
+This project has **four parts**:
 
 | Part | What it is | Who uses it |
 |------|-----------|-------------|
 | **NPM Package** (`vibe-kanban-team`) | Desktop/web app that runs on your machine and connects to a remote server | Developers on the team |
+| **Standalone Docker Compose** | Single-machine production stack with Caddy, Remote, PostgreSQL, ElectricSQL, and optional Relay | Self-hosters / small teams |
 | **Helm Chart** (`vibe-kanban-team`) | Deploys the remote server, relay, and ElectricSQL to Kubernetes | Platform / DevOps engineers |
-| **Server-Side** (Remote + Relay) | Backend API that stores projects, syncs data, and handles auth | Deployed by the Helm chart |
+| **Server-Side** (Remote + Relay) | Backend API that stores projects, syncs data, and handles auth | Deployed by Docker Compose or the Helm chart |
 
 ---
 
 ## Table of Contents
 
 - [Part 1 — NPM Package (Developer Desktop/Web App)](#part-1--npm-package-developer-desktopweb-app)
+- [Standalone Docker Compose (Single-Machine Production)](#standalone-docker-compose-single-machine-production)
 - [Part 2 — Helm Chart (Server Deployment)](#part-2--helm-chart-server-deployment)
 - [Part 3 — Server-Side Components](#part-3--server-side-components)
 - [Architecture](#architecture)
@@ -99,6 +101,33 @@ PORT=13479 \
 VK_SHARED_API_BASE=https://remote.vk.example.com \
   nohup npx --yes vibe-kanban-team > ~/.vibe-kanban.log 2>&1 &
 ```
+
+---
+
+## Standalone Docker Compose (Single-Machine Production)
+
+For teams that do not run Kubernetes, this repository includes a production-oriented Docker Compose stack at the repository root:
+
+- `docker-compose.yml` — Caddy, Remote, PostgreSQL, ElectricSQL, and optional Relay
+- `.env.example` — required secrets and deployment settings
+- `standalone/Caddyfile` — HTTPS reverse-proxy routing
+- `STANDALONE.md` — full setup, update, backup, and troubleshooting guide
+
+Quick start:
+
+```bash
+cp .env.example .env
+# Edit .env, generate secrets, and configure at least one auth method.
+docker compose up -d
+```
+
+Enable relay/tunnel support with:
+
+```bash
+docker compose --profile relay up -d
+```
+
+See [STANDALONE.md](./STANDALONE.md) before using this in production.
 
 ---
 
